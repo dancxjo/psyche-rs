@@ -3,6 +3,7 @@ use std::time::SystemTime;
 
 use crate::llm::LLMClient;
 use crate::memory::{Memory, MemoryStore};
+use crate::store::MemoryRetriever;
 
 /// `Narrator` provides high level summaries of Pete's memories by
 /// querying a [`MemoryStore`] and condensing results using an
@@ -36,7 +37,8 @@ use crate::memory::{Memory, MemoryStore};
 /// # async fn demo() -> anyhow::Result<()> {
 /// # let store = Arc::new(DummyStore);
 /// # let llm = Arc::new(DummyLLM);
-/// let narrator = Narrator { store, llm };
+/// # let retriever = Arc::new(psyche_rs::store::embedding_store::NoopRetriever);
+/// let narrator = Narrator { store, llm, retriever };
 /// let _story = narrator.narrate_since(SystemTime::now()).await?;
 /// # Ok(()) }
 /// ```
@@ -44,6 +46,8 @@ use crate::memory::{Memory, MemoryStore};
 pub struct Narrator {
     pub store: Arc<dyn MemoryStore>,
     pub llm: Arc<dyn LLMClient>,
+    /// Embedding-based retriever used for memory search.
+    pub retriever: Arc<dyn MemoryRetriever>,
 }
 
 impl Narrator {
@@ -64,6 +68,23 @@ impl Narrator {
     /// Summarize impressions containing the given keyword.
     pub async fn narrate_topic(&self, keyword: &str) -> anyhow::Result<String> {
         let impressions = self.store.impressions_containing(keyword).await?;
+        let story = self.llm.summarize_impressions(&impressions).await?;
+        Ok(story)
+    }
+
+    /// Retrieve impressions relevant to the provided `text` using the
+    /// configured [`MemoryRetriever`]. The returned impressions are
+    /// summarised into a short story by the [`LLMClient`].
+    pub async fn recall_relevant(&self, text: &str) -> anyhow::Result<String> {
+        // look up nearest memories via embeddings
+        // Fetch the single most relevant memory for now.
+        let ids = self.retriever.find_similar(text, 1).await?;
+        let mut impressions = Vec::new();
+        for id in ids {
+            if let Some(Memory::Impression(i)) = self.store.get_by_uuid(id).await? {
+                impressions.push(i);
+            }
+        }
         let story = self.llm.summarize_impressions(&impressions).await?;
         Ok(story)
     }

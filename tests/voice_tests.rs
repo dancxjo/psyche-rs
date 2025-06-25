@@ -3,6 +3,7 @@ use psyche_rs::{
     memory::{Impression, Memory, MemoryStore, Sensation},
     mouth::Mouth,
     narrator::Narrator,
+    store::NoopRetriever,
     voice::Voice,
 };
 use std::collections::HashMap;
@@ -146,6 +147,7 @@ async fn test_narrate_response() -> anyhow::Result<()> {
     let narrator = Narrator {
         store: store.clone(),
         llm,
+        retriever: Arc::new(NoopRetriever),
     };
     let (mouth, log) = LoggingMouth::new();
     let mouth = Arc::new(mouth);

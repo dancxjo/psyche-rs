@@ -24,6 +24,7 @@ use uuid::Uuid;
 
 use crate::memory::{Memory, MemoryStore};
 use crate::narrator::Narrator;
+use crate::store::NoopRetriever;
 
 use crate::mouth::Mouth;
 
@@ -201,6 +202,7 @@ impl Default for Voice {
         let narrator = Narrator {
             store: store.clone(),
             llm,
+            retriever: Arc::new(NoopRetriever),
         };
         let mut voice = Self::new(narrator, Arc::new(NoopMouth), store);
         voice.conversation = Conversation::new("You are Pete".into(), 128);

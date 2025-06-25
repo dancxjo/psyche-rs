@@ -82,3 +82,16 @@ pub fn simple_embed(text: &str) -> Vec<f32> {
     }
     v
 }
+
+/// [`MemoryRetriever`] implementation that never returns any results.
+///
+/// This is useful in tests and default configurations where an embedding
+/// backend is unavailable.
+pub struct NoopRetriever;
+
+#[async_trait::async_trait(?Send)]
+impl MemoryRetriever for NoopRetriever {
+    async fn find_similar(&self, _text: &str, _top_k: usize) -> Result<Vec<Uuid>> {
+        Ok(Vec::new())
+    }
+}

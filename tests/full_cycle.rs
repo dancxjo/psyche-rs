@@ -195,6 +195,7 @@ async fn day_in_the_life_of_pete() {
     let narrator = Narrator {
         store: store.clone(),
         llm: llm.clone(),
+        retriever: Arc::new(psyche_rs::store::embedding_store::NoopRetriever),
     };
     let (mouth, log) = DummyMouth::new();
     let mouth = Arc::new(mouth);

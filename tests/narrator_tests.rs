@@ -2,6 +2,7 @@ use psyche_rs::{
     llm::LLMClient,
     memory::{Impression, Memory, MemoryStore},
     narrator::Narrator,
+    store::embedding_store::{MemoryRetriever, simple_embed},
 };
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -102,13 +103,53 @@ fn make_impression(how: &str, ts: SystemTime) -> Impression {
     }
 }
 
+struct NaiveRetriever {
+    entries: tokio::sync::Mutex<Vec<(Uuid, Vec<f32>)>>,
+}
+
+impl NaiveRetriever {
+    fn new() -> Self {
+        Self {
+            entries: tokio::sync::Mutex::new(Vec::new()),
+        }
+    }
+
+    async fn insert(&self, id: Uuid, text: &str) {
+        self.entries.lock().await.push((id, simple_embed(text)));
+    }
+}
+
+fn cosine(a: &[f32], b: &[f32]) -> f32 {
+    let dot: f32 = a.iter().zip(b).map(|(x, y)| x * y).sum();
+    let norm_a = a.iter().map(|v| v * v).sum::<f32>().sqrt();
+    let norm_b = b.iter().map(|v| v * v).sum::<f32>().sqrt();
+    if norm_a == 0.0 || norm_b == 0.0 {
+        0.0
+    } else {
+        dot / (norm_a * norm_b)
+    }
+}
+
+#[async_trait::async_trait(?Send)]
+impl MemoryRetriever for NaiveRetriever {
+    async fn find_similar(&self, text: &str, top_k: usize) -> anyhow::Result<Vec<Uuid>> {
+        let q = simple_embed(text);
+        let entries = self.entries.lock().await;
+        let mut scored: Vec<_> = entries.iter().map(|(id, v)| (*id, cosine(&q, v))).collect();
+        scored.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap());
+        Ok(scored.into_iter().take(top_k).map(|(id, _)| id).collect())
+    }
+}
+
 #[tokio::test]
 async fn narrate_since_returns_story() -> anyhow::Result<()> {
     let store = Arc::new(MockStore::new());
     let llm = Arc::new(EchoLLM);
+    let retriever = Arc::new(NaiveRetriever::new());
     let narrator = Narrator {
         store: store.clone(),
         llm,
+        retriever: retriever.clone(),
     };
 
     let now = SystemTime::now();
@@ -116,6 +157,7 @@ async fn narrate_since_returns_story() -> anyhow::Result<()> {
 
     for text in ["saw a bird", "ate lunch", "took a nap"] {
         let imp = make_impression(text, now);
+        retriever.insert(imp.uuid, &imp.how).await;
         store.save(&Memory::Impression(imp)).await?;
     }
 
@@ -130,21 +172,47 @@ async fn narrate_since_returns_story() -> anyhow::Result<()> {
 async fn narrate_topic_filters_keyword() -> anyhow::Result<()> {
     let store = Arc::new(MockStore::new());
     let llm = Arc::new(EchoLLM);
+    let retriever = Arc::new(NaiveRetriever::new());
     let narrator = Narrator {
         store: store.clone(),
         llm,
+        retriever: retriever.clone(),
     };
 
     let now = SystemTime::now();
-    store
-        .save(&Memory::Impression(make_impression("watched a movie", now)))
-        .await?;
-    store
-        .save(&Memory::Impression(make_impression("read a book", now)))
-        .await?;
+    let imp1 = make_impression("watched a movie", now);
+    retriever.insert(imp1.uuid, &imp1.how).await;
+    store.save(&Memory::Impression(imp1)).await?;
+    let imp2 = make_impression("read a book", now);
+    retriever.insert(imp2.uuid, &imp2.how).await;
+    store.save(&Memory::Impression(imp2)).await?;
 
     let story = narrator.narrate_topic("book").await?;
     assert!(!story.contains("movie"));
     assert!(story.contains("book"));
+    Ok(())
+}
+
+#[tokio::test]
+async fn recall_relevant_finds_best_matches() -> anyhow::Result<()> {
+    let store = Arc::new(MockStore::new());
+    let llm = Arc::new(EchoLLM);
+    let retriever = Arc::new(NaiveRetriever::new());
+    let narrator = Narrator {
+        store: store.clone(),
+        llm,
+        retriever: retriever.clone(),
+    };
+
+    let now = SystemTime::now();
+    let imp1 = make_impression("eat apple", now);
+    retriever.insert(imp1.uuid, &imp1.how).await;
+    store.save(&Memory::Impression(imp1)).await?;
+    let imp2 = make_impression("go to store", now);
+    retriever.insert(imp2.uuid, &imp2.how).await;
+    store.save(&Memory::Impression(imp2)).await?;
+
+    let story = narrator.recall_relevant("apple").await?;
+    assert!(!story.is_empty());
     Ok(())
 }
