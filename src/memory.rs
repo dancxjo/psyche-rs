@@ -104,6 +104,16 @@ impl Clone for Memory {
 }
 
 impl Memory {
+    /// Attempt to borrow a custom memory stored via [`Memory::Of`].
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use psyche_rs::Memory;
+    /// let m = Memory::Of(Box::new(42u32));
+    /// assert_eq!(m.try_as::<u32>(), Some(&42u32));
+    /// assert!(m.try_as::<i32>().is_none());
+    /// ```
     pub fn try_as<T: 'static>(&self) -> Option<&T> {
         match self {
             Memory::Of(boxed) => boxed.downcast_ref::<T>(),
