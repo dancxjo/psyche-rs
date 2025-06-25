@@ -1,128 +1,115 @@
 use std::sync::Arc;
 
 use tokio::sync::{Mutex, mpsc, oneshot};
+use tracing::{debug, info};
 
 use crate::{
     llm::LLMClient,
     memory::{Memory, MemoryStore, Sensation},
-    motor::MotorSystem,
-    mouth::Mouth,
     narrator::Narrator,
     voice::Voice,
     wit::Wit,
     wits::{fond::FondDuCoeur, quick::Quick, will::Will},
 };
 
-/// Central orchestrator coordinating Pete's cognitive wits.
+/// Top level coordinator driving Pete's cognitive cycle.
 ///
-/// [`Psyche`] owns the various wits and drives their cooperation in a simple
-/// tick loop.  Sensations are pushed via an internal channel which the loop
-/// consumes one by one.  Each tick performs the following high level steps:
-///
-/// 1. Feed the [`Quick`] wit new sensations.
-/// 2. Persist any distilled [`Impression`]s and resulting [`Urge`]s.
-/// 3. Let [`Will`] convert urges into intentions, executing motors.
-/// 4. Have the [`Voice`] speak whenever an intention is produced.
-/// 5. Reflect on motor feedback via [`FondDuCoeur`] to create emotions.
-///
-/// The loop terminates when the input channel is closed or when the provided
-/// `stop_tx` is signalled.
+/// [`Psyche`] wires together the individual cognitive wits and runs a simple
+/// tick loop consuming [`Sensation`]s. Each loop observes the new sensation,
+/// distills higher level impressions and intentions and finally produces output
+/// via the [`Voice`].
 pub struct Psyche {
-    /// Shared memory store for all components.
-    pub store: Arc<dyn MemoryStore>,
     /// Short term perception summariser.
-    pub quick: Mutex<Quick>,
+    pub quick: Arc<Mutex<Quick>>,
     /// Converts urges into executable intentions.
-    pub will: Mutex<Will>,
+    pub will: Arc<Mutex<Will>>,
     /// Evaluates emotional reactions to events.
-    pub fond: Mutex<FondDuCoeur>,
+    pub fond: Arc<Mutex<FondDuCoeur>>,
     /// Pete's speaking system.
-    pub voice: Mutex<Voice>,
+    pub voice: Arc<Mutex<Voice>>,
     /// Narrative summariser used by the voice.
-    pub narrator: Mutex<Narrator>,
-    /// Language model backing the wits.
+    pub narrator: Arc<Mutex<Narrator>>,
+
+    /// Shared memory store used by all components.
+    pub store: Arc<dyn MemoryStore>,
+    /// Language model used for generating urges.
     pub llm: Arc<dyn LLMClient>,
-    input_rx: Mutex<mpsc::Receiver<Sensation>>, // protected for &self access
-    input_tx: mpsc::Sender<Sensation>,
-    stop_tx: Mutex<Option<oneshot::Sender<()>>>,
+    /// Incoming sensations to process.
+    pub input_rx: mpsc::Receiver<Sensation>,
+    /// Notifies the runtime once processing is complete.
+    pub stop_tx: oneshot::Sender<()>,
 }
 
 impl Psyche {
-    /// Construct a new [`Psyche`] with all wits wired together.
+    /// Create a new [`Psyche`] bundling the given wits together.
     pub fn new(
+        quick: Quick,
+        will: Will,
+        fond: FondDuCoeur,
+        voice: Voice,
+        narrator: Narrator,
         store: Arc<dyn MemoryStore>,
         llm: Arc<dyn LLMClient>,
-        motor: Arc<dyn MotorSystem>,
-        mouth: Arc<dyn Mouth>,
-        input_tx: mpsc::Sender<Sensation>,
         input_rx: mpsc::Receiver<Sensation>,
         stop_tx: oneshot::Sender<()>,
     ) -> Self {
-        let narrator = Narrator {
-            store: store.clone(),
-            llm: llm.clone(),
-        };
-        let voice = Voice::new(narrator.clone(), mouth, store.clone());
         Self {
-            store: store.clone(),
-            quick: Mutex::new(Quick::new(store.clone(), llm.clone())),
-            will: Mutex::new(Will::new(store.clone(), motor)),
-            fond: Mutex::new(FondDuCoeur::new(store.clone(), llm.clone())),
-            voice: Mutex::new(voice),
-            narrator: Mutex::new(narrator),
+            quick: Arc::new(Mutex::new(quick)),
+            will: Arc::new(Mutex::new(will)),
+            fond: Arc::new(Mutex::new(fond)),
+            voice: Arc::new(Mutex::new(voice)),
+            narrator: Arc::new(Mutex::new(narrator)),
+            store,
             llm,
-            input_rx: Mutex::new(input_rx),
-            input_tx,
-            stop_tx: Mutex::new(Some(stop_tx)),
+            input_rx,
+            stop_tx,
         }
     }
 
-    /// Push a new sensation onto the processing queue.
-    pub async fn push_sensation(
-        &self,
-        s: Sensation,
-    ) -> Result<(), mpsc::error::SendError<Sensation>> {
-        self.input_tx.send(s).await
-    }
+    /// Run the processing loop until the input channel closes.
+    pub async fn tick(mut self) {
+        while let Some(sensation) = self.input_rx.recv().await {
+            info!("Received sensation: {:?}", sensation.kind);
+            let quick = self.quick.clone();
+            let will = self.will.clone();
+            let fond = self.fond.clone();
+            let voice = self.voice.clone();
+            let store = self.store.clone();
+            let llm = self.llm.clone();
 
-    /// Forward a prompt to Pete's [`Voice`].
-    pub async fn ask(&self, prompt: &str) -> anyhow::Result<String> {
-        let mut voice = self.voice.lock().await;
-        voice
-            .conversation
-            .hear(crate::conversation::Role::Interlocutor, prompt);
-        let reply = voice.take_turn().await?;
-        Ok(reply)
-    }
+            // Perception first
+            let instant = {
+                let mut q = quick.lock().await;
+                q.observe(sensation).await;
+                q.distill().await
+            };
 
-    /// Run a single processing loop until the input channel closes.
-    pub async fn tick(&self) {
-        loop {
-            let next = { self.input_rx.lock().await.recv().await };
-            let Some(sensation) = next else { break };
+            if let Some(instant) = instant {
+                info!("Distilling new Instant...");
+                store.save(&Memory::Impression(instant.clone())).await.ok();
 
-            // quick perception
-            self.quick.lock().await.observe(sensation).await;
-
-            if let Some(instant) = self.quick.lock().await.distill().await {
-                let _ = self.store.save(&Memory::Impression(instant.clone())).await;
-
-                let urges = self.llm.suggest_urges(&instant).await.unwrap_or_default();
+                // Suggest urges using the shared LLM then feed them into Will.
+                let urges = llm.suggest_urges(&instant).await.unwrap_or_default();
                 for urge in urges {
-                    self.will.lock().await.observe(urge).await;
+                    debug!("Observed urge: {:?}", urge.motor_name);
+                    will.lock().await.observe(urge).await;
                 }
 
-                if let Some(intent) = self.will.lock().await.distill().await {
-                    let _ = self.store.save(&Memory::Intention(intent.clone())).await;
-                    let _ = self.voice.lock().await.take_turn().await;
+                let will_task = async {
+                    let mut w = will.lock().await;
+                    w.distill().await
+                };
+                let fond_task = async {
+                    fond.lock().await.distill().await;
+                };
+                let (intent, _) = tokio::join!(will_task, fond_task);
+
+                if let Some(intent) = intent {
+                    store.save(&Memory::Intention(intent.clone())).await.ok();
+                    voice.lock().await.take_turn().await.ok();
                 }
             }
-
-            self.fond.lock().await.distill().await;
         }
-
-        if let Some(tx) = self.stop_tx.lock().await.take() {
-            let _ = tx.send(());
-        }
+        let _ = self.stop_tx.send(());
     }
 }
