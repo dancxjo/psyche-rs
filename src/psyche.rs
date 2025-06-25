@@ -1,6 +1,6 @@
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 
-use tokio::sync::{mpsc, oneshot};
+use tokio::sync::{Mutex, mpsc, oneshot};
 
 use crate::{
     llm::LLMClient,
@@ -87,7 +87,7 @@ impl Psyche {
 
     /// Forward a prompt to Pete's [`Voice`].
     pub async fn ask(&self, prompt: &str) -> anyhow::Result<String> {
-        let mut voice = self.voice.lock().unwrap();
+        let mut voice = self.voice.lock().await;
         voice
             .conversation
             .hear(crate::conversation::Role::Interlocutor, prompt);
@@ -98,30 +98,30 @@ impl Psyche {
     /// Run a single processing loop until the input channel closes.
     pub async fn tick(&self) {
         loop {
-            let next = { self.input_rx.lock().unwrap().recv().await };
+            let next = { self.input_rx.lock().await.recv().await };
             let Some(sensation) = next else { break };
 
             // quick perception
-            self.quick.lock().unwrap().observe(sensation).await;
+            self.quick.lock().await.observe(sensation).await;
 
-            if let Some(instant) = self.quick.lock().unwrap().distill().await {
+            if let Some(instant) = self.quick.lock().await.distill().await {
                 let _ = self.store.save(&Memory::Impression(instant.clone())).await;
 
                 let urges = self.llm.suggest_urges(&instant).await.unwrap_or_default();
                 for urge in urges {
-                    self.will.lock().unwrap().observe(urge).await;
+                    self.will.lock().await.observe(urge).await;
                 }
 
-                if let Some(intent) = self.will.lock().unwrap().distill().await {
+                if let Some(intent) = self.will.lock().await.distill().await {
                     let _ = self.store.save(&Memory::Intention(intent.clone())).await;
-                    let _ = self.voice.lock().unwrap().take_turn().await;
+                    let _ = self.voice.lock().await.take_turn().await;
                 }
             }
 
-            self.fond.lock().unwrap().distill().await;
+            self.fond.lock().await.distill().await;
         }
 
-        if let Some(tx) = self.stop_tx.lock().unwrap().take() {
+        if let Some(tx) = self.stop_tx.lock().await.take() {
             let _ = tx.send(());
         }
     }
