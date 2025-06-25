@@ -7,6 +7,7 @@ use uuid::Uuid;
 use crate::llm::LLMClient;
 use crate::memory::{Emotion, Memory, MemoryStore};
 use crate::wit::Wit;
+use tracing::info;
 
 /// `FondDuCoeur` observes completed or interrupted intentions and records
 /// Pete's emotional response to them.
@@ -59,6 +60,7 @@ impl Wit<Memory, Memory> for FondDuCoeur {
             timestamp: SystemTime::now(),
         };
 
+        info!("💓 Pete feels: {}", emotion.reason);
         let mem = Memory::Of(Box::new(emotion));
         let _ = self.store.save(&mem).await;
         Some(mem)

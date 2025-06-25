@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use tokio::sync::{Mutex, mpsc, oneshot};
-use tracing::{debug, info};
+use tracing::{debug, info, trace};
 
 use crate::{
     conversation::Conversation,
@@ -91,7 +91,7 @@ impl Psyche {
     /// Run the processing loop until the input channel closes.
     pub async fn tick(mut self) {
         while let Some(sensation) = self.input_rx.recv().await {
-            info!("Received sensation: {:?}", sensation.kind);
+            info!("📥 Received sensation: {}", sensation.kind);
             let quick = self.quick.clone();
             let will = self.will.clone();
             let fond = self.fond.clone();
@@ -102,12 +102,14 @@ impl Psyche {
             // Perception first
             let instant = {
                 let mut q = quick.lock().await;
+                trace!("↪ calling Quick.observe(...)");
                 q.observe(sensation).await;
+                trace!("↪ calling Quick.distill(...)");
                 q.distill().await
             };
 
             if let Some(instant) = instant {
-                info!("Distilling new Instant...");
+                info!("🧠 Pete thought: {}", instant.how);
                 store.save(&Memory::Impression(instant.clone())).await.ok();
 
                 // Suggest urges using the shared LLM then feed them into Will.
