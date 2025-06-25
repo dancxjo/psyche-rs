@@ -24,4 +24,4 @@ path = "src/lib.rs"
 
 [[bin]]
 name = "pete"
-path = "src/bin/pete.rs"
+path = "src/main.rs"
