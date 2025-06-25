@@ -12,6 +12,25 @@ pub struct Sensation {
     pub timestamp: SystemTime,
 }
 
+impl Sensation {
+    /// Construct a simple text sensation originating from `from`.
+    ///
+    /// ```
+    /// use psyche_rs::Sensation;
+    /// let s = Sensation::new_text("hi", "tester");
+    /// assert_eq!(s.kind, "text/plain");
+    /// ```
+    pub fn new_text(content: impl Into<String>, from: impl Into<String>) -> Self {
+        Self {
+            uuid: Uuid::new_v4(),
+            kind: "text/plain".into(),
+            from: from.into(),
+            payload: serde_json::json!({ "content": content.into() }),
+            timestamp: SystemTime::now(),
+        }
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Impression {
     pub uuid: Uuid,

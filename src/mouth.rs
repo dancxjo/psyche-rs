@@ -26,3 +26,14 @@ pub trait Mouth: Send + Sync {
     /// Speak the provided phrase.
     async fn say(&self, phrase: &str) -> anyhow::Result<()>;
 }
+
+/// [`Mouth`] implementation that logs spoken phrases using [`tracing`].
+pub struct DummyMouth;
+
+#[async_trait(?Send)]
+impl Mouth for DummyMouth {
+    async fn say(&self, phrase: &str) -> anyhow::Result<()> {
+        tracing::info!("say: {}", phrase);
+        Ok(())
+    }
+}
