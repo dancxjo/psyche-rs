@@ -1,6 +1,8 @@
 pub mod codec;
 pub mod memory;
 pub mod store;
+pub mod wit;
+pub mod wits;
 pub mod runtime;
 
 pub use memory::*;
