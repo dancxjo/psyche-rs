@@ -1,13 +1,17 @@
 pub mod codec;
+pub mod countenance;
+pub mod llm;
 pub mod memory;
-pub mod store;
-pub mod wit;
-pub mod wits;
 pub mod motor;
 pub mod runtime;
-pub mod llm;
+pub mod store;
+pub mod voice;
+pub mod wit;
+pub mod wits;
 
+pub use countenance::*;
 pub use memory::*;
-pub use store::*;
 pub use motor::*;
 pub use runtime::*;
+pub use store::*;
+pub use voice::*;
