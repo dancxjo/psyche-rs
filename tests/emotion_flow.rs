@@ -1,4 +1,4 @@
-use psyche_rs::{countenance::Countenance, voice::Voice, Emotion};
+use psyche_rs::{Emotion, countenance::Countenance, voice::Voice};
 use std::sync::{Arc, Mutex};
 use std::time::SystemTime;
 use uuid::Uuid;

@@ -1,5 +1,5 @@
-use psyche_rs::{Memory, Sensation};
 use psyche_rs::codec::serialize_memory;
+use psyche_rs::{Memory, Sensation};
 use serde_json::json;
 use std::time::SystemTime;
 use uuid::Uuid;

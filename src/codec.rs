@@ -1,6 +1,6 @@
 use neo4rs::Node;
-use serde_json::{json, Value};
 use serde_json::to_string as json_to_string;
+use serde_json::{Value, json};
 use std::collections::HashMap;
 use std::time::UNIX_EPOCH;
 use uuid::Uuid;
@@ -105,11 +105,21 @@ pub fn deserialize_memory(node: &Node) -> anyhow::Result<Memory> {
     let label = labels.get(0).map(|s| s.as_str()).unwrap_or("");
     match label {
         "Sensation" => {
-            let uuid: String = node.get("uuid").ok_or_else(|| anyhow::anyhow!("missing uuid"))?;
-            let kind: String = node.get("kind").ok_or_else(|| anyhow::anyhow!("missing kind"))?;
-            let from: String = node.get("from").ok_or_else(|| anyhow::anyhow!("missing from"))?;
-            let payload_str: String = node.get("payload").ok_or_else(|| anyhow::anyhow!("missing payload"))?;
-            let ts: i64 = node.get("timestamp").ok_or_else(|| anyhow::anyhow!("missing timestamp"))?;
+            let uuid: String = node
+                .get("uuid")
+                .ok_or_else(|| anyhow::anyhow!("missing uuid"))?;
+            let kind: String = node
+                .get("kind")
+                .ok_or_else(|| anyhow::anyhow!("missing kind"))?;
+            let from: String = node
+                .get("from")
+                .ok_or_else(|| anyhow::anyhow!("missing from"))?;
+            let payload_str: String = node
+                .get("payload")
+                .ok_or_else(|| anyhow::anyhow!("missing payload"))?;
+            let ts: i64 = node
+                .get("timestamp")
+                .ok_or_else(|| anyhow::anyhow!("missing timestamp"))?;
             let payload = serde_json::from_str(&payload_str)?;
             let timestamp = UNIX_EPOCH + std::time::Duration::from_secs(ts as u64);
             Ok(Memory::Sensation(Sensation {
@@ -121,11 +131,21 @@ pub fn deserialize_memory(node: &Node) -> anyhow::Result<Memory> {
             }))
         }
         "Impression" => {
-            let uuid: String = node.get("uuid").ok_or_else(|| anyhow::anyhow!("missing uuid"))?;
-            let how: String = node.get("how").ok_or_else(|| anyhow::anyhow!("missing how"))?;
-            let topic: String = node.get("topic").ok_or_else(|| anyhow::anyhow!("missing topic"))?;
-            let list_str: String = node.get("composed_of").ok_or_else(|| anyhow::anyhow!("missing composed_of"))?;
-            let ts: i64 = node.get("timestamp").ok_or_else(|| anyhow::anyhow!("missing timestamp"))?;
+            let uuid: String = node
+                .get("uuid")
+                .ok_or_else(|| anyhow::anyhow!("missing uuid"))?;
+            let how: String = node
+                .get("how")
+                .ok_or_else(|| anyhow::anyhow!("missing how"))?;
+            let topic: String = node
+                .get("topic")
+                .ok_or_else(|| anyhow::anyhow!("missing topic"))?;
+            let list_str: String = node
+                .get("composed_of")
+                .ok_or_else(|| anyhow::anyhow!("missing composed_of"))?;
+            let ts: i64 = node
+                .get("timestamp")
+                .ok_or_else(|| anyhow::anyhow!("missing timestamp"))?;
             let names: Vec<String> = serde_json::from_str(&list_str)?;
             let uuids: Vec<Uuid> = names.iter().map(|s| Uuid::parse_str(s).unwrap()).collect();
             let timestamp = UNIX_EPOCH + std::time::Duration::from_secs(ts as u64);
@@ -138,12 +158,24 @@ pub fn deserialize_memory(node: &Node) -> anyhow::Result<Memory> {
             }))
         }
         "Urge" => {
-            let uuid: String = node.get("uuid").ok_or_else(|| anyhow::anyhow!("missing uuid"))?;
-            let source: String = node.get("source").ok_or_else(|| anyhow::anyhow!("missing source"))?;
-            let motor_name: String = node.get("motor_name").ok_or_else(|| anyhow::anyhow!("missing motor_name"))?;
-            let parameters_str: String = node.get("parameters").ok_or_else(|| anyhow::anyhow!("missing parameters"))?;
-            let intensity: f64 = node.get("intensity").ok_or_else(|| anyhow::anyhow!("missing intensity"))?;
-            let ts: i64 = node.get("timestamp").ok_or_else(|| anyhow::anyhow!("missing timestamp"))?;
+            let uuid: String = node
+                .get("uuid")
+                .ok_or_else(|| anyhow::anyhow!("missing uuid"))?;
+            let source: String = node
+                .get("source")
+                .ok_or_else(|| anyhow::anyhow!("missing source"))?;
+            let motor_name: String = node
+                .get("motor_name")
+                .ok_or_else(|| anyhow::anyhow!("missing motor_name"))?;
+            let parameters_str: String = node
+                .get("parameters")
+                .ok_or_else(|| anyhow::anyhow!("missing parameters"))?;
+            let intensity: f64 = node
+                .get("intensity")
+                .ok_or_else(|| anyhow::anyhow!("missing intensity"))?;
+            let ts: i64 = node
+                .get("timestamp")
+                .ok_or_else(|| anyhow::anyhow!("missing timestamp"))?;
             let parameters = serde_json::from_str(&parameters_str)?;
             let timestamp = UNIX_EPOCH + std::time::Duration::from_secs(ts as u64);
             Ok(Memory::Urge(Urge {
@@ -156,16 +188,29 @@ pub fn deserialize_memory(node: &Node) -> anyhow::Result<Memory> {
             }))
         }
         "Intention" => {
-            let uuid: String = node.get("uuid").ok_or_else(|| anyhow::anyhow!("missing uuid"))?;
-            let urge: String = node.get("urge").ok_or_else(|| anyhow::anyhow!("missing urge"))?;
-            let motor_name: String = node.get("motor_name").ok_or_else(|| anyhow::anyhow!("missing motor_name"))?;
-            let parameters_str: String = node.get("parameters").ok_or_else(|| anyhow::anyhow!("missing parameters"))?;
-            let issued_at: i64 = node.get("issued_at").ok_or_else(|| anyhow::anyhow!("missing issued_at"))?;
-            let status: String = node.get("status").ok_or_else(|| anyhow::anyhow!("missing status"))?;
+            let uuid: String = node
+                .get("uuid")
+                .ok_or_else(|| anyhow::anyhow!("missing uuid"))?;
+            let urge: String = node
+                .get("urge")
+                .ok_or_else(|| anyhow::anyhow!("missing urge"))?;
+            let motor_name: String = node
+                .get("motor_name")
+                .ok_or_else(|| anyhow::anyhow!("missing motor_name"))?;
+            let parameters_str: String = node
+                .get("parameters")
+                .ok_or_else(|| anyhow::anyhow!("missing parameters"))?;
+            let issued_at: i64 = node
+                .get("issued_at")
+                .ok_or_else(|| anyhow::anyhow!("missing issued_at"))?;
+            let status: String = node
+                .get("status")
+                .ok_or_else(|| anyhow::anyhow!("missing status"))?;
             let resolved_at: Option<i64> = node.get("resolved_at");
             let parameters = serde_json::from_str(&parameters_str)?;
             let issued_at = UNIX_EPOCH + std::time::Duration::from_secs(issued_at as u64);
-            let resolved_at_time = resolved_at.map(|t| UNIX_EPOCH + std::time::Duration::from_secs(t as u64));
+            let resolved_at_time =
+                resolved_at.map(|t| UNIX_EPOCH + std::time::Duration::from_secs(t as u64));
             let status = match status.as_str() {
                 "Pending" => IntentionStatus::Pending,
                 "InProgress" => IntentionStatus::InProgress,
@@ -184,11 +229,19 @@ pub fn deserialize_memory(node: &Node) -> anyhow::Result<Memory> {
             }))
         }
         "Completion" => {
-            let uuid: String = node.get("uuid").ok_or_else(|| anyhow::anyhow!("missing uuid"))?;
-            let intention: String = node.get("intention").ok_or_else(|| anyhow::anyhow!("missing intention"))?;
-            let outcome: String = node.get("outcome").ok_or_else(|| anyhow::anyhow!("missing outcome"))?;
+            let uuid: String = node
+                .get("uuid")
+                .ok_or_else(|| anyhow::anyhow!("missing uuid"))?;
+            let intention: String = node
+                .get("intention")
+                .ok_or_else(|| anyhow::anyhow!("missing intention"))?;
+            let outcome: String = node
+                .get("outcome")
+                .ok_or_else(|| anyhow::anyhow!("missing outcome"))?;
             let transcript: Option<String> = node.get("transcript");
-            let ts: i64 = node.get("timestamp").ok_or_else(|| anyhow::anyhow!("missing timestamp"))?;
+            let ts: i64 = node
+                .get("timestamp")
+                .ok_or_else(|| anyhow::anyhow!("missing timestamp"))?;
             let timestamp = UNIX_EPOCH + std::time::Duration::from_secs(ts as u64);
             Ok(Memory::Completion(Completion {
                 uuid: Uuid::parse_str(&uuid)?,
@@ -199,10 +252,18 @@ pub fn deserialize_memory(node: &Node) -> anyhow::Result<Memory> {
             }))
         }
         "Interruption" => {
-            let uuid: String = node.get("uuid").ok_or_else(|| anyhow::anyhow!("missing uuid"))?;
-            let intention: String = node.get("intention").ok_or_else(|| anyhow::anyhow!("missing intention"))?;
-            let reason: String = node.get("reason").ok_or_else(|| anyhow::anyhow!("missing reason"))?;
-            let ts: i64 = node.get("timestamp").ok_or_else(|| anyhow::anyhow!("missing timestamp"))?;
+            let uuid: String = node
+                .get("uuid")
+                .ok_or_else(|| anyhow::anyhow!("missing uuid"))?;
+            let intention: String = node
+                .get("intention")
+                .ok_or_else(|| anyhow::anyhow!("missing intention"))?;
+            let reason: String = node
+                .get("reason")
+                .ok_or_else(|| anyhow::anyhow!("missing reason"))?;
+            let ts: i64 = node
+                .get("timestamp")
+                .ok_or_else(|| anyhow::anyhow!("missing timestamp"))?;
             let timestamp = UNIX_EPOCH + std::time::Duration::from_secs(ts as u64);
             Ok(Memory::Interruption(Interruption {
                 uuid: Uuid::parse_str(&uuid)?,

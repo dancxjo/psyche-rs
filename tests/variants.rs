@@ -1,5 +1,7 @@
-use psyche_rs::{Completion, Impression, Intention, IntentionStatus, Interruption, Memory, Sensation, Urge};
 use psyche_rs::codec::serialize_memory;
+use psyche_rs::{
+    Completion, Impression, Intention, IntentionStatus, Interruption, Memory, Sensation, Urge,
+};
 use serde_json::json;
 use std::time::UNIX_EPOCH;
 use uuid::Uuid;
