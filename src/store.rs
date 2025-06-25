@@ -1,4 +1,4 @@
-use neo4rs::{query, Graph};
+use neo4rs::{Graph, query};
 use serde_json::to_string as json_to_string;
 use std::sync::Arc;
 use uuid::Uuid;
@@ -32,6 +32,17 @@ impl MemoryStore for Neo4jMemoryStore {
     }
 
     async fn of_type(&self, _type_name: &str, _limit: usize) -> anyhow::Result<Vec<Memory>> {
+        Ok(Vec::new())
+    }
+
+    async fn recent_since(&self, _since: std::time::SystemTime) -> anyhow::Result<Vec<Memory>> {
+        Ok(Vec::new())
+    }
+
+    async fn impressions_containing(
+        &self,
+        _keyword: &str,
+    ) -> anyhow::Result<Vec<crate::Impression>> {
         Ok(Vec::new())
     }
 

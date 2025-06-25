@@ -67,6 +67,14 @@ impl MemoryStore for MockStore {
     async fn interrupt_intention(&self, _: Uuid, _: Interruption) -> anyhow::Result<()> {
         Ok(())
     }
+
+    async fn recent_since(&self, _: SystemTime) -> anyhow::Result<Vec<Memory>> {
+        Ok(Vec::new())
+    }
+
+    async fn impressions_containing(&self, _: &str) -> anyhow::Result<Vec<psyche_rs::Impression>> {
+        Ok(Vec::new())
+    }
 }
 
 struct MockLLM;
