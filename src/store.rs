@@ -1,4 +1,5 @@
-use neo4rs::Graph;
+use neo4rs::{query, Graph};
+use serde_json::to_string as json_to_string;
 use std::sync::Arc;
 use uuid::Uuid;
 
@@ -10,8 +11,15 @@ pub struct Neo4jMemoryStore {
 
 #[async_trait::async_trait]
 impl MemoryStore for Neo4jMemoryStore {
-    async fn save(&self, _memory: &Memory) -> anyhow::Result<()> {
-        // TODO: use Cypher queries with `neo4rs`
+    async fn save(&self, memory: &Memory) -> anyhow::Result<()> {
+        let (label, props) = crate::codec::serialize_memory(memory)?;
+        let json = json_to_string(&props)?;
+        let cypher = format!("CREATE (m:{} $props)", label);
+        // store props as json string until proper Bolt conversion is implemented
+        self.graph
+            .run(query(&cypher).param("props", json))
+            .await
+            .map_err(|e| anyhow::anyhow!(format!("{:?}", e)))?;
         Ok(())
     }
 
