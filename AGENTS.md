@@ -4,3 +4,4 @@
 - Provide inline documentation with examples.
 - Prefer BDD/TDD style tests.
 - Update `constraints.cypher` whenever Memory types change.
+- GitHub Actions workflow runs `cargo test`; adjust if additional steps are needed.
