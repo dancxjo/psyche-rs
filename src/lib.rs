@@ -15,6 +15,7 @@ pub mod wits;
 
 pub use conversation::*;
 pub use countenance::*;
+pub use llm::*;
 pub use memory::*;
 pub use motor::*;
 pub use mouth::*;

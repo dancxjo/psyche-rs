@@ -19,3 +19,12 @@ pub trait Countenance: Send + Sync {
     /// Reflect the provided mood string.
     fn reflect(&self, mood: &str);
 }
+
+/// [`Countenance`] implementation that logs the reflected mood.
+pub struct DummyCountenance;
+
+impl Countenance for DummyCountenance {
+    fn reflect(&self, mood: &str) {
+        tracing::info!("mood: {}", mood);
+    }
+}
