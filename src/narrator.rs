@@ -40,6 +40,7 @@ use crate::memory::{Memory, MemoryStore};
 /// let _story = narrator.narrate_since(SystemTime::now()).await?;
 /// # Ok(()) }
 /// ```
+#[derive(Clone)]
 pub struct Narrator {
     pub store: Arc<dyn MemoryStore>,
     pub llm: Arc<dyn LLMClient>,
