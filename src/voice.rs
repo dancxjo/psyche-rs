@@ -27,6 +27,7 @@ use crate::narrator::Narrator;
 use crate::store::NoopRetriever;
 
 use crate::mouth::Mouth;
+use tracing::info;
 
 pub struct Voice {
     /// Latest emotional tone to express with the next prompt.
@@ -80,6 +81,7 @@ impl Voice {
         let response = self.llm.chat(&prompt).await?;
         let reply = response.text().unwrap_or_default();
         self.mouth.say(&reply).await?;
+        info!("🗣 Pete says: {}", reply);
         self.conversation.hear(Role::Me, &reply);
         Ok(reply)
     }

@@ -6,7 +6,10 @@ use std::sync::Arc;
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
     tracing_subscriber::fmt::init();
+<<<<<<< codex/add-tracing-logs-to-pete-s-cognitive-pipeline
+=======
 
+>>>>>>> main
     let uri = std::env::var("NEO4J_URI").unwrap_or_else(|_| "127.0.0.1:7687".into());
     let user = std::env::var("NEO4J_USER").unwrap_or_else(|_| "neo4j".into());
     let pass = std::env::var("NEO4J_PASS").unwrap_or_else(|_| "neo4j".into());

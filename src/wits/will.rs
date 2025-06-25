@@ -7,6 +7,7 @@ use uuid::Uuid;
 use crate::memory::{Intention, IntentionStatus, Memory, MemoryStore, Urge};
 use crate::motor::{MotorFeedback, MotorSystem};
 use crate::wit::Wit;
+use tracing::info;
 
 /// `Will` consumes [`Urge`]s and issues [`Intention`]s to the provided
 /// [`MotorSystem`]. Observed urges are persisted via the supplied
@@ -51,6 +52,8 @@ impl Wit<Urge, Intention> for Will {
         };
 
         let _ = self.store.save(&Memory::Intention(intent.clone())).await;
+
+        info!("🎯 Pete intends: {}", intent.motor_name);
 
         // Invoke the motor and persist any feedback.
         match self.motor.invoke(&intent).await {

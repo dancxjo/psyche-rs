@@ -6,6 +6,7 @@ use uuid::Uuid;
 use crate::llm::LLMClient;
 use crate::memory::{Impression, Memory, MemoryStore, Sensation};
 use crate::wit::Wit;
+use tracing::debug;
 
 /// `Quick` buffers recent [`Sensation`]s and periodically summarizes them into
 /// [`Impression`]s representing short instants.
@@ -46,6 +47,8 @@ impl Wit<Sensation, Impression> for Quick {
         if self.buffer.is_empty() {
             return None;
         }
+
+        debug!("🧩 Instant composed of {} sensations", self.buffer.len());
 
         // Generate a natural language summary using the provided LLM. Any
         // failure to obtain a summary results in no impression being produced.
