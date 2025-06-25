@@ -7,13 +7,10 @@ use uuid::Uuid;
 
 use psyche_rs::{
     Psyche,
+    countenance::Countenance,
     llm::LLMClient,
     memory::{Impression, Memory, MemoryStore, Sensation, Urge},
-    motor::DummyMotor,
     mouth::Mouth,
-    narrator::Narrator,
-    voice::Voice,
-    wits::{fond::FondDuCoeur, quick::Quick, will::Will},
 };
 use tokio::sync::{mpsc, oneshot};
 
@@ -125,31 +122,26 @@ impl MemoryStore for MemStore {
 async fn tick_drives_voice_turn() {
     let store = Arc::new(MemStore::new());
     let llm = Arc::new(SimpleLLM);
-    let motor = Arc::new(DummyMotor);
-
-    let quick = Quick::new(store.clone(), llm.clone());
-    let will = Will::new(store.clone(), motor);
-    let fond = FondDuCoeur::new(store.clone(), llm.clone());
-    let narrator = Narrator {
-        store: store.clone(),
-        llm: llm.clone(),
-    };
     let (mouth, count) = CountingMouth::new();
-    let voice = Voice::new(narrator.clone(), Arc::new(mouth), store.clone());
+    let mouth = Arc::new(mouth);
+    struct DummyFace;
+    impl Countenance for DummyFace {
+        fn reflect(&self, _m: &str) {}
+    }
 
     let (tx, rx) = mpsc::channel(1);
     let (stop_tx, stop_rx) = oneshot::channel();
 
     let psyche = Psyche::new(
-        quick,
-        will,
-        fond,
-        voice,
-        narrator,
         store.clone(),
         llm,
+        mouth.clone(),
+        Arc::new(DummyFace),
         rx,
         stop_tx,
+        "model".into(),
+        "sys".into(),
+        128,
     );
     let voice_handle = psyche.voice.clone();
 
