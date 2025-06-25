@@ -1,4 +1,5 @@
 pub mod codec;
+pub mod conversation;
 pub mod countenance;
 pub mod llm;
 pub mod memory;
@@ -11,6 +12,7 @@ pub mod voice;
 pub mod wit;
 pub mod wits;
 
+pub use conversation::*;
 pub use countenance::*;
 pub use memory::*;
 pub use motor::*;
