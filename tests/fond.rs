@@ -76,6 +76,12 @@ impl LLMClient for MockLLM {
     async fn summarize(&self, _input: &[psyche_rs::Sensation]) -> anyhow::Result<String> {
         Ok(String::new())
     }
+    async fn summarize_impressions(
+        &self,
+        _items: &[psyche_rs::Impression],
+    ) -> anyhow::Result<String> {
+        Ok(String::new())
+    }
     async fn suggest_urges(
         &self,
         _imp: &psyche_rs::Impression,
