@@ -1,6 +1,6 @@
 use psyche_rs::{
-    Intention, Memory, MemoryStore, Urge,
-    motor::{DummyMotor, MotorSystem},
+    Completion, Intention, IntentionStatus, Interruption, Memory, MemoryStore, Urge,
+    motor::{DummyMotor, MotorFeedback, MotorSystem},
     wit::Wit,
     wits::will::Will,
 };
@@ -42,11 +42,30 @@ impl MemoryStore for MockStore {
         Ok(Vec::new())
     }
 
-    async fn complete_intention(&self, _: Uuid, _: psyche_rs::Completion) -> anyhow::Result<()> {
+    async fn complete_intention(
+        &self,
+        intention_id: Uuid,
+        completion: Completion,
+    ) -> anyhow::Result<()> {
+        self.save(&Memory::Completion(completion.clone())).await?;
+        if let Some(Memory::Intention(i)) = self.data.lock().await.get_mut(&intention_id) {
+            i.status = IntentionStatus::Completed;
+            i.resolved_at = Some(completion.timestamp);
+        }
         Ok(())
     }
 
-    async fn interrupt_intention(&self, _: Uuid, _: psyche_rs::Interruption) -> anyhow::Result<()> {
+    async fn interrupt_intention(
+        &self,
+        intention_id: Uuid,
+        interruption: Interruption,
+    ) -> anyhow::Result<()> {
+        self.save(&Memory::Interruption(interruption.clone()))
+            .await?;
+        if let Some(Memory::Intention(i)) = self.data.lock().await.get_mut(&intention_id) {
+            i.status = IntentionStatus::Interrupted;
+            i.resolved_at = Some(interruption.timestamp);
+        }
         Ok(())
     }
 }
@@ -72,11 +91,11 @@ async fn will_invokes_dummy_motor() {
 
     #[async_trait::async_trait]
     impl MotorSystem for RecordingMotor {
-        async fn invoke(&self, intention: &Intention) -> anyhow::Result<()> {
-            self.inner.invoke(intention).await?;
+        async fn invoke(&self, intention: &Intention) -> anyhow::Result<MotorFeedback> {
+            let feedback = self.inner.invoke(intention).await?;
             let msg = format!("<{} {:?}/>", intention.motor_name, intention.parameters);
             self.log.lock().await.push(msg);
-            Ok(())
+            Ok(feedback)
         }
     }
 
@@ -97,4 +116,39 @@ async fn will_invokes_dummy_motor() {
         logged,
         format!("<{} {:?}/>", intent.motor_name, intent.parameters)
     );
+}
+
+#[tokio::test]
+async fn completion_is_persisted() {
+    let store = Arc::new(MockStore::new());
+    let motor = Arc::new(DummyMotor);
+    let mut will = Will::new(store.clone(), motor);
+
+    let urge = example_urge();
+    will.observe(urge.clone()).await;
+
+    let intent = will.distill().await.expect("intent not produced");
+
+    // Fetch updated intention to verify completion status.
+    let saved = store.get_by_uuid(intent.uuid).await.unwrap().unwrap();
+    match saved {
+        Memory::Intention(ref i) => {
+            assert!(matches!(i.status, IntentionStatus::Completed));
+            assert!(i.resolved_at.is_some());
+        }
+        _ => panic!("expected Intention"),
+    }
+
+    // Ensure a Completion exists referencing the intention.
+    let completions: Vec<Completion> = store
+        .data
+        .lock()
+        .await
+        .values()
+        .filter_map(|m| match m {
+            Memory::Completion(c) if c.intention == intent.uuid => Some(c.clone()),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(completions.len(), 1);
 }
