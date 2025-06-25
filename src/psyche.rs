@@ -11,6 +11,7 @@ use crate::{
     motor::DummyMotor,
     mouth::Mouth,
     narrator::Narrator,
+    store::NoopRetriever,
     voice::Voice,
     wit::Wit,
     wits::{fond::FondDuCoeur, quick::Quick, will::Will},
@@ -66,6 +67,7 @@ impl Psyche {
         let narrator = Narrator {
             store: store.clone(),
             llm: llm.clone(),
+            retriever: Arc::new(NoopRetriever),
         };
 
         let mut voice = Voice::new(narrator.clone(), mouth, store.clone());
