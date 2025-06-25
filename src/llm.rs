@@ -1,4 +1,4 @@
-use crate::memory::{Impression, Sensation, Urge};
+use crate::memory::{Impression, Memory, Sensation, Urge};
 use anyhow::Result;
 use async_trait::async_trait;
 
@@ -10,6 +10,9 @@ pub trait LLMClient: Send + Sync {
 
     /// Suggest potential [`Urge`]s based on the given [`Impression`].
     async fn suggest_urges(&self, impression: &Impression) -> Result<Vec<Urge>>;
+
+    /// Evaluate an emotional reaction to a completed or interrupted intention.
+    async fn evaluate_emotion(&self, event: &Memory) -> Result<String>;
 }
 
 /// Trivial implementation used for testing.
@@ -23,5 +26,9 @@ impl LLMClient for DummyLLM {
 
     async fn suggest_urges(&self, _impression: &Impression) -> Result<Vec<Urge>> {
         Ok(vec![])
+    }
+
+    async fn evaluate_emotion(&self, _event: &Memory) -> Result<String> {
+        Ok("I feel indifferent.".to_string())
     }
 }

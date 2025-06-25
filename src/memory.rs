@@ -76,6 +76,42 @@ pub struct Interruption {
     pub timestamp: SystemTime,
 }
 
+/// A simple emotion record capturing how Pete feels about a specific event.
+///
+/// The [`subject`] field links to the UUID of the originating memory (for
+/// example a [`Completion`] or [`Interruption`]).
+///
+/// ```
+/// use psyche_rs::{Emotion, Completion};
+/// use std::time::SystemTime;
+/// use uuid::Uuid;
+///
+/// let completion = Completion {
+///     uuid: Uuid::new_v4(),
+///     intention: Uuid::new_v4(),
+///     outcome: "done".into(),
+///     transcript: None,
+///     timestamp: SystemTime::now(),
+/// };
+///
+/// let emotion = Emotion {
+///     uuid: Uuid::new_v4(),
+///     subject: completion.uuid,
+///     mood: "proud".into(),
+///     reason: "I feel proud for completing the task.".into(),
+///     timestamp: SystemTime::now(),
+/// };
+/// assert_eq!(emotion.subject, completion.uuid);
+/// ```
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Emotion {
+    pub uuid: Uuid,
+    pub subject: Uuid,
+    pub mood: String,
+    pub reason: String,
+    pub timestamp: SystemTime,
+}
+
 #[derive(Debug, Serialize, Deserialize)]
 #[serde(tag = "memory_type", content = "data")]
 pub enum Memory {
@@ -129,7 +165,13 @@ impl Memory {
             Memory::Intention(x) => x.uuid,
             Memory::Completion(x) => x.uuid,
             Memory::Interruption(x) => x.uuid,
-            Memory::Of(_) => Uuid::nil(),
+            Memory::Of(boxed) => {
+                if let Some(emo) = boxed.downcast_ref::<Emotion>() {
+                    emo.uuid
+                } else {
+                    Uuid::nil()
+                }
+            }
         }
     }
 
@@ -141,7 +183,13 @@ impl Memory {
             Memory::Intention(x) => Some(x.issued_at),
             Memory::Completion(x) => Some(x.timestamp),
             Memory::Interruption(x) => Some(x.timestamp),
-            Memory::Of(_) => None,
+            Memory::Of(boxed) => {
+                if let Some(emo) = boxed.downcast_ref::<Emotion>() {
+                    Some(emo.timestamp)
+                } else {
+                    None
+                }
+            }
         }
     }
 }

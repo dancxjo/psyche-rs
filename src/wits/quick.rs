@@ -21,7 +21,11 @@ pub struct Quick {
 impl Quick {
     /// Create a new [`Quick`] wit using the given [`MemoryStore`].
     pub fn new(store: Arc<dyn MemoryStore>, llm: Arc<dyn LLMClient>) -> Self {
-        Self { buffer: VecDeque::new(), store, llm }
+        Self {
+            buffer: VecDeque::new(),
+            store,
+            llm,
+        }
     }
 }
 
@@ -92,7 +96,9 @@ mod tests {
 
     impl MockStore {
         fn new() -> Self {
-            Self { data: Arc::new(AsyncMutex::new(HashMap::new())) }
+            Self {
+                data: Arc::new(AsyncMutex::new(HashMap::new())),
+            }
         }
     }
 
@@ -188,7 +194,10 @@ mod tests {
 
     impl MockLLM {
         fn new() -> Self {
-            Self { summaries: Arc::new(AsyncMutex::new(0)), urges: Arc::new(AsyncMutex::new(0)) }
+            Self {
+                summaries: Arc::new(AsyncMutex::new(0)),
+                urges: Arc::new(AsyncMutex::new(0)),
+            }
         }
     }
 
@@ -209,6 +218,10 @@ mod tests {
                 intensity: 1.0,
                 timestamp: impression.timestamp,
             }])
+        }
+
+        async fn evaluate_emotion(&self, _event: &Memory) -> anyhow::Result<String> {
+            Ok("I feel nothing".into())
         }
     }
 
