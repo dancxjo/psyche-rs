@@ -13,14 +13,19 @@ struct MockMemoryStore {
 
 impl MockMemoryStore {
     fn new() -> Self {
-        Self { memories: Arc::new(Mutex::new(HashMap::new())) }
+        Self {
+            memories: Arc::new(Mutex::new(HashMap::new())),
+        }
     }
 }
 
 #[async_trait::async_trait]
 impl MemoryStore for MockMemoryStore {
     async fn save(&self, memory: &Memory) -> anyhow::Result<()> {
-        self.memories.lock().await.insert(memory.uuid(), memory.clone());
+        self.memories
+            .lock()
+            .await
+            .insert(memory.uuid(), memory.clone());
         Ok(())
     }
 
@@ -42,30 +47,78 @@ impl MemoryStore for MockMemoryStore {
             .await
             .values()
             .cloned()
-            .filter(|m| matches!(m, Memory::Sensation(_) if type_name == "Sensation")
-                || matches!(m, Memory::Impression(_) if type_name == "Impression")
-                || matches!(m, Memory::Urge(_) if type_name == "Urge")
-                || matches!(m, Memory::Intention(_) if type_name == "Intention")
-                || matches!(m, Memory::Completion(_) if type_name == "Completion")
-                || matches!(m, Memory::Interruption(_) if type_name == "Interruption"))
+            .filter(|m| {
+                matches!(m, Memory::Sensation(_) if type_name == "Sensation")
+                    || matches!(m, Memory::Impression(_) if type_name == "Impression")
+                    || matches!(m, Memory::Urge(_) if type_name == "Urge")
+                    || matches!(m, Memory::Intention(_) if type_name == "Intention")
+                    || matches!(m, Memory::Completion(_) if type_name == "Completion")
+                    || matches!(m, Memory::Interruption(_) if type_name == "Interruption")
+            })
             .collect();
         values.sort_by_key(|m| std::cmp::Reverse(m.timestamp().unwrap()));
         values.truncate(limit);
         Ok(values)
     }
 
-    async fn complete_intention(&self, intention_id: Uuid, completion: Completion) -> anyhow::Result<()> {
+    async fn recent_since(&self, since: SystemTime) -> anyhow::Result<Vec<Memory>> {
+        let mut values: Vec<_> = self
+            .memories
+            .lock()
+            .await
+            .values()
+            .cloned()
+            .filter(|m| m.timestamp().unwrap_or(SystemTime::UNIX_EPOCH) > since)
+            .collect();
+        values.sort_by_key(|m| m.timestamp().unwrap());
+        Ok(values)
+    }
+
+    async fn impressions_containing(
+        &self,
+        keyword: &str,
+    ) -> anyhow::Result<Vec<psyche_rs::Impression>> {
+        let mut values: Vec<_> = self
+            .memories
+            .lock()
+            .await
+            .values()
+            .filter_map(|m| match m {
+                Memory::Impression(i) if i.how.to_lowercase().contains(&keyword.to_lowercase()) => {
+                    Some(i.clone())
+                }
+                _ => None,
+            })
+            .collect();
+        values.sort_by_key(|i| i.timestamp);
+        Ok(values)
+    }
+
+    async fn complete_intention(
+        &self,
+        intention_id: Uuid,
+        completion: Completion,
+    ) -> anyhow::Result<()> {
         self.save(&Memory::Completion(completion.clone())).await?;
-        if let Some(Memory::Intention(intention)) = self.memories.lock().await.get_mut(&intention_id) {
+        if let Some(Memory::Intention(intention)) =
+            self.memories.lock().await.get_mut(&intention_id)
+        {
             intention.status = IntentionStatus::Completed;
             intention.resolved_at = Some(completion.timestamp);
         }
         Ok(())
     }
 
-    async fn interrupt_intention(&self, intention_id: Uuid, interruption: Interruption) -> anyhow::Result<()> {
-        self.save(&Memory::Interruption(interruption.clone())).await?;
-        if let Some(Memory::Intention(intention)) = self.memories.lock().await.get_mut(&intention_id) {
+    async fn interrupt_intention(
+        &self,
+        intention_id: Uuid,
+        interruption: Interruption,
+    ) -> anyhow::Result<()> {
+        self.save(&Memory::Interruption(interruption.clone()))
+            .await?;
+        if let Some(Memory::Intention(intention)) =
+            self.memories.lock().await.get_mut(&intention_id)
+        {
             intention.status = IntentionStatus::Interrupted;
             intention.resolved_at = Some(interruption.timestamp);
         }
@@ -145,7 +198,9 @@ async fn completing_an_intention_updates_status() -> anyhow::Result<()> {
         transcript: None,
         timestamp: SystemTime::now(),
     };
-    store.complete_intention(intention.uuid, completion.clone()).await?;
+    store
+        .complete_intention(intention.uuid, completion.clone())
+        .await?;
 
     let updated = store.get_by_uuid(intention.uuid).await?.unwrap();
     match updated {
@@ -184,7 +239,9 @@ async fn interrupting_an_intention_updates_status() -> anyhow::Result<()> {
         reason: "oops".into(),
         timestamp: SystemTime::now(),
     };
-    store.interrupt_intention(intention.uuid, interruption.clone()).await?;
+    store
+        .interrupt_intention(intention.uuid, interruption.clone())
+        .await?;
 
     let updated = store.get_by_uuid(intention.uuid).await?.unwrap();
     match updated {
@@ -199,4 +256,3 @@ async fn interrupting_an_intention_updates_status() -> anyhow::Result<()> {
     matches!(fetched_interruption, Memory::Interruption(_));
     Ok(())
 }
-

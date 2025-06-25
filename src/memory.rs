@@ -200,6 +200,8 @@ pub trait MemoryStore {
     async fn get_by_uuid(&self, uuid: Uuid) -> anyhow::Result<Option<Memory>>;
     async fn recent(&self, limit: usize) -> anyhow::Result<Vec<Memory>>;
     async fn of_type(&self, type_name: &str, limit: usize) -> anyhow::Result<Vec<Memory>>;
+    async fn recent_since(&self, since: SystemTime) -> anyhow::Result<Vec<Memory>>;
+    async fn impressions_containing(&self, keyword: &str) -> anyhow::Result<Vec<Impression>>;
     async fn complete_intention(
         &self,
         intention_id: Uuid,

@@ -105,6 +105,12 @@ mod tests {
         async fn of_type(&self, _t: &str, _l: usize) -> anyhow::Result<Vec<Memory>> {
             Ok(Vec::new())
         }
+        async fn recent_since(&self, _s: SystemTime) -> anyhow::Result<Vec<Memory>> {
+            Ok(Vec::new())
+        }
+        async fn impressions_containing(&self, _k: &str) -> anyhow::Result<Vec<Impression>> {
+            Ok(Vec::new())
+        }
         async fn complete_intention(&self, _i: Uuid, _c: crate::Completion) -> anyhow::Result<()> {
             Ok(())
         }

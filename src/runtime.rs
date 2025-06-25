@@ -19,6 +19,8 @@ use crate::{Memory, MemoryStore};
 ///     async fn get_by_uuid(&self, _u: Uuid) -> anyhow::Result<Option<Memory>> { Ok(None) }
 ///     async fn recent(&self, _l: usize) -> anyhow::Result<Vec<Memory>> { Ok(vec![]) }
 ///     async fn of_type(&self, _t: &str, _l: usize) -> anyhow::Result<Vec<Memory>> { Ok(vec![]) }
+///     async fn recent_since(&self, _: SystemTime) -> anyhow::Result<Vec<Memory>> { Ok(vec![]) }
+///     async fn impressions_containing(&self, _: &str) -> anyhow::Result<Vec<psyche_rs::Impression>> { Ok(vec![]) }
 ///     async fn complete_intention(&self, _:Uuid, _:Completion) -> anyhow::Result<()> { Ok(()) }
 ///     async fn interrupt_intention(&self, _:Uuid, _:Interruption) -> anyhow::Result<()> { Ok(()) }
 /// }

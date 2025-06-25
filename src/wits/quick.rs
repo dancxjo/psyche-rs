@@ -121,6 +121,14 @@ mod tests {
             Ok(Vec::new())
         }
 
+        async fn recent_since(&self, _: SystemTime) -> anyhow::Result<Vec<Memory>> {
+            Ok(Vec::new())
+        }
+
+        async fn impressions_containing(&self, _: &str) -> anyhow::Result<Vec<Impression>> {
+            Ok(Vec::new())
+        }
+
         async fn complete_intention(
             &self,
             _intention_id: Uuid,
