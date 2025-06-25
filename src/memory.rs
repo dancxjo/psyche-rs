@@ -232,3 +232,8 @@ pub trait MemoryStore {
         interruption: Interruption,
     ) -> anyhow::Result<()>;
 }
+
+#[async_trait::async_trait]
+pub trait MemoryRetriever {
+    async fn find_similar(&self, text: &str, top_k: usize) -> anyhow::Result<Vec<Uuid>>;
+}

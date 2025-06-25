@@ -135,3 +135,5 @@ impl MemoryStore for DummyStore {
         Ok(())
     }
 }
+
+pub mod embedding_store;
