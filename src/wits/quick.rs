@@ -3,6 +3,7 @@ use std::sync::Arc;
 
 use uuid::Uuid;
 
+use crate::llm::LLMClient;
 use crate::memory::{Impression, Memory, MemoryStore, Sensation};
 use crate::wit::Wit;
 
@@ -14,12 +15,13 @@ use crate::wit::Wit;
 pub struct Quick {
     buffer: VecDeque<Sensation>,
     store: Arc<dyn MemoryStore>,
+    llm: Arc<dyn LLMClient>,
 }
 
 impl Quick {
     /// Create a new [`Quick`] wit using the given [`MemoryStore`].
-    pub fn new(store: Arc<dyn MemoryStore>) -> Self {
-        Self { buffer: VecDeque::new(), store }
+    pub fn new(store: Arc<dyn MemoryStore>, llm: Arc<dyn LLMClient>) -> Self {
+        Self { buffer: VecDeque::new(), store, llm }
     }
 }
 
@@ -41,9 +43,10 @@ impl Wit<Sensation, Impression> for Quick {
             return None;
         }
 
-        // Placeholder summarisation. A future version will call out to an LLM
-        // to generate natural language summaries of the buffer.
-        let summary = format!("I'm observing {} sensations.", self.buffer.len());
+        // Generate a natural language summary using the provided LLM. Any
+        // failure to obtain a summary results in no impression being produced.
+        let sensations: Vec<_> = self.buffer.iter().cloned().collect();
+        let summary = self.llm.summarize(&sensations).await.ok()?;
         let ids = self.buffer.iter().map(|s| s.uuid).collect::<Vec<_>>();
         let timestamp = self.buffer.back().unwrap().timestamp;
 
@@ -61,6 +64,13 @@ impl Wit<Sensation, Impression> for Quick {
             .save(&Memory::Impression(impression.clone()))
             .await;
 
+        // Optionally generate urges from the LLM and store them.
+        if let Ok(urges) = self.llm.suggest_urges(&impression).await {
+            for urge in urges {
+                let _ = self.store.save(&Memory::Urge(urge)).await;
+            }
+        }
+
         self.buffer.clear();
         Some(impression)
     }
@@ -69,7 +79,7 @@ impl Wit<Sensation, Impression> for Quick {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::memory::MemoryStore;
+    use crate::memory::{MemoryStore, Urge};
     use serde_json::json;
     use std::collections::HashMap;
     use std::time::SystemTime;
@@ -135,7 +145,8 @@ mod tests {
     #[tokio::test]
     async fn distills_buffer_into_impression() {
         let store = Arc::new(MockStore::new());
-        let mut quick = Quick::new(store.clone());
+        let llm = Arc::new(crate::llm::DummyLLM);
+        let mut quick = Quick::new(store.clone(), llm);
 
         let s1 = sample_sensation();
         let s2 = sample_sensation();
@@ -154,7 +165,8 @@ mod tests {
     #[tokio::test]
     async fn keeps_only_last_ten_observations() {
         let store = Arc::new(MockStore::new());
-        let mut quick = Quick::new(store.clone());
+        let llm = Arc::new(crate::llm::DummyLLM);
+        let mut quick = Quick::new(store.clone(), llm);
 
         let mut uuids = Vec::new();
         for _ in 0..11 {
@@ -167,5 +179,62 @@ mod tests {
         // Only last 10 should remain
         assert_eq!(imp.composed_of.len(), 10);
         assert_eq!(imp.composed_of.first().copied(), Some(uuids[1]));
+    }
+
+    struct MockLLM {
+        summaries: Arc<AsyncMutex<usize>>,
+        urges: Arc<AsyncMutex<usize>>,
+    }
+
+    impl MockLLM {
+        fn new() -> Self {
+            Self { summaries: Arc::new(AsyncMutex::new(0)), urges: Arc::new(AsyncMutex::new(0)) }
+        }
+    }
+
+    #[async_trait::async_trait]
+    impl crate::llm::LLMClient for MockLLM {
+        async fn summarize(&self, input: &[Sensation]) -> anyhow::Result<String> {
+            *self.summaries.lock().await += 1;
+            Ok(format!("{} sensed", input.len()))
+        }
+
+        async fn suggest_urges(&self, impression: &Impression) -> anyhow::Result<Vec<Urge>> {
+            *self.urges.lock().await += 1;
+            Ok(vec![Urge {
+                uuid: Uuid::new_v4(),
+                source: impression.uuid,
+                motor_name: "mock".into(),
+                parameters: serde_json::json!({}),
+                intensity: 1.0,
+                timestamp: impression.timestamp,
+            }])
+        }
+    }
+
+    #[tokio::test]
+    async fn llm_summary_and_urge_saved() {
+        let store = Arc::new(MockStore::new());
+        let llm = Arc::new(MockLLM::new());
+        let mut quick = Quick::new(store.clone(), llm.clone());
+
+        quick.observe(sample_sensation()).await;
+
+        let imp = quick.distill().await.unwrap();
+
+        assert_eq!(*llm.summaries.lock().await, 1);
+        assert_eq!(*llm.urges.lock().await, 1);
+
+        let saved_imp = store.get_by_uuid(imp.uuid).await.unwrap();
+        assert!(matches!(saved_imp, Some(Memory::Impression(_))));
+
+        let urge_count = store
+            .data
+            .lock()
+            .await
+            .values()
+            .filter(|m| matches!(m, Memory::Urge(_)))
+            .count();
+        assert_eq!(urge_count, 1);
     }
 }
