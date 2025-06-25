@@ -4,8 +4,12 @@ use tokio::sync::{Mutex, mpsc, oneshot};
 use tracing::{debug, info};
 
 use crate::{
+    conversation::Conversation,
+    countenance::Countenance,
     llm::LLMClient,
     memory::{Memory, MemoryStore, Sensation},
+    motor::DummyMotor,
+    mouth::Mouth,
     narrator::Narrator,
     voice::Voice,
     wit::Wit,
@@ -29,6 +33,8 @@ pub struct Psyche {
     pub voice: Arc<Mutex<Voice>>,
     /// Narrative summariser used by the voice.
     pub narrator: Arc<Mutex<Narrator>>,
+    /// External reflection of Pete's mood.
+    pub countenance: Arc<dyn Countenance>,
 
     /// Shared memory store used by all components.
     pub store: Arc<dyn MemoryStore>,
@@ -41,24 +47,38 @@ pub struct Psyche {
 }
 
 impl Psyche {
-    /// Create a new [`Psyche`] bundling the given wits together.
+    /// Create a new [`Psyche`] with freshly constructed cognitive wits.
     pub fn new(
-        quick: Quick,
-        will: Will,
-        fond: FondDuCoeur,
-        voice: Voice,
-        narrator: Narrator,
         store: Arc<dyn MemoryStore>,
         llm: Arc<dyn LLMClient>,
+        mouth: Arc<dyn Mouth>,
+        countenance: Arc<dyn Countenance>,
         input_rx: mpsc::Receiver<Sensation>,
         stop_tx: oneshot::Sender<()>,
+        model: String,
+        system_prompt: String,
+        max_tokens: usize,
     ) -> Self {
+        let quick = Quick::new(store.clone(), llm.clone());
+        let will = Will::new(store.clone(), Arc::new(DummyMotor));
+        let fond = FondDuCoeur::new(store.clone(), llm.clone());
+
+        let narrator = Narrator {
+            store: store.clone(),
+            llm: llm.clone(),
+        };
+
+        let mut voice = Voice::new(narrator.clone(), mouth, store.clone());
+        voice.conversation = Conversation::new(system_prompt, max_tokens);
+        voice.model = model;
+
         Self {
             quick: Arc::new(Mutex::new(quick)),
             will: Arc::new(Mutex::new(will)),
             fond: Arc::new(Mutex::new(fond)),
             voice: Arc::new(Mutex::new(voice)),
             narrator: Arc::new(Mutex::new(narrator)),
+            countenance,
             store,
             llm,
             input_rx,
