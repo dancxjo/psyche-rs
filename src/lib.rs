@@ -4,6 +4,7 @@ pub mod store;
 pub mod wit;
 pub mod wits;
 pub mod runtime;
+pub mod llm;
 
 pub use memory::*;
 pub use store::*;

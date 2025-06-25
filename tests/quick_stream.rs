@@ -1,4 +1,4 @@
-use psyche_rs::{memory::{Sensation, Memory, MemoryStore}, wits::quick::Quick, wit::Wit};
+use psyche_rs::{memory::{Sensation, Memory, MemoryStore}, wits::quick::Quick, wit::Wit, llm::DummyLLM};
 use serde_json::json;
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -50,7 +50,7 @@ fn make_fake_sensation(n: usize) -> Sensation {
 #[tokio::test]
 async fn quick_summarizes_sensations_stream() {
     let store = Arc::new(DummyMemoryStore::new());
-    let mut quick = Quick::new(store.clone());
+    let mut quick = Quick::new(store.clone(), Arc::new(DummyLLM));
 
     for i in 0..15 {
         quick.observe(make_fake_sensation(i)).await;
