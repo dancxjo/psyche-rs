@@ -10,3 +10,5 @@
 - Run `cargo fmt` before committing changes.
 - When implementing test memory stores that persist `Memory::Of`, clone the inner
   value before saving to prevent panics when cloning.
+- Ensure every async call is awaited unless intentionally detached with
+  `tokio::spawn`.
