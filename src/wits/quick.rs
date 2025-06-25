@@ -208,6 +208,10 @@ mod tests {
             Ok(format!("{} sensed", input.len()))
         }
 
+        async fn summarize_impressions(&self, _items: &[Impression]) -> anyhow::Result<String> {
+            Ok("summary".into())
+        }
+
         async fn suggest_urges(&self, impression: &Impression) -> anyhow::Result<Vec<Urge>> {
             *self.urges.lock().await += 1;
             Ok(vec![Urge {

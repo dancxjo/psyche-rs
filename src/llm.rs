@@ -8,6 +8,9 @@ pub trait LLMClient: Send + Sync {
     /// Summarize a slice of [`Sensation`]s into a natural language description.
     async fn summarize(&self, input: &[Sensation]) -> Result<String>;
 
+    /// Summarize a sequence of [`Impression`]s into a higher-level summary.
+    async fn summarize_impressions(&self, items: &[Impression]) -> Result<String>;
+
     /// Suggest potential [`Urge`]s based on the given [`Impression`].
     async fn suggest_urges(&self, impression: &Impression) -> Result<Vec<Urge>>;
 
@@ -30,5 +33,9 @@ impl LLMClient for DummyLLM {
 
     async fn evaluate_emotion(&self, _event: &Memory) -> Result<String> {
         Ok("I feel indifferent.".to_string())
+    }
+
+    async fn summarize_impressions(&self, items: &[Impression]) -> Result<String> {
+        Ok(format!("I'm recalling {} impressions.", items.len()))
     }
 }
