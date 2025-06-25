@@ -11,3 +11,6 @@ anyhow = "1.0"
 async-trait = "0.1"
 neo4rs = "0.5"
 tokio = { version = "1", features = ["rt", "macros"] }
+
+[dev-dependencies]
+gag = "1.0"
