@@ -2,7 +2,6 @@ use llm::chat::{ChatMessage, ChatProvider, ChatResponse};
 use psyche_rs::LLMExt;
 use psyche_rs::{
     memory::{Completion, Emotion, Impression, IntentionStatus, Memory, MemoryStore, Sensation},
-    motor::DummyMotor,
     mouth::Mouth,
     narrator::Narrator,
     voice::Voice,
@@ -206,10 +205,8 @@ impl Mouth for DummyMouth {
 async fn day_in_the_life_of_pete() {
     let store = Arc::new(DummyMemoryStore::new());
     let llm = Arc::new(DummyLLM);
-    let motor = Arc::new(DummyMotor);
-
     let mut quick = Quick::new(store.clone(), llm.clone());
-    let mut will = Will::new(store.clone(), motor);
+    let mut will = Will::new(store.clone());
     let mut fond = FondDuCoeur::new(store.clone(), llm.clone());
     let narrator = Narrator {
         store: store.clone(),

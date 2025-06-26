@@ -84,6 +84,7 @@ async fn voice_speaks_after_intention() {
                 Arc::new(DummyStore::new()),
                 Arc::new(TestLLM),
                 Arc::new(mouth),
+                Arc::new(psyche_rs::DummyMotor::new()),
             );
             let mut intents = psyche.will.receiver.resubscribe();
 
