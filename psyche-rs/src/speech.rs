@@ -1,10 +1,11 @@
 use async_trait::async_trait;
+use serde::{Deserialize, Serialize};
 
 /// Result of a transcription pass.
 ///
 /// The [`stable`] portion is safe to commit to the conversation while the
 /// [`fuzzy`] tail may still change as more audio is processed.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct TranscriptResult {
     /// Tokens that are considered temporally stable.
     pub stable: String,

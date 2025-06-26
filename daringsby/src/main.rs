@@ -6,11 +6,13 @@ use axum::serve;
 use axum::{
     Extension, Router,
     extract::ws::{Message, WebSocket, WebSocketUpgrade},
+    response::Html,
     routing::get,
 };
 use bytes::Bytes;
 use futures_util::{Stream, StreamExt, stream};
-use psyche_rs::speech::{DummyRecognizer, SpeechRecognizer};
+use psyche_rs::speech::{DummyRecognizer, SpeechRecognizer, TranscriptResult};
+use serde_json::json;
 mod whisper_recognizer;
 use std::pin::Pin;
 use tokio::net::TcpListener;
@@ -22,14 +24,46 @@ use tracing::{error, info};
 use tracing_subscriber::EnvFilter;
 use whisper_recognizer::WhisperRecognizer;
 
+async fn asr_ws(
+    ws: WebSocketUpgrade,
+    Extension(tx): Extension<tokio::sync::broadcast::Sender<TranscriptResult>>,
+) -> axum::response::Response {
+    ws.on_upgrade(move |socket| asr_stream(socket, tx.subscribe()))
+}
+
+async fn asr_stream(
+    mut socket: WebSocket,
+    mut rx: tokio::sync::broadcast::Receiver<TranscriptResult>,
+) {
+    while let Ok(tr) = rx.recv().await {
+        let msg = json!({
+            "stable": tr.stable,
+            "fuzzy": tr.fuzzy,
+        })
+        .to_string();
+        if socket.send(Message::Text(msg)).await.is_err() {
+            break;
+        }
+    }
+}
+
+async fn asr_view() -> Html<&'static str> {
+    Html(include_str!("../static/asr_view.html"))
+}
+
 async fn audio_in(
     ws: WebSocketUpgrade,
     Extension(recognizer): Extension<Arc<dyn SpeechRecognizer>>,
+    Extension(tx): Extension<tokio::sync::broadcast::Sender<TranscriptResult>>,
 ) -> axum::response::Response {
-    ws.on_upgrade(move |socket| handle_socket(socket, recognizer))
+    ws.on_upgrade(move |socket| handle_socket(socket, recognizer, tx))
 }
 
-async fn handle_socket(socket: WebSocket, recognizer: Arc<dyn SpeechRecognizer>) {
+async fn handle_socket(
+    socket: WebSocket,
+    recognizer: Arc<dyn SpeechRecognizer>,
+    tx: tokio::sync::broadcast::Sender<TranscriptResult>,
+) {
     let stream = stream::unfold(socket, |mut socket| async {
         match socket.recv().await {
             Some(Ok(Message::Binary(b))) => Some((Ok(Bytes::from(b)), socket)),
@@ -68,10 +102,8 @@ async fn handle_socket(socket: WebSocket, recognizer: Arc<dyn SpeechRecognizer>)
                 }
                 match recognizer.try_transcribe().await {
                     Ok(Some(tr)) => {
-                        info!("stable = {}", tr.stable);
-                        if let Some(f) = tr.fuzzy {
-                            info!("fuzzy = {}", f);
-                        }
+                        let _ = tx.send(tr.clone());
+                        info!(stable = %tr.stable, fuzzy = ?tr.fuzzy);
                     }
                     Ok(None) => {}
                     Err(e) => error!("transcribe error: {:?}", e),
@@ -102,10 +134,14 @@ async fn main() {
     } else {
         Arc::new(DummyRecognizer)
     };
+    let (tx, _rx) = tokio::sync::broadcast::channel::<TranscriptResult>(16);
     let app = Router::new()
         .route("/audio/in", get(audio_in))
+        .route("/debug/asr", get(asr_ws))
+        .route("/debug/asr/view", get(asr_view))
         .route("/", get(|| async { "ok" }))
-        .layer(Extension(recognizer));
+        .layer(Extension(recognizer))
+        .layer(Extension(tx));
 
     let addr = SocketAddr::from(([127, 0, 0, 1], 3000));
     info!("listening on {}", addr);
