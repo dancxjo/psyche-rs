@@ -18,6 +18,8 @@ pub mod voice;
 pub mod wit;
 pub mod wits;
 
+use tracing::{debug, error};
+
 pub use action::*;
 pub use conversation::*;
 pub use countenance::*;
