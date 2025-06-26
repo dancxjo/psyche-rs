@@ -25,3 +25,4 @@ target/
 
 /target
 all_sources.rst
+whisper-base.en.bin
