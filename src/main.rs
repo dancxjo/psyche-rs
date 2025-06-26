@@ -22,18 +22,23 @@ async fn main() -> anyhow::Result<()> {
         .await
         .map_err(|e| anyhow::anyhow!(format!("{:?}", e)))?;
     let store: Arc<dyn MemoryStore> = Arc::new(Neo4jStore { client: graph });
-    let backend = std::env::var("LLM_BACKEND").unwrap_or_else(|_| "openai".into());
+    let backend = std::env::var("LLM_BACKEND").unwrap_or_else(|_| "ollama".into());
     let api_key = std::env::var("LLM_API_KEY").unwrap_or_default();
-    let model = std::env::var("LLM_MODEL").unwrap_or_else(|_| "gpt-3.5-turbo".into());
+    let model = std::env::var("LLM_MODEL").unwrap_or_else(|_| "gemma3:27b".into());
+    let base_url =
+        std::env::var("LLM_BASE_URL").unwrap_or_else(|_| "http://localhost:11434".into());
 
     let llm_provider = LLMBuilder::new()
         .backend(LLMBackend::from_str(&backend)?)
         .api_key(api_key)
+        .base_url(base_url)
         .model(model)
         .stream(true)
         .build()?;
-    let llm =
-        Arc::new(ChatLLM(Arc::<dyn LLMProvider>::from(llm_provider))) as Arc<dyn ChatProvider>;
+let llm = Arc::new(psyche_rs::llm::ChatLLM(Arc::<dyn LLMProvider>::from(
+    llm_provider,
+))) as Arc<dyn LLMClient>;
+
     let mouth = Arc::new(DummyMouth);
     let face = Arc::new(DummyCountenance);
 
