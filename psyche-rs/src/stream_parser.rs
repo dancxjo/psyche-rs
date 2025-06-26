@@ -1,6 +1,7 @@
 use quick_xml::Reader;
 use quick_xml::events::Event;
 use serde_json::{Map, Value};
+use tracing::{debug, error};
 
 use crate::action::Action;
 
@@ -37,6 +38,10 @@ pub fn parse_streamed_action(xml: &str) -> Option<ParsedAction> {
     let mut attributes = Map::new();
     let mut body = String::new();
 
+    if xml.matches('<').count() > 1 && !xml.contains("</") {
+        debug!(%xml, "Input may contain multiple root elements or malformed structure");
+    }
+
     loop {
         match reader.read_event_into(&mut buf) {
             Ok(Event::Start(e)) => {
@@ -51,7 +56,10 @@ pub fn parse_streamed_action(xml: &str) -> Option<ParsedAction> {
                 body.push_str(&e.unescape().unwrap_or_default());
             }
             Ok(Event::Eof) | Ok(Event::End(_)) => break,
-            Err(_) => return None,
+            Err(e) => {
+                error!(%xml, ?e, "Failed to parse streamed action");
+                return None;
+            }
             _ => {}
         }
         buf.clear();
