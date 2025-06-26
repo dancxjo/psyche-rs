@@ -5,6 +5,9 @@ use async_trait::async_trait;
 pub trait SpeechRecognizer: Send + Sync {
     /// Process a buffer of audio samples.
     async fn recognize(&self, samples: &[i16]) -> anyhow::Result<()>;
+
+    /// Attempt to transcribe any buffered audio into text.
+    async fn try_transcribe(&self) -> anyhow::Result<Option<String>>;
 }
 
 /// [`SpeechRecognizer`] implementation that just logs incoming audio.
@@ -15,5 +18,9 @@ impl SpeechRecognizer for DummyRecognizer {
     async fn recognize(&self, samples: &[i16]) -> anyhow::Result<()> {
         tracing::info!("audio_samples = {}", samples.len());
         Ok(())
+    }
+
+    async fn try_transcribe(&self) -> anyhow::Result<Option<String>> {
+        Ok(None)
     }
 }

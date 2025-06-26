@@ -11,6 +11,7 @@ use axum::{
 use bytes::Bytes;
 use futures_util::{Stream, StreamExt, stream};
 use psyche_rs::speech::{DummyRecognizer, SpeechRecognizer};
+mod whisper_recognizer;
 use std::pin::Pin;
 use tokio::net::TcpListener;
 use tokio_util::{
@@ -19,6 +20,7 @@ use tokio_util::{
 };
 use tracing::{error, info};
 use tracing_subscriber::EnvFilter;
+use whisper_recognizer::WhisperRecognizer;
 
 async fn audio_in(
     ws: WebSocketUpgrade,
@@ -64,6 +66,11 @@ async fn handle_socket(socket: WebSocket, recognizer: Arc<dyn SpeechRecognizer>)
                 if let Err(e) = recognizer.recognize(&samples).await {
                     error!("recognize error: {:?}", e);
                 }
+                match recognizer.try_transcribe().await {
+                    Ok(Some(text)) => info!("transcript = {}", text),
+                    Ok(None) => {}
+                    Err(e) => error!("transcribe error: {:?}", e),
+                }
             }
             Err(e) => {
                 error!("frame error: {:?}", e);
@@ -79,7 +86,17 @@ async fn main() {
         .with_env_filter(EnvFilter::from_default_env())
         .init();
 
-    let recognizer: Arc<dyn SpeechRecognizer> = Arc::new(DummyRecognizer);
+    let recognizer: Arc<dyn SpeechRecognizer> = if let Ok(path) = std::env::var("WHISPER_MODEL") {
+        match WhisperRecognizer::new(&path) {
+            Ok(r) => Arc::new(r),
+            Err(e) => {
+                error!("failed to init whisper: {:?}", e);
+                Arc::new(DummyRecognizer)
+            }
+        }
+    } else {
+        Arc::new(DummyRecognizer)
+    };
     let app = Router::new()
         .route("/audio/in", get(audio_in))
         .route("/", get(|| async { "ok" }))
