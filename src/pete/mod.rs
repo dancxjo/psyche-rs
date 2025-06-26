@@ -47,6 +47,7 @@ impl std::fmt::Display for NoopResp {
     }
 }
 use std::sync::Arc;
+use tokio::signal;
 use tokio::sync::{mpsc, oneshot};
 use tokio::task::LocalSet;
 
@@ -89,7 +90,7 @@ pub fn build_pete(
 }
 
 pub async fn launch_default_pete() -> anyhow::Result<()> {
-    let (psyche, tx, _stop_rx) = build_pete(
+    let (psyche, tx, stop_rx) = build_pete(
         Arc::new(DummyStore::new()),
         Arc::new(NoopLLM),
         Arc::new(DummyMouth),
@@ -107,6 +108,17 @@ pub async fn launch_default_pete() -> anyhow::Result<()> {
                 tx.send(Sensation::new_text(format!("This is test {}", i), "cli"))
                     .await?;
                 tokio::time::sleep(std::time::Duration::from_millis(250)).await;
+            }
+
+            drop(tx);
+
+            tokio::pin!(stop_rx);
+            tokio::select! {
+                _ = signal::ctrl_c() => {
+                    println!("Ctrl-C received. Shutting down...");
+                    let _ = stop_rx.await;
+                }
+                _ = &mut stop_rx => {}
             }
             Ok::<(), anyhow::Error>(())
         })

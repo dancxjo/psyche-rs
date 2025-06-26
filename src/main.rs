@@ -9,6 +9,7 @@ use psyche_rs::{
 };
 use std::str::FromStr;
 use std::sync::Arc;
+use tokio::signal;
 use tokio::task::LocalSet;
 
 #[tokio::main]
@@ -35,14 +36,12 @@ async fn main() -> anyhow::Result<()> {
         .model(model)
         .stream(true)
         .build()?;
-let llm = Arc::new(psyche_rs::llm::ChatLLM(Arc::<dyn LLMProvider>::from(
-    llm_provider,
-))) as Arc<dyn LLMClient>;
+    let llm: Arc<dyn ChatProvider> = Arc::new(ChatLLM(Arc::<dyn LLMProvider>::from(llm_provider)));
 
     let mouth = Arc::new(DummyMouth);
     let face = Arc::new(DummyCountenance);
 
-    let (psyche, tx, _stop_rx) = pete::build_pete(store, llm, mouth, face);
+    let (psyche, tx, stop_rx) = pete::build_pete(store, llm, mouth, face);
 
     let local = LocalSet::new();
     local.spawn_local(async move { psyche.tick().await });
@@ -53,6 +52,17 @@ let llm = Arc::new(psyche_rs::llm::ChatLLM(Arc::<dyn LLMProvider>::from(
                 tx.send(Sensation::new_text(format!("This is test {}", i), "cli"))
                     .await?;
                 tokio::time::sleep(std::time::Duration::from_millis(250)).await;
+            }
+
+            drop(tx);
+
+            tokio::pin!(stop_rx);
+            tokio::select! {
+                _ = signal::ctrl_c() => {
+                    println!("Ctrl-C received. Shutting down...");
+                    let _ = stop_rx.await;
+                }
+                _ = &mut stop_rx => {}
             }
             Ok::<(), anyhow::Error>(())
         })
