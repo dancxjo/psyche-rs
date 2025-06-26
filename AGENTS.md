@@ -14,3 +14,4 @@
   `tokio::spawn`.
 - Keep narrative prompt text under `daringsby/src` and pass it into library
   constructors instead of embedding it in `psyche-rs`.
+- Use `httpmock` for HTTP-based tests to avoid external network dependencies.
