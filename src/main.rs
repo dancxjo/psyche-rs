@@ -1,7 +1,8 @@
 use llm::LLMProvider;
 use llm::builder::{LLMBackend, LLMBuilder};
+use llm::chat::ChatProvider;
 use neo4rs::Graph;
-use psyche_rs::llm::LLMClient;
+use psyche_rs::llm::ChatLLM;
 use psyche_rs::{
     MemoryStore, Neo4jStore, countenance::DummyCountenance, memory::Sensation, mouth::DummyMouth,
     pete,
@@ -34,10 +35,10 @@ async fn main() -> anyhow::Result<()> {
         .model(model)
         .stream(true)
         .build()?;
+let llm = Arc::new(psyche_rs::llm::ChatLLM(Arc::<dyn LLMProvider>::from(
+    llm_provider,
+))) as Arc<dyn LLMClient>;
 
-    let llm = Arc::new(psyche_rs::llm::ChatLLM(Arc::<dyn LLMProvider>::from(
-        llm_provider,
-    ))) as Arc<dyn LLMClient>;
     let mouth = Arc::new(DummyMouth);
     let face = Arc::new(DummyCountenance);
 

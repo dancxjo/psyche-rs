@@ -4,9 +4,10 @@ use std::time::SystemTime;
 
 use uuid::Uuid;
 
-use crate::llm::LLMClient;
+use crate::llm::LLMExt;
 use crate::memory::{Emotion, Memory, MemoryStore};
 use crate::wit::Wit;
+use llm::chat::ChatProvider;
 use tracing::info;
 
 /// `FondDuCoeur` observes completed or interrupted intentions and records
@@ -14,12 +15,12 @@ use tracing::info;
 pub struct FondDuCoeur {
     events: VecDeque<Memory>,
     pub store: Arc<dyn MemoryStore>,
-    pub llm: Arc<dyn LLMClient>,
+    pub llm: Arc<dyn ChatProvider>,
 }
 
 impl FondDuCoeur {
     /// Create a new [`FondDuCoeur`] wit.
-    pub fn new(store: Arc<dyn MemoryStore>, llm: Arc<dyn LLMClient>) -> Self {
+    pub fn new(store: Arc<dyn MemoryStore>, llm: Arc<dyn ChatProvider>) -> Self {
         Self {
             events: VecDeque::new(),
             store,
@@ -40,7 +41,7 @@ impl Wit<Memory, Memory> for FondDuCoeur {
     }
 
     /// Produce an [`Emotion`] based on the next buffered event using the
-    /// provided [`LLMClient`]. The resulting emotion is persisted via the
+    /// provided [`ChatProvider`]. The resulting emotion is persisted via the
     /// [`MemoryStore`].
     async fn distill(&mut self) -> Option<Memory> {
         let event = self.events.pop_front()?;

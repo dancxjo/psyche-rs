@@ -3,9 +3,10 @@ use std::sync::Arc;
 
 use uuid::Uuid;
 
-use crate::llm::LLMClient;
+use crate::llm::LLMExt;
 use crate::memory::{Impression, Memory, MemoryStore, Sensation};
 use crate::wit::Wit;
+use llm::chat::ChatProvider;
 use tracing::debug;
 
 /// `Quick` buffers recent [`Sensation`]s and periodically summarizes them into
@@ -16,12 +17,12 @@ use tracing::debug;
 pub struct Quick {
     buffer: VecDeque<Sensation>,
     store: Arc<dyn MemoryStore>,
-    llm: Arc<dyn LLMClient>,
+    llm: Arc<dyn ChatProvider>,
 }
 
 impl Quick {
     /// Create a new [`Quick`] wit using the given [`MemoryStore`].
-    pub fn new(store: Arc<dyn MemoryStore>, llm: Arc<dyn LLMClient>) -> Self {
+    pub fn new(store: Arc<dyn MemoryStore>, llm: Arc<dyn ChatProvider>) -> Self {
         Self {
             buffer: VecDeque::new(),
             store,
@@ -86,7 +87,8 @@ impl Wit<Sensation, Impression> for Quick {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::memory::{MemoryStore, Urge};
+    use crate::memory::MemoryStore;
+    use llm::chat::{ChatProvider, ChatResponse};
     use serde_json::json;
     use std::collections::HashMap;
     use std::time::SystemTime;
@@ -159,10 +161,52 @@ mod tests {
         }
     }
 
+    #[derive(Debug)]
+    struct SimpleResp(String);
+    impl ChatResponse for SimpleResp {
+        fn text(&self) -> Option<String> {
+            Some(self.0.clone())
+        }
+        fn tool_calls(&self) -> Option<Vec<llm::ToolCall>> {
+            None
+        }
+    }
+    impl std::fmt::Display for SimpleResp {
+        fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+            write!(f, "{}", self.0)
+        }
+    }
+
+    struct DummyLLM;
+    #[async_trait::async_trait]
+    impl ChatProvider for DummyLLM {
+        async fn chat_with_tools(
+            &self,
+            _messages: &[llm::chat::ChatMessage],
+            _tools: Option<&[llm::chat::Tool]>,
+        ) -> Result<Box<dyn llm::chat::ChatResponse>, llm::error::LLMError> {
+            Ok(Box::new(SimpleResp("".into())))
+        }
+
+        async fn chat_stream(
+            &self,
+            _messages: &[llm::chat::ChatMessage],
+        ) -> Result<
+            std::pin::Pin<
+                Box<dyn futures_util::Stream<Item = Result<String, llm::error::LLMError>> + Send>,
+            >,
+            llm::error::LLMError,
+        > {
+            Ok(Box::pin(futures_util::stream::once(async {
+                Ok("summary".into())
+            })))
+        }
+    }
+
     #[tokio::test]
     async fn distills_buffer_into_impression() {
         let store = Arc::new(MockStore::new());
-        let llm = Arc::new(crate::llm::DummyLLM);
+        let llm = Arc::new(DummyLLM) as Arc<dyn ChatProvider>;
         let mut quick = Quick::new(store.clone(), llm);
 
         let s1 = sample_sensation();
@@ -182,7 +226,7 @@ mod tests {
     #[tokio::test]
     async fn keeps_only_last_ten_observations() {
         let store = Arc::new(MockStore::new());
-        let llm = Arc::new(crate::llm::DummyLLM);
+        let llm = Arc::new(DummyLLM) as Arc<dyn ChatProvider>;
         let mut quick = Quick::new(store.clone(), llm);
 
         let mut uuids = Vec::new();
@@ -213,30 +257,38 @@ mod tests {
     }
 
     #[async_trait::async_trait]
-    impl crate::llm::LLMClient for MockLLM {
-        async fn summarize(&self, input: &[Sensation]) -> anyhow::Result<String> {
-            *self.summaries.lock().await += 1;
-            Ok(format!("{} sensed", input.len()))
+    impl ChatProvider for MockLLM {
+        async fn chat_with_tools(
+            &self,
+            _messages: &[llm::chat::ChatMessage],
+            _tools: Option<&[llm::chat::Tool]>,
+        ) -> Result<Box<dyn llm::chat::ChatResponse>, llm::error::LLMError> {
+            unreachable!()
         }
 
-        async fn summarize_impressions(&self, _items: &[Impression]) -> anyhow::Result<String> {
-            Ok("summary".into())
-        }
-
-        async fn suggest_urges(&self, impression: &Impression) -> anyhow::Result<Vec<Urge>> {
-            *self.urges.lock().await += 1;
-            Ok(vec![Urge {
-                uuid: Uuid::new_v4(),
-                source: impression.uuid,
-                motor_name: "mock".into(),
-                parameters: serde_json::json!({}),
-                intensity: 1.0,
-                timestamp: impression.timestamp,
-            }])
-        }
-
-        async fn evaluate_emotion(&self, _event: &Memory) -> anyhow::Result<String> {
-            Ok("I feel nothing".into())
+        async fn chat_stream(
+            &self,
+            messages: &[llm::chat::ChatMessage],
+        ) -> Result<
+            std::pin::Pin<
+                Box<dyn futures_util::Stream<Item = Result<String, llm::error::LLMError>> + Send>,
+            >,
+            llm::error::LLMError,
+        > {
+            let content = messages.last().unwrap().content.clone();
+            let reply = if content.starts_with("Summarize") {
+                *self.summaries.lock().await += 1;
+                let count = content.lines().count() - 1;
+                format!("{} sensed", count)
+            } else if content.starts_with("List one suggested motor action") {
+                *self.urges.lock().await += 1;
+                "mock".to_string()
+            } else {
+                String::new()
+            };
+            Ok(Box::pin(futures_util::stream::once(
+                async move { Ok(reply) },
+            )))
         }
     }
 

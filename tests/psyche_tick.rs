@@ -5,11 +5,11 @@ use std::time::SystemTime;
 use tokio::sync::Mutex as AsyncMutex;
 use uuid::Uuid;
 
+use llm::chat::{ChatMessage, ChatProvider, ChatResponse};
 use psyche_rs::{
     Psyche,
     countenance::Countenance,
-    llm::LLMClient,
-    memory::{Impression, Memory, MemoryStore, Sensation, Urge},
+    memory::{Impression, Memory, MemoryStore, Sensation},
     mouth::Mouth,
 };
 use tokio::sync::{mpsc, oneshot};
@@ -41,28 +41,50 @@ impl Mouth for CountingMouth {
 struct SimpleLLM;
 
 #[async_trait::async_trait]
-impl LLMClient for SimpleLLM {
-    async fn summarize(&self, _input: &[Sensation]) -> anyhow::Result<String> {
-        Ok("summary".into())
+#[async_trait::async_trait]
+impl ChatProvider for SimpleLLM {
+    async fn chat_with_tools(
+        &self,
+        _messages: &[ChatMessage],
+        _tools: Option<&[llm::chat::Tool]>,
+    ) -> Result<Box<dyn ChatResponse>, llm::error::LLMError> {
+        Ok(Box::new(SimpleResp("".into())))
     }
 
-    async fn summarize_impressions(&self, _items: &[Impression]) -> anyhow::Result<String> {
-        Ok("story".into())
+    async fn chat_stream(
+        &self,
+        messages: &[ChatMessage],
+    ) -> Result<
+        std::pin::Pin<
+            Box<dyn futures_util::Stream<Item = Result<String, llm::error::LLMError>> + Send>,
+        >,
+        llm::error::LLMError,
+    > {
+        let prompt = messages.last().unwrap().content.clone();
+        let reply = if prompt.starts_with("List one") {
+            "test".to_string()
+        } else {
+            "summary".to_string()
+        };
+        Ok(Box::pin(futures_util::stream::once(
+            async move { Ok(reply) },
+        )))
     }
+}
 
-    async fn suggest_urges(&self, _impression: &Impression) -> anyhow::Result<Vec<Urge>> {
-        Ok(vec![Urge {
-            uuid: Uuid::new_v4(),
-            source: Uuid::new_v4(),
-            motor_name: "test".into(),
-            parameters: serde_json::json!({}),
-            intensity: 1.0,
-            timestamp: SystemTime::now(),
-        }])
+#[derive(Debug)]
+struct SimpleResp(String);
+impl ChatResponse for SimpleResp {
+    fn text(&self) -> Option<String> {
+        Some(self.0.clone())
     }
-
-    async fn evaluate_emotion(&self, _event: &Memory) -> anyhow::Result<String> {
-        Ok("fine".into())
+    fn tool_calls(&self) -> Option<Vec<llm::ToolCall>> {
+        None
+    }
+}
+impl std::fmt::Display for SimpleResp {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.0)
     }
 }
 

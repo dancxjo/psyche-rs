@@ -3,27 +3,28 @@ use std::sync::Arc;
 
 use uuid::Uuid;
 
-use crate::llm::LLMClient;
+use crate::llm::LLMExt;
 use crate::memory::{Impression, Memory, MemoryStore};
 use crate::wit::Wit;
+use llm::chat::ChatProvider;
 
 /// `Combobulator` aggregates instant impressions into higher level temporal
 /// memories such as "moments" or "situations".
 ///
 /// It collects a short window of instant impressions and asks the provided
-/// [`LLMClient`] for a one-sentence summary. The resulting [`Impression`] is
+/// [`ChatProvider`] for a one-sentence summary. The resulting [`Impression`] is
 /// stored via the [`MemoryStore`].
 pub struct Combobulator {
     buffer: VecDeque<Impression>,
     /// Topic label for produced impressions (e.g. `"moment"` or `"situation"`).
     topic: String,
     store: Arc<dyn MemoryStore>,
-    llm: Arc<dyn LLMClient>,
+    llm: Arc<dyn ChatProvider>,
 }
 
 impl Combobulator {
     /// Create a new `Combobulator` producing impressions of the given `topic`.
-    pub fn new(topic: &str, store: Arc<dyn MemoryStore>, llm: Arc<dyn LLMClient>) -> Self {
+    pub fn new(topic: &str, store: Arc<dyn MemoryStore>, llm: Arc<dyn ChatProvider>) -> Self {
         Self {
             buffer: VecDeque::new(),
             topic: topic.into(),
@@ -72,8 +73,8 @@ impl Wit<Impression, Impression> for Combobulator {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::llm::LLMClient;
     use crate::memory::{Memory, MemoryStore};
+    use llm::chat::{ChatProvider, ChatResponse};
     use std::collections::HashMap;
     use std::time::SystemTime;
     use tokio::sync::Mutex as AsyncMutex;
@@ -123,21 +124,50 @@ mod tests {
         }
     }
 
+    #[derive(Debug)]
+    struct SimpleResp(String);
+    impl ChatResponse for SimpleResp {
+        fn text(&self) -> Option<String> {
+            Some(self.0.clone())
+        }
+        fn tool_calls(&self) -> Option<Vec<llm::ToolCall>> {
+            None
+        }
+    }
+    impl std::fmt::Display for SimpleResp {
+        fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+            write!(f, "{}", self.0)
+        }
+    }
+
     struct MockLLM;
 
     #[async_trait::async_trait]
-    impl LLMClient for MockLLM {
-        async fn summarize(&self, _input: &[crate::Sensation]) -> anyhow::Result<String> {
-            Ok("".into())
+    impl ChatProvider for MockLLM {
+        async fn chat_with_tools(
+            &self,
+            _messages: &[llm::chat::ChatMessage],
+            _tools: Option<&[llm::chat::Tool]>,
+        ) -> Result<Box<dyn ChatResponse>, llm::error::LLMError> {
+            Ok(Box::new(SimpleResp("".into())))
         }
-        async fn suggest_urges(&self, _imp: &Impression) -> anyhow::Result<Vec<crate::Urge>> {
-            Ok(vec![])
-        }
-        async fn evaluate_emotion(&self, _event: &Memory) -> anyhow::Result<String> {
-            Ok("".into())
-        }
-        async fn summarize_impressions(&self, items: &[Impression]) -> anyhow::Result<String> {
-            Ok(format!("{} combined", items.len()))
+
+        async fn chat_stream(
+            &self,
+            messages: &[llm::chat::ChatMessage],
+        ) -> Result<
+            std::pin::Pin<
+                Box<dyn futures_util::Stream<Item = Result<String, llm::error::LLMError>> + Send>,
+            >,
+            llm::error::LLMError,
+        > {
+            let reply = format!(
+                "{} combined",
+                messages.last().unwrap().content.lines().count() - 1
+            );
+            Ok(Box::pin(futures_util::stream::once(
+                async move { Ok(reply) },
+            )))
         }
     }
 

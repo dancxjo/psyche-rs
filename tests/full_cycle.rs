@@ -1,8 +1,7 @@
+use llm::chat::{ChatMessage, ChatProvider, ChatResponse};
+use psyche_rs::LLMExt;
 use psyche_rs::{
-    llm::LLMClient,
-    memory::{
-        Completion, Emotion, Impression, IntentionStatus, Memory, MemoryStore, Sensation, Urge,
-    },
+    memory::{Completion, Emotion, Impression, IntentionStatus, Memory, MemoryStore, Sensation},
     motor::DummyMotor,
     mouth::Mouth,
     narrator::Narrator,
@@ -134,32 +133,52 @@ impl MemoryStore for DummyMemoryStore {
 struct DummyLLM;
 
 #[async_trait::async_trait]
-impl LLMClient for DummyLLM {
-    async fn summarize(&self, input: &[Sensation]) -> anyhow::Result<String> {
-        Ok(format!("noticed {} events", input.len()))
+impl ChatProvider for DummyLLM {
+    async fn chat_with_tools(
+        &self,
+        _m: &[ChatMessage],
+        _t: Option<&[llm::chat::Tool]>,
+    ) -> Result<Box<dyn ChatResponse>, llm::error::LLMError> {
+        Ok(Box::new(SimpleResp("".into())))
     }
 
-    async fn summarize_impressions(&self, items: &[Impression]) -> anyhow::Result<String> {
-        Ok(items
-            .iter()
-            .map(|i| i.how.clone())
-            .collect::<Vec<_>>()
-            .join(" "))
+    async fn chat_stream(
+        &self,
+        messages: &[ChatMessage],
+    ) -> Result<
+        std::pin::Pin<
+            Box<dyn futures_util::Stream<Item = Result<String, llm::error::LLMError>> + Send>,
+        >,
+        llm::error::LLMError,
+    > {
+        let prompt = messages.last().unwrap().content.clone();
+        let reply = if prompt.starts_with("List one") {
+            "pounce".to_string()
+        } else if prompt.starts_with("Summarize the following observations") {
+            let count = prompt.lines().count() - 1;
+            format!("noticed {} events", count)
+        } else {
+            messages.last().unwrap().content.clone()
+        };
+        Ok(Box::pin(futures_util::stream::once(
+            async move { Ok(reply) },
+        )))
     }
+}
 
-    async fn suggest_urges(&self, impression: &Impression) -> anyhow::Result<Vec<Urge>> {
-        Ok(vec![Urge {
-            uuid: Uuid::new_v4(),
-            source: impression.uuid,
-            motor_name: "pounce".into(),
-            parameters: json!({}),
-            intensity: 1.0,
-            timestamp: impression.timestamp,
-        }])
+#[derive(Debug)]
+struct SimpleResp(String);
+impl ChatResponse for SimpleResp {
+    fn text(&self) -> Option<String> {
+        Some(self.0.clone())
     }
-
-    async fn evaluate_emotion(&self, _event: &Memory) -> anyhow::Result<String> {
-        Ok("I feel pleased".into())
+    fn tool_calls(&self) -> Option<Vec<llm::ToolCall>> {
+        None
+    }
+}
+impl std::fmt::Display for SimpleResp {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.0)
     }
 }
 

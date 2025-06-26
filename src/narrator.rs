@@ -1,16 +1,17 @@
 use std::sync::Arc;
 use std::time::SystemTime;
 
-use crate::llm::LLMClient;
+use crate::llm::LLMExt;
 use crate::memory::{Memory, MemoryStore};
 use crate::store::MemoryRetriever;
+use llm::chat::ChatProvider;
 
 /// `Narrator` provides high level summaries of Pete's memories by
 /// querying a [`MemoryStore`] and condensing results using an
-/// [`LLMClient`].
+/// [`ChatProvider`].
 ///
 /// ```no_run
-/// # use psyche_rs::{Narrator, memory::{MemoryStore, Memory}, llm::LLMClient};
+/// # use psyche_rs::{Narrator, memory::{MemoryStore, Memory}, llm::LLMExt};
 /// # use std::sync::Arc;
 /// # use std::time::SystemTime;
 /// # use async_trait::async_trait;
@@ -28,12 +29,14 @@ use crate::store::MemoryRetriever;
 /// # }
 /// # struct DummyLLM;
 /// # #[async_trait]
-/// # impl LLMClient for DummyLLM {
-/// #     async fn summarize(&self, _: &[psyche_rs::Sensation]) -> anyhow::Result<String> { Ok(String::new()) }
-/// #     async fn summarize_impressions(&self, _: &[psyche_rs::Impression]) -> anyhow::Result<String> { Ok(String::new()) }
-/// #     async fn suggest_urges(&self, _: &psyche_rs::Impression) -> anyhow::Result<Vec<psyche_rs::Urge>> { Ok(vec![]) }
-/// #     async fn evaluate_emotion(&self, _: &Memory) -> anyhow::Result<String> { Ok(String::new()) }
+/// # impl llm::chat::ChatProvider for DummyLLM {
+/// #     async fn chat_with_tools(&self, _: &[llm::chat::ChatMessage], _: Option<&[llm::chat::Tool]>) -> Result<Box<dyn llm::chat::ChatResponse>, llm::error::LLMError> { Ok(Box::new(SimpleResp(String::new()))) }
+/// #     async fn chat_stream(&self, _: &[llm::chat::ChatMessage]) -> Result<std::pin::Pin<Box<dyn futures_util::Stream<Item = Result<String, llm::error::LLMError>> + Send>>, llm::error::LLMError> { Ok(Box::pin(futures_util::stream::empty())) }
 /// # }
+/// # #[derive(Debug)]
+/// # struct SimpleResp(String);
+/// # impl llm::chat::ChatResponse for SimpleResp { fn text(&self) -> Option<String> { Some(self.0.clone()) } fn tool_calls(&self) -> Option<Vec<llm::ToolCall>> { None } }
+/// # impl std::fmt::Display for SimpleResp { fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result { write!(f, "{}", self.0) } }
 /// # async fn demo() -> anyhow::Result<()> {
 /// # let store = Arc::new(DummyStore);
 /// # let llm = Arc::new(DummyLLM);
@@ -45,7 +48,7 @@ use crate::store::MemoryRetriever;
 #[derive(Clone)]
 pub struct Narrator {
     pub store: Arc<dyn MemoryStore>,
-    pub llm: Arc<dyn LLMClient>,
+    pub llm: Arc<dyn ChatProvider>,
     /// Embedding-based retriever used for memory search.
     pub retriever: Arc<dyn MemoryRetriever>,
 }
@@ -74,7 +77,7 @@ impl Narrator {
 
     /// Retrieve impressions relevant to the provided `text` using the
     /// configured [`MemoryRetriever`]. The returned impressions are
-    /// summarised into a short story by the [`LLMClient`].
+    /// summarised into a short story by the [`ChatProvider`].
     pub async fn recall_relevant(&self, text: &str) -> anyhow::Result<String> {
         // look up nearest memories via embeddings
         // Fetch the single most relevant memory for now.

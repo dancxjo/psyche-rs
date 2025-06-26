@@ -1,5 +1,5 @@
+use llm::chat::{ChatMessage, ChatProvider, ChatResponse};
 use psyche_rs::{
-    llm::DummyLLM,
     memory::{Memory, MemoryStore, Sensation},
     wit::Wit,
     wits::quick::Quick,
@@ -73,6 +73,45 @@ fn make_fake_sensation(n: usize) -> Sensation {
 #[tokio::test]
 async fn quick_summarizes_sensations_stream() {
     let store = Arc::new(DummyMemoryStore::new());
+    struct DummyLLM;
+    #[async_trait::async_trait]
+    impl ChatProvider for DummyLLM {
+        async fn chat_with_tools(
+            &self,
+            _m: &[ChatMessage],
+            _t: Option<&[llm::chat::Tool]>,
+        ) -> Result<Box<dyn ChatResponse>, llm::error::LLMError> {
+            Ok(Box::new(SimpleResp("".into())))
+        }
+        async fn chat_stream(
+            &self,
+            _m: &[ChatMessage],
+        ) -> Result<
+            std::pin::Pin<
+                Box<dyn futures_util::Stream<Item = Result<String, llm::error::LLMError>> + Send>,
+            >,
+            llm::error::LLMError,
+        > {
+            Ok(Box::pin(futures_util::stream::once(async {
+                Ok("summary".into())
+            })))
+        }
+    }
+    #[derive(Debug)]
+    struct SimpleResp(String);
+    impl ChatResponse for SimpleResp {
+        fn text(&self) -> Option<String> {
+            Some(self.0.clone())
+        }
+        fn tool_calls(&self) -> Option<Vec<llm::ToolCall>> {
+            None
+        }
+    }
+    impl std::fmt::Display for SimpleResp {
+        fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+            write!(f, "{}", self.0)
+        }
+    }
     let mut quick = Quick::new(store.clone(), Arc::new(DummyLLM));
 
     for i in 0..15 {

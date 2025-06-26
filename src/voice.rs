@@ -217,10 +217,9 @@ impl std::fmt::Display for NoopChatResponse {
 impl Default for Voice {
     fn default() -> Self {
         let store = Arc::new(NoopStore);
-        let llm = Arc::new(crate::llm::DummyLLM);
         let narrator = Narrator {
             store: store.clone(),
-            llm,
+            llm: Arc::new(NoopChatLLM),
             retriever: Arc::new(NoopRetriever),
         };
         let mut voice = Self::new(narrator, Arc::new(NoopMouth), store);
