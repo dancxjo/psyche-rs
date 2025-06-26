@@ -131,3 +131,55 @@ async fn collect_stream(
     }
     Ok(out)
 }
+
+/// Basic LLM used for examples which simply echoes the last user message.
+#[derive(Clone)]
+pub struct DummyLLM;
+
+#[async_trait::async_trait]
+impl ChatProvider for DummyLLM {
+    async fn chat_with_tools(
+        &self,
+        _messages: &[ChatMessage],
+        _tools: Option<&[llm::chat::Tool]>,
+    ) -> Result<Box<dyn ChatResponse>, llm::error::LLMError> {
+        Ok(Box::new(SimpleLLMResp(String::new())))
+    }
+
+    async fn chat_stream(
+        &self,
+        messages: &[ChatMessage],
+    ) -> Result<
+        std::pin::Pin<
+            Box<dyn futures_util::Stream<Item = Result<String, llm::error::LLMError>> + Send>,
+        >,
+        llm::error::LLMError,
+    > {
+        let reply = messages
+            .last()
+            .map(|m| m.content.clone())
+            .unwrap_or_default();
+        Ok(Box::pin(futures_util::stream::once(
+            async move { Ok(reply) },
+        )))
+    }
+}
+
+#[derive(Debug)]
+struct SimpleLLMResp(String);
+
+impl ChatResponse for SimpleLLMResp {
+    fn text(&self) -> Option<String> {
+        Some(self.0.clone())
+    }
+
+    fn tool_calls(&self) -> Option<Vec<llm::ToolCall>> {
+        None
+    }
+}
+
+impl std::fmt::Display for SimpleLLMResp {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.0)
+    }
+}

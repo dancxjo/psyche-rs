@@ -16,8 +16,13 @@ use futures_util::{Stream, StreamExt, stream};
 use psyche_rs::speech::{DummyRecognizer, SpeechRecognizer, TranscriptResult};
 use serde_json::json;
 mod whisper_recognizer;
+use crate::prompt::PETE_PROMPT;
+use psyche_rs::{
+    DummyMotor, DummyStore, Psyche, llm::DummyLLM, memory::Sensation, mouth::LoggingMouth,
+};
 use std::pin::Pin;
 use tokio::net::TcpListener;
+use tokio::task::LocalSet;
 use tokio_util::{
     codec::{FramedRead, LengthDelimitedCodec},
     io::StreamReader,
@@ -159,6 +164,15 @@ async fn main() {
         Arc::new(DummyRecognizer)
     };
     let (tx, _rx) = tokio::sync::broadcast::channel::<TranscriptResult>(16);
+
+    let prompt = PETE_PROMPT.to_string();
+    let store = Arc::new(DummyStore::new());
+    let llm = Arc::new(DummyLLM);
+    let (mouth, mouth_log) = LoggingMouth::new();
+    let mouth = Arc::new(mouth);
+    let motor = Arc::new(DummyMotor::new());
+    let psyche = Psyche::new(store.clone(), llm, mouth.clone(), motor, prompt);
+
     let app = Router::new()
         .route("/audio/in", get(audio_in))
         .route("/debug/asr", get(asr_ws))
@@ -166,15 +180,38 @@ async fn main() {
         .route("/debug/audio/test", get(audio_test))
         .route("/", get(|| async { "ok" }))
         .layer(Extension(recognizer))
-        .layer(Extension(tx));
+        .layer(Extension(tx.clone()));
 
     let addr = SocketAddr::from(([0, 0, 0, 0], 3000));
     info!("listening on {}", addr);
     let listener = TcpListener::bind(addr).await.unwrap();
-    serve(listener, app.into_make_service())
-        .with_graceful_shutdown(shutdown_signal())
-        .await
-        .unwrap();
+
+    let local = LocalSet::new();
+    local
+        .run_until(async move {
+            tokio::task::spawn_local({
+                let mut rx = tx.subscribe();
+                let psyche = psyche;
+                let log = mouth_log;
+                async move {
+                    while let Ok(tr) = rx.recv().await {
+                        let _ = psyche
+                            .send_sensation(Sensation::new_text(tr.stable, "asr"))
+                            .await;
+                        tokio::task::yield_now().await;
+                        if let Some(spoken) = log.last() {
+                            println!("Pete says: {}", spoken);
+                        }
+                    }
+                }
+            });
+
+            serve(listener, app.into_make_service())
+                .with_graceful_shutdown(shutdown_signal())
+                .await
+                .unwrap();
+        })
+        .await;
 }
 
 async fn shutdown_signal() {
