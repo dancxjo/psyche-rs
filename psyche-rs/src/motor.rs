@@ -61,3 +61,29 @@ impl Motor for DummyMotor {
         Ok(())
     }
 }
+
+/// Simple [`Motor`] implementation that logs events to stdout.
+///
+/// This is useful for examples where we want to see the action stream
+/// produced by `Psyche` without integrating a real motor backend.
+pub struct MotorLog;
+
+#[async_trait::async_trait]
+impl Motor for MotorLog {
+    async fn handle(&self, mut rx: mpsc::Receiver<MotorEvent>) -> anyhow::Result<()> {
+        while let Some(event) = rx.recv().await {
+            match event {
+                MotorEvent::Begin(intent) => {
+                    println!("\u{1F528} [Motor] Begin: {:?}", intent.action);
+                }
+                MotorEvent::Chunk(text) => {
+                    println!("\u{1F5E3}\u{FE0F} [Motor] Chunk: {}", text);
+                }
+                MotorEvent::End => {
+                    println!("\u{2705} [Motor] End");
+                }
+            }
+        }
+        Ok(())
+    }
+}
