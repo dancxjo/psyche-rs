@@ -5,26 +5,23 @@ use std::time::SystemTime;
 use uuid::Uuid;
 
 use crate::memory::{Intention, IntentionStatus, Memory, MemoryStore, Urge};
-use crate::motor::{MotorFeedback, MotorSystem};
+
 use crate::wit::Wit;
 use tracing::info;
 
-/// `Will` consumes [`Urge`]s and issues [`Intention`]s to the provided
-/// [`MotorSystem`]. Observed urges are persisted via the supplied
-/// [`MemoryStore`].
+/// `Will` consumes [`Urge`]s, persists them and emits [`Intention`]s.
+/// Motor execution is handled elsewhere.
 pub struct Will {
     buffer: VecDeque<Urge>,
     pub store: Arc<dyn MemoryStore>,
-    pub motor: Arc<dyn MotorSystem>,
 }
 
 impl Will {
-    /// Create a new [`Will`] with the given memory store and motor system.
-    pub fn new(store: Arc<dyn MemoryStore>, motor: Arc<dyn MotorSystem>) -> Self {
+    /// Create a new [`Will`] with the given memory store.
+    pub fn new(store: Arc<dyn MemoryStore>) -> Self {
         Self {
             buffer: VecDeque::new(),
             store,
-            motor,
         }
     }
 }
@@ -54,22 +51,6 @@ impl Wit<Urge, Intention> for Will {
         let _ = self.store.save(&Memory::Intention(intent.clone())).await;
 
         info!("🎯 Pete intends: {}", intent.motor_name);
-
-        // Invoke the motor and persist any feedback.
-        match self.motor.invoke(&intent).await {
-            Ok(MotorFeedback::Completed(done)) => {
-                self.store.complete_intention(intent.uuid, done).await.ok();
-            }
-            Ok(MotorFeedback::Interrupted(breakoff)) => {
-                self.store
-                    .interrupt_intention(intent.uuid, breakoff)
-                    .await
-                    .ok();
-            }
-            Err(err) => {
-                eprintln!("motor failed: {}", err);
-            }
-        }
 
         Some(intent)
     }

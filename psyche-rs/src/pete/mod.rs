@@ -1,6 +1,7 @@
 use crate::memory::{MemoryStore, Sensation};
 use crate::{
-    DummyCountenance, DummyMouth, DummyStore, Psyche, countenance::Countenance, mouth::Mouth,
+    DummyCountenance, DummyMotor, DummyMouth, DummyStore, Psyche, countenance::Countenance,
+    mouth::Mouth,
 };
 use llm::chat::ChatProvider;
 
@@ -69,12 +70,13 @@ pub fn build_pete(
     store: Arc<dyn MemoryStore>,
     llm: Arc<dyn ChatProvider>,
     mouth: Arc<dyn Mouth>,
+    motor: Arc<dyn crate::motor::Motor>,
     _countenance: Arc<dyn Countenance>,
 ) -> (Psyche, mpsc::Sender<Sensation>, oneshot::Receiver<()>) {
     let (tx, rx) = mpsc::channel(32);
     let (stop_tx, stop_rx) = oneshot::channel();
 
-    let psyche = Psyche::new(store, llm, mouth);
+    let psyche = Psyche::new(store, llm, mouth, motor);
     // forward sensations from tx into psyche
     let sender = psyche.quick.sender.clone();
     tokio::task::spawn_local(async move {
@@ -93,6 +95,7 @@ pub async fn launch_default_pete() -> anyhow::Result<()> {
         Arc::new(DummyStore::new()),
         Arc::new(NoopLLM),
         Arc::new(DummyMouth),
+        Arc::new(DummyMotor::new()),
         Arc::new(DummyCountenance),
     );
 

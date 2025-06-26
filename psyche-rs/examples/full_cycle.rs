@@ -1,6 +1,6 @@
 use llm::chat::{ChatMessage, ChatProvider, ChatResponse};
 use psyche_rs::memory::Sensation;
-use psyche_rs::{DummyMouth, DummyStore, Psyche};
+use psyche_rs::{DummyMotor, DummyMouth, DummyStore, Psyche};
 use std::pin::Pin;
 use std::sync::Arc;
 use tokio::sync::mpsc;
@@ -56,6 +56,7 @@ async fn main() {
         Arc::new(DummyStore::new()),
         Arc::new(DummyLLM),
         Arc::new(DummyMouth),
+        Arc::new(DummyMotor::new()),
     );
     let local = LocalSet::new();
     local

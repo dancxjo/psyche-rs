@@ -1,6 +1,7 @@
 use std::sync::Arc;
 
-use llm::chat::ChatProvider;
+use futures_util::StreamExt;
+use llm::chat::{ChatMessage, ChatProvider};
 use tokio::sync::{Mutex, broadcast, mpsc};
 use tokio::task::spawn_local;
 use tracing::info;
@@ -9,7 +10,7 @@ use crate::{
     ear::Ear,
     llm::LLMExt,
     memory::{Impression, Intention, MemoryStore, Sensation, Urge},
-    motor::DummyMotor,
+    motor::{Motor, MotorEvent},
     mouth::Mouth,
     narrator::Narrator,
     store::NoopRetriever,
@@ -33,6 +34,7 @@ pub struct Psyche {
     /// Pete's voice used to respond to intentions.
     pub voice: Arc<Mutex<Voice>>,
     pub ear: Ear,
+    motor_tx: mpsc::Sender<MotorEvent>,
     llm: Arc<dyn ChatProvider>,
 }
 
@@ -43,6 +45,7 @@ impl Psyche {
         store: Arc<dyn MemoryStore>,
         llm: Arc<dyn ChatProvider>,
         mouth: Arc<dyn Mouth>,
+        motor: Arc<dyn Motor>,
     ) -> Self {
         // Quick wiring
         let quick = Quick::new(store.clone(), llm.clone());
@@ -56,8 +59,15 @@ impl Psyche {
         let (situation_tx, _) = broadcast::channel(32);
         spawn_local(combobulator.run(c_rx, situation_tx.clone()));
 
+        // Motor wiring
+        let (motor_tx, motor_rx) = mpsc::channel(32);
+        let motor_clone = motor.clone();
+        spawn_local(async move {
+            let _ = motor_clone.handle(motor_rx).await;
+        });
+
         // Will wiring
-        let will = Will::new(store.clone(), Arc::new(DummyMotor));
+        let will = Will::new(store.clone());
         let (w_tx, w_rx) = mpsc::channel(32);
         let (intent_tx, _) = broadcast::channel(32);
         spawn_local(will.run(w_rx, intent_tx.clone()));
@@ -97,13 +107,38 @@ impl Psyche {
 
         let ear = Ear::new(q_tx.clone());
 
-        // React to issued intentions by speaking a turn
+        // React to issued intentions by speaking a turn and streaming to the motor
         let mut intent_sub = intent_tx.subscribe();
         let voice_clone = voice.clone();
         let ear_clone = ear.clone();
+        let motor_sender = motor_tx.clone();
+        let llm_clone2 = llm.clone();
         spawn_local(async move {
             while let Ok(intent) = intent_sub.recv().await {
                 info!("🎤 Voice reacting to intent: {}", intent.motor_name);
+
+                // motor event stream
+                let tx = motor_sender.clone();
+                let intent_clone = intent.clone();
+                let llm_inner = llm_clone2.clone();
+                spawn_local(async move {
+                    let _ = tx.send(MotorEvent::Begin(intent_clone.clone())).await;
+                    if let Ok(mut stream) = llm_inner
+                        .chat_stream(&[ChatMessage::user()
+                            .content(intent_clone.motor_name.clone())
+                            .build()])
+                        .await
+                    {
+                        while let Some(chunk) = stream.next().await {
+                            if let Ok(text) = chunk {
+                                let _ = tx.send(MotorEvent::Chunk(text)).await;
+                            }
+                        }
+                    }
+                    let _ = tx.send(MotorEvent::End).await;
+                });
+
+                // voice reaction
                 let mut v = voice_clone.lock().await;
                 if let Ok(spoken) = v.take_turn().await {
                     info!("🔊 Spoken: {}", spoken);
@@ -127,6 +162,7 @@ impl Psyche {
             },
             voice,
             ear,
+            motor_tx,
             llm,
         }
     }

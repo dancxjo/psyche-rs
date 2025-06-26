@@ -109,7 +109,12 @@ async fn sensation_flows_to_intention() {
         .run_until(async {
             let store = Arc::new(MemStore::new());
             let llm = Arc::new(DummyLLM);
-            let psyche = Psyche::new(store, llm, Arc::new(psyche_rs::DummyMouth));
+            let psyche = Psyche::new(
+                store,
+                llm,
+                Arc::new(psyche_rs::DummyMouth),
+                Arc::new(psyche_rs::DummyMotor::new()),
+            );
             let mut rx = psyche.will.receiver.resubscribe();
 
             for i in 0..3 {
