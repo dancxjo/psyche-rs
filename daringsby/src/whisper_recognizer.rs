@@ -1,4 +1,11 @@
-use std::sync::Mutex;
+use std::sync::{Arc, Mutex, Weak};
+
+use tokio::sync::Mutex as AsyncMutex;
+use tokio::{
+    task::JoinHandle,
+    time::{Duration, sleep},
+};
+use tokio_util::sync::CancellationToken;
 
 use async_trait::async_trait;
 use whisper_rs::{FullParams, SamplingStrategy, WhisperContext, WhisperContextParameters};
@@ -18,11 +25,23 @@ pub struct WhisperRecognizer {
     stable_tokens: Mutex<Vec<String>>,
     /// Tokens from the last transcription (stable + fuzzy).
     last_tokens: Mutex<Vec<String>>,
+    /// Latest completed transcript.
+    last_result: Mutex<Option<TranscriptResult>>,
+    /// Currently running transcription job.
+    job: AsyncMutex<Option<Job>>,
+    /// Weak pointer to upgrade for scheduling.
+    self_ref: Mutex<Weak<WhisperRecognizer>>,
+}
+
+struct Job {
+    token: CancellationToken,
+    handle: JoinHandle<()>,
 }
 
 const SAMPLE_RATE: usize = 16_000;
-const MAX_DURATION_SECS: usize = 6;
+const MAX_DURATION_SECS: usize = 4;
 const MAX_SAMPLES: usize = SAMPLE_RATE * MAX_DURATION_SECS;
+const DEBOUNCE_MS: u64 = 300;
 
 fn diff_tokens(
     stable: &mut Vec<String>,
@@ -51,15 +70,20 @@ fn diff_tokens(
 
 impl WhisperRecognizer {
     /// Load the Whisper model at `model_path`.
-    pub fn new(model_path: &str) -> anyhow::Result<Self> {
+    pub fn new(model_path: &str) -> anyhow::Result<Arc<Self>> {
         let ctx = WhisperContext::new_with_params(model_path, WhisperContextParameters::default())
             .map_err(|e| anyhow::anyhow!(e))?;
-        Ok(Self {
+        let recognizer = Arc::new(WhisperRecognizer {
             ctx,
             buffer: Mutex::new(Vec::new()),
             stable_tokens: Mutex::new(Vec::new()),
             last_tokens: Mutex::new(Vec::new()),
-        })
+            last_result: Mutex::new(None),
+            job: AsyncMutex::new(None),
+            self_ref: Mutex::new(Weak::new()),
+        });
+        *recognizer.self_ref.lock().unwrap() = Arc::downgrade(&recognizer);
+        Ok(recognizer)
     }
 
     /// Attempt to transcribe the buffered audio.
@@ -122,27 +146,73 @@ impl WhisperRecognizer {
             buffer_ms = (buf_snapshot.len() as f32 / SAMPLE_RATE as f32) * 1000.0,
         );
 
-        Ok(Some(TranscriptResult {
+        let result = TranscriptResult {
             stable: stable.join(" "),
             fuzzy,
-        }))
+        };
+        *self.last_result.lock().unwrap() = Some(result.clone());
+
+        Ok(Some(result))
+    }
+
+    async fn spawn_job(&self) {
+        let weak = { self.self_ref.lock().unwrap().clone() };
+        if let Some(this) = weak.upgrade() {
+            let mut job = self.job.lock().await;
+            if let Some(j) = job.take() {
+                j.token.cancel();
+                j.handle.abort();
+            }
+            let token = CancellationToken::new();
+            let cloned = this.clone();
+            let tok = token.clone();
+            let handle = tokio::spawn(async move {
+                tokio::select! {
+                    _ = tok.cancelled() => return,
+                    _ = sleep(Duration::from_millis(DEBOUNCE_MS)) => {}
+                }
+                if tok.is_cancelled() {
+                    return;
+                }
+                let _ = cloned.run_transcription(tok).await;
+            });
+            *job = Some(Job { token, handle });
+        }
+    }
+
+    async fn run_transcription(self: Arc<Self>, token: CancellationToken) -> anyhow::Result<()> {
+        if token.is_cancelled() {
+            return Ok(());
+        }
+        let this = self.clone();
+        let res = tokio::task::spawn_blocking(move || this.transcribe()).await?;
+        if token.is_cancelled() {
+            return Ok(());
+        }
+        if let Some(tr) = res? {
+            *self.last_result.lock().unwrap() = Some(tr);
+        }
+        Ok(())
     }
 }
 
 #[async_trait]
 impl SpeechRecognizer for WhisperRecognizer {
     async fn recognize(&self, samples: &[i16]) -> anyhow::Result<()> {
-        let mut buf = self.buffer.lock().unwrap();
-        buf.extend_from_slice(samples);
-        if buf.len() > MAX_SAMPLES {
-            let excess = buf.len() - MAX_SAMPLES;
-            buf.drain(0..excess);
+        {
+            let mut buf = self.buffer.lock().unwrap();
+            buf.extend_from_slice(samples);
+            if buf.len() > MAX_SAMPLES {
+                let excess = buf.len() - MAX_SAMPLES;
+                buf.drain(0..excess);
+            }
         }
+        self.spawn_job().await;
         Ok(())
     }
 
     async fn try_transcribe(&self) -> anyhow::Result<Option<TranscriptResult>> {
-        self.transcribe()
+        Ok(self.last_result.lock().unwrap().take())
     }
 }
 
