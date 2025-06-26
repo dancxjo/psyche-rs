@@ -8,6 +8,7 @@ use tokio::{
 use tokio_util::sync::CancellationToken;
 
 use async_trait::async_trait;
+use num_cpus;
 use whisper_rs::{FullParams, SamplingStrategy, WhisperContext, WhisperContextParameters};
 
 use psyche_rs::speech::{SpeechRecognizer, TranscriptResult};
@@ -43,6 +44,42 @@ const MAX_DURATION_SECS: usize = 4;
 const MAX_SAMPLES: usize = SAMPLE_RATE * MAX_DURATION_SECS;
 const DEBOUNCE_MS: u64 = 300;
 const MIN_SAMPLES: usize = SAMPLE_RATE / 5; // ~200ms of audio
+const STABLE_PROB_THRESHOLD: f32 = 0.85;
+
+/// Promote tokens to stable based on confidence.
+///
+/// Tokens are examined starting at the current length of `stable`. Any
+/// consecutive tokens with probability at or above `threshold` are moved from
+/// `tokens` into `stable`.
+///
+/// # Examples
+///
+/// ```ignore
+/// use daringsby::whisper_recognizer::promote_confident_tokens;
+/// let mut stable = vec!["hello".to_string()];
+/// let tokens = vec!["hello".to_string(), "world".to_string(), "again".to_string()];
+/// let probs = vec![0.99, 0.92, 0.5];
+/// let added = promote_confident_tokens(&mut stable, &tokens, &probs, 0.9);
+/// assert_eq!(added, 1);
+/// assert_eq!(stable, vec!["hello", "world"]);
+/// ```
+pub fn promote_confident_tokens(
+    stable: &mut Vec<String>,
+    tokens: &[String],
+    probs: &[f32],
+    threshold: f32,
+) -> usize {
+    let mut added = 0;
+    for (tok, &p) in tokens.iter().zip(probs.iter()).skip(stable.len()) {
+        if p >= threshold {
+            stable.push(tok.clone());
+            added += 1;
+        } else {
+            break;
+        }
+    }
+    added
+}
 
 fn diff_tokens(
     stable: &mut Vec<String>,
@@ -117,26 +154,36 @@ impl WhisperRecognizer {
         params.set_print_progress(false);
         params.set_print_realtime(false);
         params.set_print_timestamps(false);
+        params.set_n_threads(num_cpus::get() as i32);
         state
             .full(params, &float_buf)
             .map_err(|e| anyhow::anyhow!(e))?;
-
         let segments = state.full_n_segments().map_err(|e| anyhow::anyhow!(e))?;
-        let mut out = String::new();
+        let mut new_tokens = Vec::new();
+        let mut probs = Vec::new();
         for i in 0..segments {
-            out.push_str(
-                &state
-                    .full_get_segment_text(i)
-                    .map_err(|e| anyhow::anyhow!(e))?,
-            );
+            let n_tokens = state.full_n_tokens(i).map_err(|e| anyhow::anyhow!(e))?;
+            for t in 0..n_tokens {
+                let text = state
+                    .full_get_token_text(i, t)
+                    .map_err(|e| anyhow::anyhow!(e))?;
+                let p = state
+                    .full_get_token_prob(i, t)
+                    .map_err(|e| anyhow::anyhow!(e))?;
+                let trimmed = text.trim();
+                if !trimmed.is_empty() {
+                    new_tokens.push(trimmed.to_string());
+                    probs.push(p);
+                }
+            }
         }
-
-        let new_tokens: Vec<String> = out.split_whitespace().map(|s| s.to_string()).collect();
 
         let mut stable = self.stable_tokens.lock().unwrap();
         let mut last = self.last_tokens.lock().unwrap();
 
-        let (new_stable, fuzzy) = diff_tokens(&mut stable, &mut last, &new_tokens);
+        let (mut new_stable, _) = diff_tokens(&mut stable, &mut last, &new_tokens);
+        new_stable +=
+            promote_confident_tokens(&mut stable, &new_tokens, &probs, STABLE_PROB_THRESHOLD);
 
         if new_stable > 0 {
             let remove = buf_snapshot.len() * new_stable / new_tokens.len().max(1);
@@ -149,8 +196,14 @@ impl WhisperRecognizer {
             );
         }
 
+        let fuzzy_tokens = if new_tokens.len() > stable.len() {
+            Some(new_tokens[stable.len()..].join(" "))
+        } else {
+            None
+        };
+
         tracing::debug!(
-            fuzzy_tokens = fuzzy
+            fuzzy_tokens = fuzzy_tokens
                 .as_ref()
                 .map(|f| f.split_whitespace().count())
                 .unwrap_or(0),
@@ -159,7 +212,7 @@ impl WhisperRecognizer {
 
         let result = TranscriptResult {
             stable: stable.join(" "),
-            fuzzy,
+            fuzzy: fuzzy_tokens,
         };
         *self.last_result.lock().unwrap() = Some(result.clone());
 
@@ -268,5 +321,15 @@ mod tests {
         assert_eq!(added, 0);
         assert_eq!(stable, Vec::<String>::new());
         assert_eq!(fuzzy, Some("one two".into()));
+    }
+
+    #[test]
+    fn promotes_tokens_by_confidence() {
+        let mut stable = vec!["hello".to_string()];
+        let tokens = vec!["hello".to_string(), "world".to_string(), "foo".to_string()];
+        let probs = vec![0.99, 0.9, 0.4];
+        let added = promote_confident_tokens(&mut stable, &tokens, &probs, 0.85);
+        assert_eq!(added, 1);
+        assert_eq!(stable, vec!["hello", "world"]);
     }
 }
