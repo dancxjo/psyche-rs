@@ -115,7 +115,7 @@ impl Psyche {
         let llm_clone2 = llm.clone();
         spawn_local(async move {
             while let Ok(intent) = intent_sub.recv().await {
-                info!("🎤 Voice reacting to intent: {}", intent.motor_name);
+                info!("🎤 Voice reacting to intent: {}", intent.action.name);
 
                 // motor event stream
                 let tx = motor_sender.clone();
@@ -125,7 +125,7 @@ impl Psyche {
                     let _ = tx.send(MotorEvent::Begin(intent_clone.clone())).await;
                     if let Ok(mut stream) = llm_inner
                         .chat_stream(&[ChatMessage::user()
-                            .content(intent_clone.motor_name.clone())
+                            .content(intent_clone.action.name.clone())
                             .build()])
                         .await
                     {

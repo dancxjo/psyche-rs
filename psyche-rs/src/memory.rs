@@ -3,6 +3,8 @@ use std::any::Any;
 use std::time::SystemTime;
 use uuid::Uuid;
 
+use crate::action::Action;
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Sensation {
     pub uuid: Uuid,
@@ -44,8 +46,8 @@ pub struct Impression {
 pub struct Urge {
     pub uuid: Uuid,
     pub source: Uuid,
-    pub motor_name: String,
-    pub parameters: serde_json::Value,
+    /// The action Pete feels compelled to perform.
+    pub action: Action,
     pub intensity: f32,
     pub timestamp: SystemTime,
 }
@@ -63,8 +65,8 @@ pub enum IntentionStatus {
 pub struct Intention {
     pub uuid: Uuid,
     pub urge: Uuid,
-    pub motor_name: String,
-    pub parameters: serde_json::Value,
+    /// The action Pete intends to enact.
+    pub action: Action,
     pub issued_at: SystemTime,
     pub resolved_at: Option<SystemTime>,
     pub status: IntentionStatus,

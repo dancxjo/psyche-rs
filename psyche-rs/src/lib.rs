@@ -1,3 +1,4 @@
+pub mod action;
 pub mod codec;
 pub mod conversation;
 pub mod countenance;
@@ -16,6 +17,7 @@ pub mod voice;
 pub mod wit;
 pub mod wits;
 
+pub use action::*;
 pub use conversation::*;
 pub use countenance::*;
 pub use ear::*;

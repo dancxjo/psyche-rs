@@ -125,7 +125,7 @@ async fn sensation_flows_to_intention() {
             }
 
             let intent = rx.recv().await.unwrap();
-            assert_eq!(intent.motor_name, "jump");
+            assert_eq!(intent.action.name, "jump");
         })
         .await;
 }

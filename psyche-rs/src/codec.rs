@@ -42,8 +42,8 @@ pub fn serialize_memory(memory: &Memory) -> anyhow::Result<(&'static str, HashMa
             let mut map = HashMap::new();
             map.insert("uuid".into(), json!(u.uuid.to_string()));
             map.insert("source".into(), json!(u.source.to_string()));
-            map.insert("motor_name".into(), json!(u.motor_name));
-            map.insert("parameters".into(), u.parameters.clone());
+            map.insert("motor_name".into(), json!(u.action.name));
+            map.insert("parameters".into(), u.action.attributes.clone());
             map.insert("intensity".into(), json!(u.intensity));
             map.insert(
                 "timestamp".into(),
@@ -55,8 +55,8 @@ pub fn serialize_memory(memory: &Memory) -> anyhow::Result<(&'static str, HashMa
             let mut map = HashMap::new();
             map.insert("uuid".into(), json!(i.uuid.to_string()));
             map.insert("urge".into(), json!(i.urge.to_string()));
-            map.insert("motor_name".into(), json!(i.motor_name));
-            map.insert("parameters".into(), i.parameters.clone());
+            map.insert("motor_name".into(), json!(i.action.name));
+            map.insert("parameters".into(), i.action.attributes.clone());
             map.insert(
                 "issued_at".into(),
                 json!(i.issued_at.duration_since(UNIX_EPOCH).unwrap().as_secs()),
@@ -176,13 +176,12 @@ pub fn deserialize_memory(node: &Node) -> anyhow::Result<Memory> {
             let ts: i64 = node
                 .get("timestamp")
                 .ok_or_else(|| anyhow::anyhow!("missing timestamp"))?;
-            let parameters = serde_json::from_str(&parameters_str)?;
+            let parameters: serde_json::Value = serde_json::from_str(&parameters_str)?;
             let timestamp = UNIX_EPOCH + std::time::Duration::from_secs(ts as u64);
             Ok(Memory::Urge(Urge {
                 uuid: Uuid::parse_str(&uuid)?,
                 source: Uuid::parse_str(&source)?,
-                motor_name,
-                parameters,
+                action: crate::action::Action::new(motor_name, parameters),
                 intensity: intensity as f32,
                 timestamp,
             }))
@@ -207,7 +206,7 @@ pub fn deserialize_memory(node: &Node) -> anyhow::Result<Memory> {
                 .get("status")
                 .ok_or_else(|| anyhow::anyhow!("missing status"))?;
             let resolved_at: Option<i64> = node.get("resolved_at");
-            let parameters = serde_json::from_str(&parameters_str)?;
+            let parameters: serde_json::Value = serde_json::from_str(&parameters_str)?;
             let issued_at = UNIX_EPOCH + std::time::Duration::from_secs(issued_at as u64);
             let resolved_at_time =
                 resolved_at.map(|t| UNIX_EPOCH + std::time::Duration::from_secs(t as u64));
@@ -221,8 +220,7 @@ pub fn deserialize_memory(node: &Node) -> anyhow::Result<Memory> {
             Ok(Memory::Intention(Intention {
                 uuid: Uuid::parse_str(&uuid)?,
                 urge: Uuid::parse_str(&urge)?,
-                motor_name,
-                parameters,
+                action: crate::action::Action::new(motor_name, parameters),
                 issued_at,
                 resolved_at: resolved_at_time,
                 status,

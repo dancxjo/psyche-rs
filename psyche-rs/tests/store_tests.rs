@@ -1,3 +1,4 @@
+use psyche_rs::action::action;
 use psyche_rs::{Completion, Intention, IntentionStatus, Interruption, Memory, MemoryStore, Urge};
 use serde_json::json;
 use std::collections::HashMap;
@@ -130,8 +131,7 @@ fn example_urge(ts: SystemTime) -> Urge {
     Urge {
         uuid: Uuid::new_v4(),
         source: Uuid::new_v4(),
-        motor_name: "test".into(),
-        parameters: json!({"x": 1}),
+        action: action::with("test", json!({"x": 1})),
         intensity: 0.7,
         timestamp: ts,
     }
@@ -148,8 +148,7 @@ async fn save_and_get_urge_roundtrip() -> anyhow::Result<()> {
         Memory::Urge(u) => {
             assert_eq!(u.uuid, urge.uuid);
             assert_eq!(u.source, urge.source);
-            assert_eq!(u.motor_name, urge.motor_name);
-            assert_eq!(u.parameters, urge.parameters);
+            assert_eq!(u.action, urge.action);
             assert_eq!(u.intensity, urge.intensity);
         }
         other => panic!("expected Urge, got {:?}", other),
@@ -183,8 +182,7 @@ async fn completing_an_intention_updates_status() -> anyhow::Result<()> {
     let intention = Intention {
         uuid: Uuid::new_v4(),
         urge: urge.uuid,
-        motor_name: urge.motor_name.clone(),
-        parameters: urge.parameters.clone(),
+        action: urge.action.clone(),
         issued_at: SystemTime::now(),
         resolved_at: None,
         status: IntentionStatus::Pending,
@@ -225,8 +223,7 @@ async fn interrupting_an_intention_updates_status() -> anyhow::Result<()> {
     let intention = Intention {
         uuid: Uuid::new_v4(),
         urge: urge.uuid,
-        motor_name: urge.motor_name.clone(),
-        parameters: urge.parameters.clone(),
+        action: urge.action.clone(),
         issued_at: SystemTime::now(),
         resolved_at: None,
         status: IntentionStatus::Pending,
