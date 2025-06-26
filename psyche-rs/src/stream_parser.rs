@@ -78,7 +78,7 @@ pub fn parse_streamed_action(xml: &str) -> Option<ParsedAction> {
                     break;
                 }
             }
-            Ok(Event::Eof) => {
+            Ok(Event::Eof) | Ok(Event::End(_)) => {
                 error!(%xml, "Unexpected EOF while parsing streamed action");
                 return None;
             }
