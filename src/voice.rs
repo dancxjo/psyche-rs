@@ -17,6 +17,7 @@ use std::sync::Arc;
 use std::time::{Duration, SystemTime};
 
 use crate::conversation::{Conversation, Role};
+use futures_util::StreamExt;
 use llm::chat::{ChatProvider, ChatResponse};
 
 use serde_json::json;
@@ -78,8 +79,12 @@ impl Voice {
     /// text.
     pub async fn take_turn(&mut self) -> anyhow::Result<String> {
         let prompt = self.conversation.to_prompt();
-        let response = self.llm.chat(&prompt).await?;
-        let reply = response.text().unwrap_or_default();
+        let mut stream = self.llm.chat_stream(&prompt).await?;
+        let mut reply = String::new();
+        while let Some(result) = stream.next().await {
+            let token = result?;
+            reply.push_str(&token);
+        }
         self.mouth.say(&reply).await?;
         info!("🗣 Pete says: {}", reply);
         self.conversation.hear(Role::Me, &reply);
@@ -175,6 +180,18 @@ impl ChatProvider for NoopChatLLM {
         _tools: Option<&[llm::chat::Tool]>,
     ) -> Result<Box<dyn ChatResponse>, llm::error::LLMError> {
         Ok(Box::new(NoopChatResponse))
+    }
+
+    async fn chat_stream(
+        &self,
+        _messages: &[llm::chat::ChatMessage],
+    ) -> Result<
+        std::pin::Pin<
+            Box<dyn futures_util::Stream<Item = Result<String, llm::error::LLMError>> + Send>,
+        >,
+        llm::error::LLMError,
+    > {
+        Ok(Box::pin(futures_util::stream::empty()))
     }
 }
 
