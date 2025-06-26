@@ -95,7 +95,7 @@ async fn psyche_construction() {
             let store = Arc::new(DummyStore);
             let llm = Arc::new(DummyLLM);
 
-            let psyche = Psyche::new(store, llm);
+            let psyche = Psyche::new(store, llm, Arc::new(psyche_rs::DummyMouth));
             psyche
                 .send_sensation(Sensation::new_text("hi", "test"))
                 .await

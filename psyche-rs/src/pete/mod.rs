@@ -68,13 +68,13 @@ use tokio::task::LocalSet;
 pub fn build_pete(
     store: Arc<dyn MemoryStore>,
     llm: Arc<dyn ChatProvider>,
-    _mouth: Arc<dyn Mouth>,
+    mouth: Arc<dyn Mouth>,
     _countenance: Arc<dyn Countenance>,
 ) -> (Psyche, mpsc::Sender<Sensation>, oneshot::Receiver<()>) {
     let (tx, rx) = mpsc::channel(32);
     let (stop_tx, stop_rx) = oneshot::channel();
 
-    let psyche = Psyche::new(store, llm);
+    let psyche = Psyche::new(store, llm, mouth);
     // forward sensations from tx into psyche
     let sender = psyche.quick.sender.clone();
     tokio::task::spawn_local(async move {
