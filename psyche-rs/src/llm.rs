@@ -157,7 +157,15 @@ impl ChatProvider for DummyLLM {
     > {
         let reply = messages
             .last()
-            .map(|m| m.content.clone())
+            .map(|m| {
+                if m.content.contains("suggested motor") {
+                    "wave".to_string()
+                } else if m.content.contains("feel") {
+                    "Pete should feel hopeful.".to_string()
+                } else {
+                    m.content.clone()
+                }
+            })
             .unwrap_or_default();
         Ok(Box::pin(futures_util::stream::once(
             async move { Ok(reply) },

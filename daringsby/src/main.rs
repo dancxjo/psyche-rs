@@ -18,10 +18,14 @@ use serde_json::json;
 mod whisper_recognizer;
 use crate::prompt::PETE_PROMPT;
 use psyche_rs::{
-    DummyMotor, DummyStore, Psyche, llm::DummyLLM, memory::Sensation, mouth::LoggingMouth,
+    DummyMotor, DummyStore, Psyche,
+    llm::DummyLLM,
+    memory::Sensation,
+    mouth::{LoggingMouth, LoggingMouthLog},
 };
 use std::pin::Pin;
 use tokio::net::TcpListener;
+use tokio::sync::Mutex;
 use tokio::task::LocalSet;
 use tokio_util::{
     codec::{FramedRead, LengthDelimitedCodec},
@@ -30,6 +34,36 @@ use tokio_util::{
 use tracing::{error, info};
 use tracing_subscriber::EnvFilter;
 use whisper_recognizer::WhisperRecognizer;
+
+fn build_psyche(prompt: String) -> (Arc<Mutex<Psyche>>, LoggingMouthLog) {
+    let store = Arc::new(DummyStore::new());
+    let llm = Arc::new(DummyLLM);
+    let (mouth, log) = LoggingMouth::new();
+    let mouth = Arc::new(mouth);
+    let motor = Arc::new(DummyMotor::new());
+    let psyche = Psyche::new(store, llm, mouth, motor, prompt);
+    (Arc::new(Mutex::new(psyche)), log)
+}
+
+fn spawn_asr_handler(
+    tx: tokio::sync::broadcast::Sender<TranscriptResult>,
+    psyche: Arc<Mutex<Psyche>>,
+    log: LoggingMouthLog,
+) -> tokio::task::JoinHandle<()> {
+    tokio::task::spawn_local(async move {
+        let mut rx = tx.subscribe();
+        while let Ok(tr) = rx.recv().await {
+            let mut psyche = psyche.lock().await;
+            let _ = psyche
+                .send_sensation(Sensation::new_text(tr.stable, "asr"))
+                .await;
+            psyche.tick().await;
+            if let Some(spoken) = log.last() {
+                println!("Pete says: {}", spoken);
+            }
+        }
+    })
+}
 
 async fn asr_ws(
     ws: WebSocketUpgrade,
@@ -166,12 +200,18 @@ async fn main() {
     let (tx, _rx) = tokio::sync::broadcast::channel::<TranscriptResult>(16);
 
     let prompt = PETE_PROMPT.to_string();
-    let store = Arc::new(DummyStore::new());
-    let llm = Arc::new(DummyLLM);
-    let (mouth, mouth_log) = LoggingMouth::new();
-    let mouth = Arc::new(mouth);
-    let motor = Arc::new(DummyMotor::new());
-    let psyche = Psyche::new(store.clone(), llm, mouth.clone(), motor, prompt);
+    let (psyche, mouth_log) = build_psyche(prompt);
+
+    {
+        let mut psyche = psyche.lock().await;
+        let _ = psyche
+            .send_sensation(Sensation::new_text("I am awake.", "boot"))
+            .await;
+        psyche.tick().await;
+    }
+    if let Some(spoken) = mouth_log.last() {
+        println!("Pete says: {}", spoken);
+    }
 
     let app = Router::new()
         .route("/audio/in", get(audio_in))
@@ -189,22 +229,11 @@ async fn main() {
     let local = LocalSet::new();
     local
         .run_until(async move {
-            tokio::task::spawn_local({
-                let mut rx = tx.subscribe();
-                let psyche = psyche;
-                let log = mouth_log;
-                async move {
-                    while let Ok(tr) = rx.recv().await {
-                        let _ = psyche
-                            .send_sensation(Sensation::new_text(tr.stable, "asr"))
-                            .await;
-                        tokio::task::yield_now().await;
-                        if let Some(spoken) = log.last() {
-                            println!("Pete says: {}", spoken);
-                        }
-                    }
-                }
-            });
+            tokio::task::spawn_local(spawn_asr_handler(
+                tx.clone(),
+                psyche.clone(),
+                mouth_log.clone(),
+            ));
 
             serve(listener, app.into_make_service())
                 .with_graceful_shutdown(shutdown_signal())
