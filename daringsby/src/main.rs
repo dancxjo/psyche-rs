@@ -51,6 +51,10 @@ async fn asr_view() -> Html<&'static str> {
     Html(include_str!("../static/asr_view.html"))
 }
 
+async fn audio_test() -> Html<&'static str> {
+    Html(include_str!("../static/audio_test.html"))
+}
+
 async fn audio_in(
     ws: WebSocketUpgrade,
     Extension(recognizer): Extension<Arc<dyn SpeechRecognizer>>,
@@ -139,6 +143,7 @@ async fn main() {
         .route("/audio/in", get(audio_in))
         .route("/debug/asr", get(asr_ws))
         .route("/debug/asr/view", get(asr_view))
+        .route("/debug/audio/test", get(audio_test))
         .route("/", get(|| async { "ok" }))
         .layer(Extension(recognizer))
         .layer(Extension(tx));
