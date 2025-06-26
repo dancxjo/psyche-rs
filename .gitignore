@@ -26,3 +26,7 @@ target/
 /target
 all_sources.rst
 whisper-base.en.bin
+
+/neo4j_data
+/tts
+/qdrant_data
