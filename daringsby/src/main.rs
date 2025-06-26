@@ -166,7 +166,7 @@ async fn main() {
         .layer(Extension(recognizer))
         .layer(Extension(tx));
 
-    let addr = SocketAddr::from(([127, 0, 0, 1], 3000));
+    let addr = SocketAddr::from(([0, 0, 0, 0], 3000));
     info!("listening on {}", addr);
     let listener = TcpListener::bind(addr).await.unwrap();
     serve(listener, app.into_make_service())
