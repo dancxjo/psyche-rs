@@ -42,6 +42,7 @@ const SAMPLE_RATE: usize = 16_000;
 const MAX_DURATION_SECS: usize = 4;
 const MAX_SAMPLES: usize = SAMPLE_RATE * MAX_DURATION_SECS;
 const DEBOUNCE_MS: u64 = 300;
+const MIN_SAMPLES: usize = SAMPLE_RATE / 5; // ~200ms of audio
 
 fn diff_tokens(
     stable: &mut Vec<String>,
@@ -95,6 +96,16 @@ impl WhisperRecognizer {
             }
             buf.clone()
         };
+
+        tracing::debug!(
+            samples = buf_snapshot.len(),
+            ms = (buf_snapshot.len() as f32 / SAMPLE_RATE as f32) * 1000.0,
+            "transcribe start"
+        );
+        if buf_snapshot.len() < MIN_SAMPLES {
+            tracing::debug!("skipping transcription, not enough samples");
+            return Ok(None);
+        }
 
         let mut float_buf = vec![0.0f32; buf_snapshot.len()];
         whisper_rs::convert_integer_to_float_audio(&buf_snapshot, &mut float_buf)
@@ -159,9 +170,14 @@ impl WhisperRecognizer {
         let weak = { self.self_ref.lock().unwrap().clone() };
         if let Some(this) = weak.upgrade() {
             let mut job = self.job.lock().await;
+            if let Some(j) = job.as_ref() {
+                if !j.handle.is_finished() {
+                    tracing::trace!("transcription job already scheduled");
+                    return;
+                }
+            }
             if let Some(j) = job.take() {
                 j.token.cancel();
-                j.handle.abort();
             }
             let token = CancellationToken::new();
             let cloned = this.clone();
@@ -184,6 +200,7 @@ impl WhisperRecognizer {
         if token.is_cancelled() {
             return Ok(());
         }
+        tracing::debug!("running transcription task");
         let this = self.clone();
         let res = tokio::task::spawn_blocking(move || this.transcribe()).await?;
         if token.is_cancelled() {
@@ -199,14 +216,20 @@ impl WhisperRecognizer {
 #[async_trait]
 impl SpeechRecognizer for WhisperRecognizer {
     async fn recognize(&self, samples: &[i16]) -> anyhow::Result<()> {
-        {
+        let buf_len = {
             let mut buf = self.buffer.lock().unwrap();
             buf.extend_from_slice(samples);
             if buf.len() > MAX_SAMPLES {
                 let excess = buf.len() - MAX_SAMPLES;
                 buf.drain(0..excess);
             }
-        }
+            buf.len()
+        };
+        tracing::debug!(
+            samples = buf_len,
+            ms = (buf_len as f32 / SAMPLE_RATE as f32) * 1000.0,
+            "buffered"
+        );
         self.spawn_job().await;
         Ok(())
     }
