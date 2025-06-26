@@ -5,11 +5,12 @@ use llm::chat::{ChatMessage, ChatProvider};
 use tokio::sync::{Mutex, broadcast, mpsc};
 use tokio::task::spawn_local;
 use tracing::info;
+use uuid::Uuid;
 
 use crate::{
     ear::Ear,
     llm::LLMExt,
-    memory::{Impression, Intention, MemoryStore, Sensation, Urge},
+    memory::{Impression, Intention, IntentionStatus, MemoryStore, Sensation, Urge},
     motor::{Motor, MotorEvent},
     mouth::Mouth,
     narrator::Narrator,
@@ -122,20 +123,40 @@ impl Psyche {
                 let intent_clone = intent.clone();
                 let llm_inner = llm_clone2.clone();
                 spawn_local(async move {
-                    let _ = tx.send(MotorEvent::Begin(intent_clone.clone())).await;
+                    use crate::stream_parser::parse_streamed_action;
+
                     if let Ok(mut stream) = llm_inner
                         .chat_stream(&[ChatMessage::user()
                             .content(intent_clone.action.name.clone())
                             .build()])
                         .await
                     {
+                        let mut acc = String::new();
                         while let Some(chunk) = stream.next().await {
                             if let Ok(text) = chunk {
-                                let _ = tx.send(MotorEvent::Chunk(text)).await;
+                                acc.push_str(&text);
                             }
                         }
+
+                        if let Some(parsed) = parse_streamed_action(&acc) {
+                            let _ = tx
+                                .send(MotorEvent::Begin(Intention {
+                                    uuid: Uuid::new_v4(),
+                                    urge: intent_clone.urge,
+                                    action: parsed.action.clone(),
+                                    issued_at: std::time::SystemTime::now(),
+                                    resolved_at: None,
+                                    status: IntentionStatus::Pending,
+                                }))
+                                .await;
+
+                            if !parsed.body.is_empty() {
+                                let _ = tx.send(MotorEvent::Chunk(parsed.body)).await;
+                            }
+
+                            let _ = tx.send(MotorEvent::End).await;
+                        }
                     }
-                    let _ = tx.send(MotorEvent::End).await;
                 });
 
                 // voice reaction
