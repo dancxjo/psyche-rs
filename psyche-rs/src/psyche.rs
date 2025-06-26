@@ -198,4 +198,9 @@ impl Psyche {
         info!("📥 Received sensation: {}", s.kind);
         self.quick.sender.send(s).await
     }
+
+    /// Advance Pete's internal tasks.
+    pub async fn tick(&mut self) {
+        tokio::task::yield_now().await;
+    }
 }
