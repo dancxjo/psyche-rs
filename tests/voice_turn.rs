@@ -52,6 +52,20 @@ impl ChatProvider for EchoLLM {
     ) -> Result<Box<dyn ChatResponse>, llm::error::LLMError> {
         Ok(Box::new(SimpleResponse("Hello!".into())))
     }
+
+    async fn chat_stream(
+        &self,
+        _messages: &[ChatMessage],
+    ) -> Result<
+        std::pin::Pin<
+            Box<dyn futures_util::Stream<Item = Result<String, llm::error::LLMError>> + Send>,
+        >,
+        llm::error::LLMError,
+    > {
+        Ok(Box::pin(futures_util::stream::once(async {
+            Ok("Hello!".to_string())
+        })))
+    }
 }
 
 #[tokio::test]
