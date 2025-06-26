@@ -505,6 +505,7 @@ dependencies = [
  "futures-util",
  "llm",
  "neo4rs",
+ "num_cpus",
  "psyche-rs",
  "serde_json",
  "tokio",
