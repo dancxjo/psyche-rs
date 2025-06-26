@@ -147,7 +147,7 @@ async fn main() {
 
     let recognizer: Arc<dyn SpeechRecognizer> = if let Ok(path) = std::env::var("WHISPER_MODEL") {
         match WhisperRecognizer::new(&path) {
-            Ok(r) => Arc::new(r),
+            Ok(r) => r,
             Err(e) => {
                 error!("failed to init whisper: {:?}", e);
                 Arc::new(DummyRecognizer)
