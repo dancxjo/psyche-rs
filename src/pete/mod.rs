@@ -1,5 +1,8 @@
-use crate::memory::Sensation;
-use crate::{DummyCountenance, DummyLLM, DummyMouth, DummyStore, Psyche};
+use crate::memory::{MemoryStore, Sensation};
+use crate::{
+    DummyCountenance, DummyLLM, DummyMouth, DummyStore, Psyche, countenance::Countenance,
+    llm::LLMClient, mouth::Mouth,
+};
 use std::sync::Arc;
 use tokio::sync::{mpsc, oneshot};
 use tokio::task::LocalSet;
@@ -16,20 +19,38 @@ use tokio::task::LocalSet;
 ///     pete::launch_default_pete().await
 /// }
 /// ```
-pub async fn launch_default_pete() -> anyhow::Result<()> {
+///
+/// Build a [`Psyche`] using the provided dependencies.
+pub fn build_pete(
+    store: Arc<dyn MemoryStore>,
+    llm: Arc<dyn LLMClient>,
+    mouth: Arc<dyn Mouth>,
+    countenance: Arc<dyn Countenance>,
+) -> (Psyche, mpsc::Sender<Sensation>, oneshot::Receiver<()>) {
     let (tx, rx) = mpsc::channel(32);
-    let (stop_tx, _stop_rx) = oneshot::channel();
+    let (stop_tx, stop_rx) = oneshot::channel();
 
     let psyche = Psyche::new(
-        Arc::new(DummyStore::new()),
-        Arc::new(DummyLLM),
-        Arc::new(DummyMouth),
-        Arc::new(DummyCountenance),
+        store,
+        llm,
+        mouth,
+        countenance,
         rx,
         stop_tx,
         "gemma".into(),
         "You are Pete.".into(),
         2048,
+    );
+
+    (psyche, tx, stop_rx)
+}
+
+pub async fn launch_default_pete() -> anyhow::Result<()> {
+    let (psyche, tx, _stop_rx) = build_pete(
+        Arc::new(DummyStore::new()),
+        Arc::new(DummyLLM),
+        Arc::new(DummyMouth),
+        Arc::new(DummyCountenance),
     );
 
     let local = LocalSet::new();
