@@ -1,6 +1,6 @@
+use psyche_rs::action::action;
 use psyche_rs::memory::{Intention, IntentionStatus};
 use psyche_rs::motor::{DummyMotor, Motor, MotorEvent};
-use serde_json::json;
 use tokio::sync::mpsc;
 use uuid::Uuid;
 
@@ -17,8 +17,7 @@ async fn motor_receives_event_stream() {
     let intention = Intention {
         uuid: Uuid::new_v4(),
         urge: Uuid::new_v4(),
-        motor_name: "doit".into(),
-        parameters: json!({}),
+        action: action::of("doit"),
         issued_at: std::time::SystemTime::now(),
         resolved_at: None,
         status: IntentionStatus::Pending,

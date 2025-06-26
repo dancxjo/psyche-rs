@@ -1,3 +1,4 @@
+use psyche_rs::action::action;
 use psyche_rs::codec::serialize_memory;
 use psyche_rs::{
     Completion, Impression, Intention, IntentionStatus, Interruption, Memory, Sensation, Urge,
@@ -30,8 +31,7 @@ fn sample_urge(source: &Sensation) -> Urge {
     Urge {
         uuid: Uuid::new_v4(),
         source: source.uuid,
-        motor_name: "move".into(),
-        parameters: json!({"dir":"forward"}),
+        action: action::with("move", json!({"dir":"forward"})),
         intensity: 0.5,
         timestamp: UNIX_EPOCH,
     }
@@ -41,8 +41,7 @@ fn sample_intention(urge: &Urge) -> Intention {
     Intention {
         uuid: Uuid::new_v4(),
         urge: urge.uuid,
-        motor_name: urge.motor_name.clone(),
-        parameters: urge.parameters.clone(),
+        action: urge.action.clone(),
         issued_at: UNIX_EPOCH,
         resolved_at: None,
         status: IntentionStatus::Pending,

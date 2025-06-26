@@ -92,8 +92,7 @@ pub trait LLMExt: ChatProvider + Send + Sync {
         Ok(vec![Urge {
             uuid: Uuid::new_v4(),
             source: impression.uuid,
-            motor_name: text.trim().to_string(),
-            parameters: serde_json::json!({}),
+            action: crate::action::Action::new(text.trim(), serde_json::json!({})),
             intensity: 1.0,
             timestamp: impression.timestamp,
         }])

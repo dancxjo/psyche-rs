@@ -41,8 +41,7 @@ impl Wit<Urge, Intention> for Will {
         let intent = Intention {
             uuid: Uuid::new_v4(),
             urge: urge.uuid,
-            motor_name: urge.motor_name,
-            parameters: urge.parameters,
+            action: urge.action,
             issued_at: SystemTime::now(),
             resolved_at: None,
             status: IntentionStatus::Pending,
@@ -50,7 +49,7 @@ impl Wit<Urge, Intention> for Will {
 
         let _ = self.store.save(&Memory::Intention(intent.clone())).await;
 
-        info!("🎯 Pete intends: {}", intent.motor_name);
+        info!("🎯 Pete intends: {}", intent.action.name);
 
         Some(intent)
     }
