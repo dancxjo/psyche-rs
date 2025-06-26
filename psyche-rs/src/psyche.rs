@@ -131,14 +131,14 @@ impl Psyche {
                             .build()])
                         .await
                     {
-                        let mut acc = String::new();
+                        let mut raw_xml = String::new();
                         while let Some(chunk) = stream.next().await {
                             if let Ok(text) = chunk {
-                                acc.push_str(&text);
+                                raw_xml.push_str(&text);
                             }
                         }
 
-                        if let Some(parsed) = parse_streamed_action(&acc) {
+                        if let Some(parsed) = parse_streamed_action(&raw_xml) {
                             let _ = tx
                                 .send(MotorEvent::Begin(Intention {
                                     uuid: Uuid::new_v4(),
