@@ -47,9 +47,10 @@ impl Psyche {
         llm: Arc<dyn ChatProvider>,
         mouth: Arc<dyn Mouth>,
         motor: Arc<dyn Motor>,
+        system_prompt: String,
     ) -> Self {
         // Quick wiring
-        let quick = Quick::new(store.clone(), llm.clone());
+        let quick = Quick::new(store.clone(), llm.clone(), system_prompt.clone());
         let (q_tx, q_rx) = mpsc::channel(32);
         let (instant_tx, _) = broadcast::channel(32);
         spawn_local(quick.run(q_rx, instant_tx.clone()));
@@ -86,9 +87,10 @@ impl Psyche {
         let mut c_out = situation_tx.subscribe();
         let w_in = w_tx.clone();
         let llm_clone = llm.clone();
+        let system_prompt_clone = system_prompt.clone();
         spawn_local(async move {
             while let Ok(sit) = c_out.recv().await {
-                if let Ok(urges) = llm_clone.suggest_urges(&sit).await {
+                if let Ok(urges) = llm_clone.suggest_urges(&system_prompt_clone, &sit).await {
                     for u in urges {
                         let _ = w_in.send(u).await;
                     }
@@ -102,7 +104,7 @@ impl Psyche {
             llm: llm.clone(),
             retriever: Arc::new(NoopRetriever),
         };
-        let mut voice = Voice::new(narrator, mouth, store.clone());
+        let mut voice = Voice::new(narrator, mouth, store.clone(), system_prompt.clone());
         voice.llm = llm.clone();
         let voice = Arc::new(Mutex::new(voice));
 

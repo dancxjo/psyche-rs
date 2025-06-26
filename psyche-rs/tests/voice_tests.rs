@@ -174,7 +174,12 @@ async fn test_narrate_response() -> anyhow::Result<()> {
     let (mouth, log) = LoggingMouth::new();
     let mouth = Arc::new(mouth);
 
-    let mut voice = Voice::new(narrator, mouth.clone(), store.clone());
+    let mut voice = Voice::new(
+        narrator,
+        mouth.clone(),
+        store.clone(),
+        "You are Pete".into(),
+    );
 
     let now = SystemTime::now();
     for text in ["saw a bird", "ate lunch", "took a nap"] {

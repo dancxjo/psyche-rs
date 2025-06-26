@@ -18,15 +18,21 @@ pub struct Quick {
     buffer: VecDeque<Sensation>,
     store: Arc<dyn MemoryStore>,
     llm: Arc<dyn ChatProvider>,
+    system_prompt: String,
 }
 
 impl Quick {
     /// Create a new [`Quick`] wit using the given [`MemoryStore`].
-    pub fn new(store: Arc<dyn MemoryStore>, llm: Arc<dyn ChatProvider>) -> Self {
+    pub fn new(
+        store: Arc<dyn MemoryStore>,
+        llm: Arc<dyn ChatProvider>,
+        system_prompt: String,
+    ) -> Self {
         Self {
             buffer: VecDeque::new(),
             store,
             llm,
+            system_prompt,
         }
     }
 }
@@ -73,7 +79,11 @@ impl Wit<Sensation, Impression> for Quick {
             .await;
 
         // Optionally generate urges from the LLM and store them.
-        if let Ok(urges) = self.llm.suggest_urges(&impression).await {
+        if let Ok(urges) = self
+            .llm
+            .suggest_urges(&self.system_prompt, &impression)
+            .await
+        {
             for urge in urges {
                 let _ = self.store.save(&Memory::Urge(urge)).await;
             }
@@ -207,7 +217,7 @@ mod tests {
     async fn distills_buffer_into_impression() {
         let store = Arc::new(MockStore::new());
         let llm = Arc::new(DummyLLM) as Arc<dyn ChatProvider>;
-        let mut quick = Quick::new(store.clone(), llm);
+        let mut quick = Quick::new(store.clone(), llm, "You are Pete".into());
 
         let s1 = sample_sensation();
         let s2 = sample_sensation();
@@ -227,7 +237,7 @@ mod tests {
     async fn keeps_only_last_ten_observations() {
         let store = Arc::new(MockStore::new());
         let llm = Arc::new(DummyLLM) as Arc<dyn ChatProvider>;
-        let mut quick = Quick::new(store.clone(), llm);
+        let mut quick = Quick::new(store.clone(), llm, "You are Pete".into());
 
         let mut uuids = Vec::new();
         for _ in 0..11 {
@@ -296,7 +306,7 @@ mod tests {
     async fn llm_summary_and_urge_saved() {
         let store = Arc::new(MockStore::new());
         let llm = Arc::new(MockLLM::new());
-        let mut quick = Quick::new(store.clone(), llm.clone());
+        let mut quick = Quick::new(store.clone(), llm.clone(), "You are Pete".into());
 
         quick.observe(sample_sensation()).await;
 

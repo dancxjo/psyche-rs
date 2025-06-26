@@ -76,7 +76,7 @@ pub fn build_pete(
     let (tx, rx) = mpsc::channel(32);
     let (stop_tx, stop_rx) = oneshot::channel();
 
-    let psyche = Psyche::new(store, llm, mouth, motor);
+    let psyche = Psyche::new(store, llm, mouth, motor, "You are Pete".into());
     // forward sensations from tx into psyche
     let sender = psyche.quick.sender.clone();
     tokio::task::spawn_local(async move {

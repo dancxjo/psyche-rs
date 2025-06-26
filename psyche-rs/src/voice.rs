@@ -45,19 +45,27 @@ pub struct Voice {
     pub llm: Arc<dyn ChatProvider>,
     /// Identifier for the underlying model variant.
     pub model: String,
+    /// Base system prompt supplied to the LLM.
+    pub system_prompt: String,
 }
 
 impl Voice {
     /// Create a new [`Voice`] bound to the provided narrator, mouth and memory store.
-    pub fn new(narrator: Narrator, mouth: Arc<dyn Mouth>, store: Arc<dyn MemoryStore>) -> Self {
+    pub fn new(
+        narrator: Narrator,
+        mouth: Arc<dyn Mouth>,
+        store: Arc<dyn MemoryStore>,
+        system_prompt: String,
+    ) -> Self {
         Self {
             current_mood: None,
             narrator,
             mouth,
             store,
-            conversation: Conversation::new("You are Pete".into(), 128),
+            conversation: Conversation::new(system_prompt.clone(), 128),
             llm: Arc::new(NoopChatLLM),
             model: "dummy".into(),
+            system_prompt,
         }
     }
 
@@ -222,8 +230,7 @@ impl Default for Voice {
             llm: Arc::new(NoopChatLLM),
             retriever: Arc::new(NoopRetriever),
         };
-        let mut voice = Self::new(narrator, Arc::new(NoopMouth), store);
-        voice.conversation = Conversation::new("You are Pete".into(), 128);
+        let mut voice = Self::new(narrator, Arc::new(NoopMouth), store, "You are Pete".into());
         voice.llm = Arc::new(NoopChatLLM);
         voice.model = "dummy".into();
         voice

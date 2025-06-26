@@ -2,6 +2,8 @@ use std::net::SocketAddr;
 use std::sync::Arc;
 use std::time::Instant;
 
+mod prompt;
+
 use axum::serve;
 use axum::{
     Extension, Router,

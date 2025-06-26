@@ -205,9 +205,9 @@ impl Mouth for DummyMouth {
 async fn day_in_the_life_of_pete() {
     let store = Arc::new(DummyMemoryStore::new());
     let llm = Arc::new(DummyLLM);
-    let mut quick = Quick::new(store.clone(), llm.clone());
+    let mut quick = Quick::new(store.clone(), llm.clone(), "You are Pete".into());
     let mut will = Will::new(store.clone());
-    let mut fond = FondDuCoeur::new(store.clone(), llm.clone());
+    let mut fond = FondDuCoeur::new(store.clone(), llm.clone(), "You are Pete".into());
     let narrator = Narrator {
         store: store.clone(),
         llm: llm.clone(),
@@ -215,7 +215,7 @@ async fn day_in_the_life_of_pete() {
     };
     let (mouth, log) = DummyMouth::new();
     let mouth = Arc::new(mouth);
-    let mut voice = Voice::new(narrator, mouth, store.clone());
+    let mut voice = Voice::new(narrator, mouth, store.clone(), "You are Pete".into());
 
     for i in 0..3 {
         let s = Sensation {
@@ -233,7 +233,10 @@ async fn day_in_the_life_of_pete() {
         .await
         .expect("Quick should return an impression");
 
-    let urges = llm.suggest_urges(&imp).await.expect("LLM returned urges");
+    let urges = llm
+        .suggest_urges("You are Pete", &imp)
+        .await
+        .expect("LLM returned urges");
     for u in urges {
         will.observe(u).await;
     }

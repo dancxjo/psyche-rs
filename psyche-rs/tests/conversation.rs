@@ -3,14 +3,15 @@ use psyche_rs::conversation::{Conversation, Role};
 
 #[test]
 fn prompt_includes_system_and_tail() {
-    let mut c = Conversation::new("You are Pete".into(), 10);
+    const PROMPT: &str = "You are Pete";
+    let mut c = Conversation::new(PROMPT.into(), 10);
     c.hear(Role::Interlocutor, "hi there");
     c.hear(Role::Me, "hello");
     c.hear(Role::Interlocutor, "how are you");
     c.hear(Role::Me, "great");
 
     let prompt = c.to_prompt();
-    assert_eq!(prompt.first().unwrap().content, "You are Pete");
+    assert_eq!(prompt.first().unwrap().content, PROMPT);
     assert_eq!(prompt[1].role, ChatRole::User);
     assert_eq!(prompt[1].content, "hi there");
     assert_eq!(prompt[2].role, ChatRole::Assistant);

@@ -57,6 +57,7 @@ async fn main() {
         Arc::new(DummyLLM),
         Arc::new(DummyMouth),
         Arc::new(DummyMotor::new()),
+        "You are Pete".into(),
     );
     let local = LocalSet::new();
     local

@@ -16,15 +16,21 @@ pub struct FondDuCoeur {
     events: VecDeque<Memory>,
     pub store: Arc<dyn MemoryStore>,
     pub llm: Arc<dyn ChatProvider>,
+    system_prompt: String,
 }
 
 impl FondDuCoeur {
     /// Create a new [`FondDuCoeur`] wit.
-    pub fn new(store: Arc<dyn MemoryStore>, llm: Arc<dyn ChatProvider>) -> Self {
+    pub fn new(
+        store: Arc<dyn MemoryStore>,
+        llm: Arc<dyn ChatProvider>,
+        system_prompt: String,
+    ) -> Self {
         Self {
             events: VecDeque::new(),
             store,
             llm,
+            system_prompt,
         }
     }
 }
@@ -45,7 +51,11 @@ impl Wit<Memory, Memory> for FondDuCoeur {
     /// [`MemoryStore`].
     async fn distill(&mut self) -> Option<Memory> {
         let event = self.events.pop_front()?;
-        let reason = self.llm.evaluate_emotion(&event).await.ok()?;
+        let reason = self
+            .llm
+            .evaluate_emotion(&self.system_prompt, &event)
+            .await
+            .ok()?;
         let mood = reason
             .split_whitespace()
             .skip_while(|w| *w != "feel")

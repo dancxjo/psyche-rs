@@ -112,7 +112,7 @@ async fn quick_summarizes_sensations_stream() {
             write!(f, "{}", self.0)
         }
     }
-    let mut quick = Quick::new(store.clone(), Arc::new(DummyLLM));
+    let mut quick = Quick::new(store.clone(), Arc::new(DummyLLM), "You are Pete".into());
 
     for i in 0..15 {
         quick.observe(make_fake_sensation(i)).await;

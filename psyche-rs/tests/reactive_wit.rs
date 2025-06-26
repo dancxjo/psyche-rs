@@ -104,7 +104,7 @@ fn sample() -> Sensation {
 async fn quick_emits_via_channels() {
     let store = Arc::new(DummyStore::new());
     let llm = Arc::new(DummyLLM);
-    let quick = Quick::new(store, llm);
+    let quick = Quick::new(store, llm, "You are Pete".into());
 
     let (tx_in, rx_in) = mpsc::channel(4);
     let (tx_out, _) = broadcast::channel(4);
