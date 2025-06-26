@@ -12,3 +12,5 @@
   value before saving to prevent panics when cloning.
 - Ensure every async call is awaited unless intentionally detached with
   `tokio::spawn`.
+- Keep narrative prompt text under `daringsby/src` and pass it into library
+  constructors instead of embedding it in `psyche-rs`.

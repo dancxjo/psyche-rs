@@ -100,6 +100,7 @@ async fn psyche_construction() {
                 llm,
                 Arc::new(psyche_rs::DummyMouth),
                 Arc::new(psyche_rs::DummyMotor::new()),
+                "You are Pete".into(),
             );
             psyche
                 .send_sensation(Sensation::new_text("hi", "test"))

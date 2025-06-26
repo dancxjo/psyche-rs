@@ -134,7 +134,7 @@ fn sample_completion() -> Memory {
 async fn fond_du_coeur_creates_emotion() {
     let store = Arc::new(MockStore::new());
     let llm = Arc::new(MockLLM);
-    let mut fond = FondDuCoeur::new(store.clone(), llm);
+    let mut fond = FondDuCoeur::new(store.clone(), llm, "You are Pete".into());
 
     let event = sample_completion();
     fond.observe(event.clone()).await;

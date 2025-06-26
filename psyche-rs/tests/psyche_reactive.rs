@@ -114,6 +114,7 @@ async fn sensation_flows_to_intention() {
                 llm,
                 Arc::new(psyche_rs::DummyMouth),
                 Arc::new(psyche_rs::DummyMotor::new()),
+                "You are Pete".into(),
             );
             let mut rx = psyche.will.receiver.resubscribe();
 

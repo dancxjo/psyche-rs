@@ -76,14 +76,21 @@ pub trait LLMExt: ChatProvider + Send + Sync {
     }
 
     /// Suggest a set of [`Urge`]s based on the provided [`Impression`].
-    async fn suggest_urges(&self, impression: &Impression) -> Result<Vec<Urge>> {
+    async fn suggest_urges(
+        &self,
+        system_prompt: &str,
+        impression: &Impression,
+    ) -> Result<Vec<Urge>> {
         let prompt = format!(
             "List one suggested motor action for: {}. Respond with just the action name.",
             impression.how
         );
         let text = collect_stream(
-            self.chat_stream(&[ChatMessage::user().content(prompt).build()])
-                .await?,
+            self.chat_stream(&[
+                ChatMessage::user().content(system_prompt).build(),
+                ChatMessage::user().content(prompt).build(),
+            ])
+            .await?,
         )
         .await?;
         if text.trim().is_empty() {
@@ -99,11 +106,14 @@ pub trait LLMExt: ChatProvider + Send + Sync {
     }
 
     /// Evaluate an emotional response to a given [`Memory`].
-    async fn evaluate_emotion(&self, event: &Memory) -> Result<String> {
+    async fn evaluate_emotion(&self, system_prompt: &str, event: &Memory) -> Result<String> {
         let prompt = format!("How should Pete feel about this event? {:?}", event);
         collect_stream(
-            self.chat_stream(&[ChatMessage::user().content(prompt).build()])
-                .await?,
+            self.chat_stream(&[
+                ChatMessage::user().content(system_prompt).build(),
+                ChatMessage::user().content(prompt).build(),
+            ])
+            .await?,
         )
         .await
     }

@@ -81,6 +81,7 @@ async fn main() -> anyhow::Result<()> {
                 Arc::new(DemoLLM),
                 Arc::new(DummyMouth),
                 Arc::new(MotorLog),
+                "You are Pete".into(),
             );
 
             psyche
