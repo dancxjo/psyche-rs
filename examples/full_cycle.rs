@@ -1,5 +1,7 @@
+use llm::chat::{ChatMessage, ChatProvider, ChatResponse};
 use psyche_rs::memory::Sensation;
-use psyche_rs::{DummyCountenance, DummyLLM, DummyMouth, DummyStore, Psyche};
+use psyche_rs::{DummyCountenance, DummyMouth, DummyStore, Psyche};
+use std::pin::Pin;
 use std::sync::Arc;
 use tokio::sync::{mpsc, oneshot};
 use tokio::task::LocalSet;
@@ -10,6 +12,46 @@ async fn main() {
 
     let (tx, rx) = mpsc::channel(32);
     let (stop_tx, _stop_rx) = oneshot::channel();
+
+    struct DummyLLM;
+    #[async_trait::async_trait]
+    impl ChatProvider for DummyLLM {
+        async fn chat_with_tools(
+            &self,
+            _m: &[ChatMessage],
+            _t: Option<&[llm::chat::Tool]>,
+        ) -> Result<Box<dyn ChatResponse>, llm::error::LLMError> {
+            Ok(Box::new(SimpleResp("".into())))
+        }
+        async fn chat_stream(
+            &self,
+            msgs: &[ChatMessage],
+        ) -> Result<
+            Pin<Box<dyn futures_util::Stream<Item = Result<String, llm::error::LLMError>> + Send>>,
+            llm::error::LLMError,
+        > {
+            let reply = msgs.last().unwrap().content.clone();
+            Ok(Box::pin(futures_util::stream::once(
+                async move { Ok(reply) },
+            )))
+        }
+    }
+
+    #[derive(Debug)]
+    struct SimpleResp(String);
+    impl ChatResponse for SimpleResp {
+        fn text(&self) -> Option<String> {
+            Some(self.0.clone())
+        }
+        fn tool_calls(&self) -> Option<Vec<llm::ToolCall>> {
+            None
+        }
+    }
+    impl std::fmt::Display for SimpleResp {
+        fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+            write!(f, "{}", self.0)
+        }
+    }
 
     let psyche = Psyche::new(
         Arc::new(DummyStore::new()),

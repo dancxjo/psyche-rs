@@ -1,6 +1,6 @@
+use llm::chat::{ChatMessage, ChatProvider, ChatResponse};
 use psyche_rs::{
     Emotion,
-    llm::LLMClient,
     memory::{Completion, Interruption, Memory, MemoryStore},
     wit::Wit,
     wits::fond::FondDuCoeur,
@@ -80,24 +80,43 @@ impl MemoryStore for MockStore {
 struct MockLLM;
 
 #[async_trait::async_trait]
-impl LLMClient for MockLLM {
-    async fn summarize(&self, _input: &[psyche_rs::Sensation]) -> anyhow::Result<String> {
-        Ok(String::new())
-    }
-    async fn summarize_impressions(
+impl ChatProvider for MockLLM {
+    async fn chat_with_tools(
         &self,
-        _items: &[psyche_rs::Impression],
-    ) -> anyhow::Result<String> {
-        Ok(String::new())
+        _m: &[ChatMessage],
+        _t: Option<&[llm::chat::Tool]>,
+    ) -> Result<Box<dyn ChatResponse>, llm::error::LLMError> {
+        Ok(Box::new(SimpleResp("".into())))
     }
-    async fn suggest_urges(
+
+    async fn chat_stream(
         &self,
-        _imp: &psyche_rs::Impression,
-    ) -> anyhow::Result<Vec<psyche_rs::Urge>> {
-        Ok(vec![])
+        _m: &[ChatMessage],
+    ) -> Result<
+        std::pin::Pin<
+            Box<dyn futures_util::Stream<Item = Result<String, llm::error::LLMError>> + Send>,
+        >,
+        llm::error::LLMError,
+    > {
+        Ok(Box::pin(futures_util::stream::once(async {
+            Ok("I feel happy because things worked".into())
+        })))
     }
-    async fn evaluate_emotion(&self, _event: &Memory) -> anyhow::Result<String> {
-        Ok("I feel happy because things worked".into())
+}
+
+#[derive(Debug)]
+struct SimpleResp(String);
+impl ChatResponse for SimpleResp {
+    fn text(&self) -> Option<String> {
+        Some(self.0.clone())
+    }
+    fn tool_calls(&self) -> Option<Vec<llm::ToolCall>> {
+        None
+    }
+}
+impl std::fmt::Display for SimpleResp {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.0)
     }
 }
 

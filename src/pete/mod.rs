@@ -1,8 +1,51 @@
 use crate::memory::{MemoryStore, Sensation};
 use crate::{
-    DummyCountenance, DummyLLM, DummyMouth, DummyStore, Psyche, countenance::Countenance,
-    llm::LLMClient, mouth::Mouth,
+    DummyCountenance, DummyMouth, DummyStore, Psyche, countenance::Countenance, mouth::Mouth,
 };
+use llm::chat::ChatProvider;
+
+struct NoopLLM;
+
+#[async_trait::async_trait]
+impl ChatProvider for NoopLLM {
+    async fn chat_with_tools(
+        &self,
+        _messages: &[llm::chat::ChatMessage],
+        _tools: Option<&[llm::chat::Tool]>,
+    ) -> Result<Box<dyn llm::chat::ChatResponse>, llm::error::LLMError> {
+        Ok(Box::new(NoopResp))
+    }
+
+    async fn chat_stream(
+        &self,
+        _messages: &[llm::chat::ChatMessage],
+    ) -> Result<
+        std::pin::Pin<
+            Box<dyn futures_util::Stream<Item = Result<String, llm::error::LLMError>> + Send>,
+        >,
+        llm::error::LLMError,
+    > {
+        Ok(Box::pin(futures_util::stream::empty()))
+    }
+}
+
+#[derive(Debug)]
+struct NoopResp;
+
+impl llm::chat::ChatResponse for NoopResp {
+    fn text(&self) -> Option<String> {
+        Some(String::new())
+    }
+    fn tool_calls(&self) -> Option<Vec<llm::ToolCall>> {
+        None
+    }
+}
+
+impl std::fmt::Display for NoopResp {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "")
+    }
+}
 use std::sync::Arc;
 use tokio::sync::{mpsc, oneshot};
 use tokio::task::LocalSet;
@@ -23,7 +66,7 @@ use tokio::task::LocalSet;
 /// Build a [`Psyche`] using the provided dependencies.
 pub fn build_pete(
     store: Arc<dyn MemoryStore>,
-    llm: Arc<dyn LLMClient>,
+    llm: Arc<dyn ChatProvider>,
     mouth: Arc<dyn Mouth>,
     countenance: Arc<dyn Countenance>,
 ) -> (Psyche, mpsc::Sender<Sensation>, oneshot::Receiver<()>) {
@@ -48,7 +91,7 @@ pub fn build_pete(
 pub async fn launch_default_pete() -> anyhow::Result<()> {
     let (psyche, tx, _stop_rx) = build_pete(
         Arc::new(DummyStore::new()),
-        Arc::new(DummyLLM),
+        Arc::new(NoopLLM),
         Arc::new(DummyMouth),
         Arc::new(DummyCountenance),
     );

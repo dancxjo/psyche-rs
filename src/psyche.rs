@@ -1,12 +1,13 @@
 use std::sync::Arc;
 
+use llm::chat::ChatProvider;
 use tokio::sync::{Mutex, mpsc, oneshot};
 use tracing::{debug, info, trace};
 
 use crate::{
     conversation::Conversation,
     countenance::Countenance,
-    llm::LLMClient,
+    llm::LLMExt,
     memory::{Memory, MemoryStore, Sensation},
     motor::DummyMotor,
     mouth::Mouth,
@@ -40,7 +41,7 @@ pub struct Psyche {
     /// Shared memory store used by all components.
     pub store: Arc<dyn MemoryStore>,
     /// Language model used for generating urges.
-    pub llm: Arc<dyn LLMClient>,
+    pub llm: Arc<dyn ChatProvider>,
     /// Incoming sensations to process.
     pub input_rx: mpsc::Receiver<Sensation>,
     /// Notifies the runtime once processing is complete.
@@ -51,7 +52,7 @@ impl Psyche {
     /// Create a new [`Psyche`] with freshly constructed cognitive wits.
     pub fn new(
         store: Arc<dyn MemoryStore>,
-        llm: Arc<dyn LLMClient>,
+        llm: Arc<dyn ChatProvider>,
         mouth: Arc<dyn Mouth>,
         countenance: Arc<dyn Countenance>,
         input_rx: mpsc::Receiver<Sensation>,
