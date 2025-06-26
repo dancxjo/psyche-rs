@@ -109,13 +109,15 @@ async fn sensation_flows_to_intention() {
         .run_until(async {
             let store = Arc::new(MemStore::new());
             let llm = Arc::new(DummyLLM);
-            let psyche = Psyche::new(store, llm);
+            let psyche = Psyche::new(store, llm, Arc::new(psyche_rs::DummyMouth));
             let mut rx = psyche.will.receiver.resubscribe();
 
-            psyche
-                .send_sensation(Sensation::new_text("hi", "test"))
-                .await
-                .unwrap();
+            for i in 0..3 {
+                psyche
+                    .send_sensation(Sensation::new_text(format!("hi{}", i), "test"))
+                    .await
+                    .unwrap();
+            }
 
             let intent = rx.recv().await.unwrap();
             assert_eq!(intent.motor_name, "jump");

@@ -1,6 +1,6 @@
 use llm::chat::{ChatMessage, ChatProvider, ChatResponse};
 use psyche_rs::memory::Sensation;
-use psyche_rs::{DummyCountenance, DummyMouth, DummyStore, Psyche};
+use psyche_rs::{DummyMouth, DummyStore, Psyche};
 use std::pin::Pin;
 use std::sync::Arc;
 use tokio::sync::mpsc;
@@ -52,11 +52,15 @@ async fn main() {
         }
     }
 
-    let psyche = Psyche::new(Arc::new(DummyStore::new()), Arc::new(DummyLLM));
+    let psyche = Psyche::new(
+        Arc::new(DummyStore::new()),
+        Arc::new(DummyLLM),
+        Arc::new(DummyMouth),
+    );
     let local = LocalSet::new();
     local
         .run_until(async move {
-            tokio::spawn(async move {
+            tokio::task::spawn_local(async move {
                 while let Some(s) = rx.recv().await {
                     let _ = psyche.send_sensation(s).await;
                 }

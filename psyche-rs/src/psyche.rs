@@ -1,14 +1,19 @@
 use std::sync::Arc;
 
 use llm::chat::ChatProvider;
-use tokio::sync::{broadcast, mpsc};
+use tokio::sync::{Mutex, broadcast, mpsc};
 use tokio::task::spawn_local;
 use tracing::info;
 
 use crate::{
+    ear::Ear,
     llm::LLMExt,
     memory::{Impression, Intention, MemoryStore, Sensation, Urge},
     motor::DummyMotor,
+    mouth::Mouth,
+    narrator::Narrator,
+    store::NoopRetriever,
+    voice::Voice,
     wit::{Wit, WitHandle},
     wits::{combobulator::Combobulator, quick::Quick, will::Will},
 };
@@ -25,13 +30,20 @@ pub struct Psyche {
     pub combobulator: WitHandle<Impression, Impression>,
     /// Decides what to do given a situation.
     pub will: WitHandle<Urge, Intention>,
+    /// Pete's voice used to respond to intentions.
+    pub voice: Arc<Mutex<Voice>>,
+    pub ear: Ear,
     llm: Arc<dyn ChatProvider>,
 }
 
 impl Psyche {
     /// Construct a new [`Psyche`] with all wits running on the current
     /// [`tokio::task::LocalSet`].
-    pub fn new(store: Arc<dyn MemoryStore>, llm: Arc<dyn ChatProvider>) -> Self {
+    pub fn new(
+        store: Arc<dyn MemoryStore>,
+        llm: Arc<dyn ChatProvider>,
+        mouth: Arc<dyn Mouth>,
+    ) -> Self {
         // Quick wiring
         let quick = Quick::new(store.clone(), llm.clone());
         let (q_tx, q_rx) = mpsc::channel(32);
@@ -45,7 +57,7 @@ impl Psyche {
         spawn_local(combobulator.run(c_rx, situation_tx.clone()));
 
         // Will wiring
-        let will = Will::new(store, Arc::new(DummyMotor));
+        let will = Will::new(store.clone(), Arc::new(DummyMotor));
         let (w_tx, w_rx) = mpsc::channel(32);
         let (intent_tx, _) = broadcast::channel(32);
         spawn_local(will.run(w_rx, intent_tx.clone()));
@@ -73,6 +85,33 @@ impl Psyche {
             }
         });
 
+        // Voice and Ear wiring
+        let narrator = Narrator {
+            store: store.clone(),
+            llm: llm.clone(),
+            retriever: Arc::new(NoopRetriever),
+        };
+        let mut voice = Voice::new(narrator, mouth, store.clone());
+        voice.llm = llm.clone();
+        let voice = Arc::new(Mutex::new(voice));
+
+        let ear = Ear::new(q_tx.clone());
+
+        // React to issued intentions by speaking a turn
+        let mut intent_sub = intent_tx.subscribe();
+        let voice_clone = voice.clone();
+        let ear_clone = ear.clone();
+        spawn_local(async move {
+            while let Ok(intent) = intent_sub.recv().await {
+                info!("🎤 Voice reacting to intent: {}", intent.motor_name);
+                let mut v = voice_clone.lock().await;
+                if let Ok(spoken) = v.take_turn().await {
+                    info!("🔊 Spoken: {}", spoken);
+                    ear_clone.hear_self(&spoken).await;
+                }
+            }
+        });
+
         Self {
             quick: WitHandle {
                 sender: q_tx,
@@ -86,6 +125,8 @@ impl Psyche {
                 sender: w_tx,
                 receiver: intent_tx.subscribe(),
             },
+            voice,
+            ear,
             llm,
         }
     }
