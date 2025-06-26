@@ -1,140 +1,101 @@
 use std::sync::Arc;
 
 use llm::chat::ChatProvider;
-use tokio::sync::{Mutex, mpsc, oneshot};
-use tracing::{debug, info, trace};
+use tokio::sync::{broadcast, mpsc};
+use tokio::task::spawn_local;
+use tracing::info;
 
 use crate::{
-    conversation::Conversation,
-    countenance::Countenance,
     llm::LLMExt,
-    memory::{Memory, MemoryStore, Sensation},
+    memory::{Impression, Intention, MemoryStore, Sensation, Urge},
     motor::DummyMotor,
-    mouth::Mouth,
-    narrator::Narrator,
-    store::NoopRetriever,
-    voice::Voice,
-    wit::Wit,
-    wits::{fond::FondDuCoeur, quick::Quick, will::Will},
+    wit::{Wit, WitHandle},
+    wits::{combobulator::Combobulator, quick::Quick, will::Will},
 };
 
-/// Top level coordinator driving Pete's cognitive cycle.
+/// Main coordinator wiring Pete's cognitive wits into a reactive graph.
 ///
-/// [`Psyche`] wires together the individual cognitive wits and runs a simple
-/// tick loop consuming [`Sensation`]s. Each loop observes the new sensation,
-/// distills higher level impressions and intentions and finally produces output
-/// via the [`Voice`].
+/// [`Psyche`] owns running instances of [`Quick`], [`Combobulator`] and
+/// [`Will`]. Inputs flow from [`Sensation`] into `Quick` then on to
+/// `Combobulator` and finally `Will` where actionable intentions are issued.
 pub struct Psyche {
-    /// Short term perception summariser.
-    pub quick: Arc<Mutex<Quick>>,
-    /// Converts urges into executable intentions.
-    pub will: Arc<Mutex<Will>>,
-    /// Evaluates emotional reactions to events.
-    pub fond: Arc<Mutex<FondDuCoeur>>,
-    /// Pete's speaking system.
-    pub voice: Arc<Mutex<Voice>>,
-    /// Narrative summariser used by the voice.
-    pub narrator: Arc<Mutex<Narrator>>,
-    /// External reflection of Pete's mood.
-    pub countenance: Arc<dyn Countenance>,
-
-    /// Shared memory store used by all components.
-    pub store: Arc<dyn MemoryStore>,
-    /// Language model used for generating urges.
-    pub llm: Arc<dyn ChatProvider>,
-    /// Incoming sensations to process.
-    pub input_rx: mpsc::Receiver<Sensation>,
-    /// Notifies the runtime once processing is complete.
-    pub stop_tx: oneshot::Sender<()>,
+    /// Perception wit summarising raw sensations.
+    pub quick: WitHandle<Sensation, Impression>,
+    /// Aggregates instants into higher level situations.
+    pub combobulator: WitHandle<Impression, Impression>,
+    /// Decides what to do given a situation.
+    pub will: WitHandle<Urge, Intention>,
+    llm: Arc<dyn ChatProvider>,
 }
 
 impl Psyche {
-    /// Create a new [`Psyche`] with freshly constructed cognitive wits.
-    pub fn new(
-        store: Arc<dyn MemoryStore>,
-        llm: Arc<dyn ChatProvider>,
-        mouth: Arc<dyn Mouth>,
-        countenance: Arc<dyn Countenance>,
-        input_rx: mpsc::Receiver<Sensation>,
-        stop_tx: oneshot::Sender<()>,
-        model: String,
-        system_prompt: String,
-        max_tokens: usize,
-    ) -> Self {
+    /// Construct a new [`Psyche`] with all wits running on the current
+    /// [`tokio::task::LocalSet`].
+    pub fn new(store: Arc<dyn MemoryStore>, llm: Arc<dyn ChatProvider>) -> Self {
+        // Quick wiring
         let quick = Quick::new(store.clone(), llm.clone());
-        let will = Will::new(store.clone(), Arc::new(DummyMotor));
-        let fond = FondDuCoeur::new(store.clone(), llm.clone());
+        let (q_tx, q_rx) = mpsc::channel(32);
+        let (instant_tx, _) = broadcast::channel(32);
+        spawn_local(quick.run(q_rx, instant_tx.clone()));
 
-        let narrator = Narrator {
-            store: store.clone(),
-            llm: llm.clone(),
-            retriever: Arc::new(NoopRetriever),
-        };
+        // Combobulator wiring
+        let combobulator = Combobulator::new("situation", store.clone(), llm.clone());
+        let (c_tx, c_rx) = mpsc::channel(32);
+        let (situation_tx, _) = broadcast::channel(32);
+        spawn_local(combobulator.run(c_rx, situation_tx.clone()));
 
-        let mut voice = Voice::new(narrator.clone(), mouth, store.clone());
-        voice.conversation = Conversation::new(system_prompt, max_tokens);
-        voice.model = model;
+        // Will wiring
+        let will = Will::new(store, Arc::new(DummyMotor));
+        let (w_tx, w_rx) = mpsc::channel(32);
+        let (intent_tx, _) = broadcast::channel(32);
+        spawn_local(will.run(w_rx, intent_tx.clone()));
+
+        // Forward Quick -> Combobulator
+        let mut q_out = instant_tx.subscribe();
+        let c_in = c_tx.clone();
+        spawn_local(async move {
+            while let Ok(imp) = q_out.recv().await {
+                let _ = c_in.send(imp).await;
+            }
+        });
+
+        // Forward Combobulator -> Will
+        let mut c_out = situation_tx.subscribe();
+        let w_in = w_tx.clone();
+        let llm_clone = llm.clone();
+        spawn_local(async move {
+            while let Ok(sit) = c_out.recv().await {
+                if let Ok(urges) = llm_clone.suggest_urges(&sit).await {
+                    for u in urges {
+                        let _ = w_in.send(u).await;
+                    }
+                }
+            }
+        });
 
         Self {
-            quick: Arc::new(Mutex::new(quick)),
-            will: Arc::new(Mutex::new(will)),
-            fond: Arc::new(Mutex::new(fond)),
-            voice: Arc::new(Mutex::new(voice)),
-            narrator: Arc::new(Mutex::new(narrator)),
-            countenance,
-            store,
+            quick: WitHandle {
+                sender: q_tx,
+                receiver: instant_tx.subscribe(),
+            },
+            combobulator: WitHandle {
+                sender: c_tx,
+                receiver: situation_tx.subscribe(),
+            },
+            will: WitHandle {
+                sender: w_tx,
+                receiver: intent_tx.subscribe(),
+            },
             llm,
-            input_rx,
-            stop_tx,
         }
     }
 
-    /// Run the processing loop until the input channel closes.
-    pub async fn tick(mut self) {
-        while let Some(sensation) = self.input_rx.recv().await {
-            info!("📥 Received sensation: {}", sensation.kind);
-            let quick = self.quick.clone();
-            let will = self.will.clone();
-            let fond = self.fond.clone();
-            let voice = self.voice.clone();
-            let store = self.store.clone();
-            let llm = self.llm.clone();
-
-            // Perception first
-            let instant = {
-                let mut q = quick.lock().await;
-                trace!("↪ calling Quick.observe(...)");
-                q.observe(sensation).await;
-                trace!("↪ calling Quick.distill(...)");
-                q.distill().await
-            };
-
-            if let Some(instant) = instant {
-                info!("🧠 Pete thought: {}", instant.how);
-                store.save(&Memory::Impression(instant.clone())).await.ok();
-
-                // Suggest urges using the shared LLM then feed them into Will.
-                let urges = llm.suggest_urges(&instant).await.unwrap_or_default();
-                for urge in urges {
-                    debug!("Observed urge: {:?}", urge.motor_name);
-                    will.lock().await.observe(urge).await;
-                }
-
-                let will_task = async {
-                    let mut w = will.lock().await;
-                    w.distill().await
-                };
-                let fond_task = async {
-                    fond.lock().await.distill().await;
-                };
-                let (intent, _) = tokio::join!(will_task, fond_task);
-
-                if let Some(intent) = intent {
-                    store.save(&Memory::Intention(intent.clone())).await.ok();
-                    voice.lock().await.take_turn().await.ok();
-                }
-            }
-        }
-        let _ = self.stop_tx.send(());
+    /// Send a [`Sensation`] into the cognitive pipeline.
+    pub async fn send_sensation(
+        &self,
+        s: Sensation,
+    ) -> Result<(), mpsc::error::SendError<Sensation>> {
+        info!("📥 Received sensation: {}", s.kind);
+        self.quick.sender.send(s).await
     }
 }

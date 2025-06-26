@@ -3,15 +3,14 @@ use psyche_rs::memory::Sensation;
 use psyche_rs::{DummyCountenance, DummyMouth, DummyStore, Psyche};
 use std::pin::Pin;
 use std::sync::Arc;
-use tokio::sync::{mpsc, oneshot};
+use tokio::sync::mpsc;
 use tokio::task::LocalSet;
 
 #[tokio::main(flavor = "current_thread")]
 async fn main() {
     tracing_subscriber::fmt::init();
 
-    let (tx, rx) = mpsc::channel(32);
-    let (stop_tx, _stop_rx) = oneshot::channel();
+    let (tx, mut rx) = mpsc::channel(32);
 
     struct DummyLLM;
     #[async_trait::async_trait]
@@ -53,23 +52,15 @@ async fn main() {
         }
     }
 
-    let psyche = Psyche::new(
-        Arc::new(DummyStore::new()),
-        Arc::new(DummyLLM),
-        Arc::new(DummyMouth),
-        Arc::new(DummyCountenance),
-        rx,
-        stop_tx,
-        "gemma".into(),
-        "You are Pete.".into(),
-        2048,
-    );
-
+    let psyche = Psyche::new(Arc::new(DummyStore::new()), Arc::new(DummyLLM));
     let local = LocalSet::new();
-    local.spawn_local(async move { psyche.tick().await });
-
     local
         .run_until(async move {
+            tokio::spawn(async move {
+                while let Some(s) = rx.recv().await {
+                    let _ = psyche.send_sensation(s).await;
+                }
+            });
             for i in 0..3 {
                 let s = Sensation::new_text(format!("This is event {}", i), "test");
                 tx.send(s).await.unwrap();

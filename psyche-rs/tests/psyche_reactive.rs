@@ -1,30 +1,43 @@
 use async_trait::async_trait;
+use std::collections::HashMap;
 use std::sync::Arc;
+use std::time::SystemTime;
+use tokio::sync::Mutex as AsyncMutex;
 use tokio::task::LocalSet;
 use uuid::Uuid;
 
+use llm::chat::{ChatMessage, ChatProvider, ChatResponse};
 use psyche_rs::{
     Psyche,
     memory::{Impression, Memory, MemoryStore, Sensation},
 };
 
-struct DummyStore;
-
-#[async_trait::async_trait]
-impl MemoryStore for DummyStore {
-    async fn save(&self, _memory: &Memory) -> anyhow::Result<()> {
+struct MemStore {
+    data: Arc<AsyncMutex<HashMap<Uuid, Memory>>>,
+}
+impl MemStore {
+    fn new() -> Self {
+        Self {
+            data: Arc::new(AsyncMutex::new(HashMap::new())),
+        }
+    }
+}
+#[async_trait]
+impl MemoryStore for MemStore {
+    async fn save(&self, memory: &Memory) -> anyhow::Result<()> {
+        self.data.lock().await.insert(memory.uuid(), memory.clone());
         Ok(())
     }
-    async fn get_by_uuid(&self, _uuid: Uuid) -> anyhow::Result<Option<Memory>> {
-        Ok(None)
+    async fn get_by_uuid(&self, uuid: Uuid) -> anyhow::Result<Option<Memory>> {
+        Ok(self.data.lock().await.get(&uuid).cloned())
     }
-    async fn recent(&self, _limit: usize) -> anyhow::Result<Vec<Memory>> {
+    async fn recent(&self, _l: usize) -> anyhow::Result<Vec<Memory>> {
         Ok(vec![])
     }
     async fn of_type(&self, _t: &str, _l: usize) -> anyhow::Result<Vec<Memory>> {
         Ok(vec![])
     }
-    async fn recent_since(&self, _s: std::time::SystemTime) -> anyhow::Result<Vec<Memory>> {
+    async fn recent_since(&self, _s: SystemTime) -> anyhow::Result<Vec<Memory>> {
         Ok(vec![])
     }
     async fn impressions_containing(&self, _k: &str) -> anyhow::Result<Vec<Impression>> {
@@ -42,35 +55,37 @@ impl MemoryStore for DummyStore {
     }
 }
 
-use llm::chat::{ChatMessage, ChatProvider, ChatResponse};
-
 struct DummyLLM;
-
 #[async_trait]
 impl ChatProvider for DummyLLM {
     async fn chat_with_tools(
         &self,
-        _m: &[ChatMessage],
-        _t: Option<&[llm::chat::Tool]>,
+        _messages: &[ChatMessage],
+        _tools: Option<&[llm::chat::Tool]>,
     ) -> Result<Box<dyn ChatResponse>, llm::error::LLMError> {
         Ok(Box::new(SimpleResp("".into())))
     }
 
     async fn chat_stream(
         &self,
-        _m: &[ChatMessage],
+        messages: &[ChatMessage],
     ) -> Result<
         std::pin::Pin<
             Box<dyn futures_util::Stream<Item = Result<String, llm::error::LLMError>> + Send>,
         >,
         llm::error::LLMError,
     > {
-        Ok(Box::pin(futures_util::stream::once(async {
-            Ok("".into())
-        })))
+        let prompt = messages.last().unwrap().content.clone();
+        let reply = if prompt.starts_with("List one") {
+            "jump".to_string()
+        } else {
+            "summary".to_string()
+        };
+        Ok(Box::pin(futures_util::stream::once(
+            async move { Ok(reply) },
+        )))
     }
 }
-
 #[derive(Debug)]
 struct SimpleResp(String);
 impl ChatResponse for SimpleResp {
@@ -88,21 +103,22 @@ impl std::fmt::Display for SimpleResp {
 }
 
 #[tokio::test(flavor = "current_thread")]
-async fn psyche_construction() {
+async fn sensation_flows_to_intention() {
     let local = LocalSet::new();
     local
         .run_until(async {
-            let store = Arc::new(DummyStore);
+            let store = Arc::new(MemStore::new());
             let llm = Arc::new(DummyLLM);
-
             let psyche = Psyche::new(store, llm);
+            let mut rx = psyche.will.receiver.resubscribe();
+
             psyche
                 .send_sensation(Sensation::new_text("hi", "test"))
                 .await
                 .unwrap();
 
-            // ensure channels are usable
-            let _ = psyche.quick.sender.capacity();
+            let intent = rx.recv().await.unwrap();
+            assert_eq!(intent.motor_name, "jump");
         })
         .await;
 }

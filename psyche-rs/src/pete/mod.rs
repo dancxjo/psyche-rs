@@ -53,7 +53,7 @@ use tokio::task::LocalSet;
 
 /// Launch a basic Pete instance using in-memory components.
 ///
-/// This spawns [`Psyche::tick`] on a background task and feeds it a few
+/// This spawns Pete's cognition on a local task set and feeds it a few
 /// example [`Sensation`]s before returning.
 ///
 /// ```no_run
@@ -68,29 +68,28 @@ use tokio::task::LocalSet;
 pub fn build_pete(
     store: Arc<dyn MemoryStore>,
     llm: Arc<dyn ChatProvider>,
-    mouth: Arc<dyn Mouth>,
-    countenance: Arc<dyn Countenance>,
+    _mouth: Arc<dyn Mouth>,
+    _countenance: Arc<dyn Countenance>,
 ) -> (Psyche, mpsc::Sender<Sensation>, oneshot::Receiver<()>) {
     let (tx, rx) = mpsc::channel(32);
     let (stop_tx, stop_rx) = oneshot::channel();
 
-    let psyche = Psyche::new(
-        store,
-        llm,
-        mouth,
-        countenance,
-        rx,
-        stop_tx,
-        "gemma".into(),
-        "You are Pete.".into(),
-        2048,
-    );
+    let psyche = Psyche::new(store, llm);
+    // forward sensations from tx into psyche
+    let sender = psyche.quick.sender.clone();
+    tokio::task::spawn_local(async move {
+        let mut rx = rx;
+        while let Some(s) = rx.recv().await {
+            let _ = sender.send(s).await;
+        }
+        let _ = stop_tx.send(());
+    });
 
     (psyche, tx, stop_rx)
 }
 
 pub async fn launch_default_pete() -> anyhow::Result<()> {
-    let (psyche, tx, stop_rx) = build_pete(
+    let (_psyche, tx, stop_rx) = build_pete(
         Arc::new(DummyStore::new()),
         Arc::new(NoopLLM),
         Arc::new(DummyMouth),
@@ -98,10 +97,6 @@ pub async fn launch_default_pete() -> anyhow::Result<()> {
     );
 
     let local = LocalSet::new();
-    local.spawn_local(async move {
-        psyche.tick().await;
-    });
-
     local
         .run_until(async move {
             for i in 0..3 {
