@@ -1,72 +1,100 @@
-use llm::LLMProvider;
-use llm::builder::{LLMBackend, LLMBuilder};
-use llm::chat::ChatProvider;
-use neo4rs::Graph;
-use psyche_rs::llm::ChatLLM;
-use psyche_rs::{
-    MemoryStore, Neo4jStore, countenance::DummyCountenance, memory::Sensation, mouth::DummyMouth,
-    pete,
-};
-use std::str::FromStr;
+use std::net::SocketAddr;
 use std::sync::Arc;
-use tokio::signal;
-use tokio::task::LocalSet;
+use std::time::Instant;
+
+use axum::serve;
+use axum::{
+    Extension, Router,
+    extract::ws::{Message, WebSocket, WebSocketUpgrade},
+    routing::get,
+};
+use bytes::Bytes;
+use futures_util::{Stream, StreamExt, stream};
+use psyche_rs::speech::{DummyRecognizer, SpeechRecognizer};
+use std::pin::Pin;
+use tokio::net::TcpListener;
+use tokio_util::{
+    codec::{FramedRead, LengthDelimitedCodec},
+    io::StreamReader,
+};
+use tracing::{error, info};
+use tracing_subscriber::EnvFilter;
+
+async fn audio_in(
+    ws: WebSocketUpgrade,
+    Extension(recognizer): Extension<Arc<dyn SpeechRecognizer>>,
+) -> axum::response::Response {
+    ws.on_upgrade(move |socket| handle_socket(socket, recognizer))
+}
+
+async fn handle_socket(socket: WebSocket, recognizer: Arc<dyn SpeechRecognizer>) {
+    let stream = stream::unfold(socket, |mut socket| async {
+        match socket.recv().await {
+            Some(Ok(Message::Binary(b))) => Some((Ok(Bytes::from(b)), socket)),
+            Some(Ok(_)) => Some((
+                Err(std::io::Error::new(std::io::ErrorKind::Other, "non-binary")),
+                socket,
+            )),
+            Some(Err(e)) => Some((
+                Err(std::io::Error::new(std::io::ErrorKind::Other, e)),
+                socket,
+            )),
+            None => None,
+        }
+    });
+    let stream: Pin<Box<dyn Stream<Item = Result<Bytes, std::io::Error>> + Send>> =
+        Box::pin(stream);
+
+    let reader = StreamReader::new(stream);
+    let mut framed = FramedRead::new(reader, LengthDelimitedCodec::new());
+    let mut last = Instant::now();
+    while let Some(frame) = framed.next().await {
+        match frame {
+            Ok(bytes) => {
+                let samples: Vec<i16> = bytes
+                    .chunks_exact(2)
+                    .map(|c| i16::from_le_bytes([c[0], c[1]]))
+                    .collect();
+                let now = Instant::now();
+                info!(
+                    size = samples.len(),
+                    ms = now.duration_since(last).as_millis()
+                );
+                last = now;
+                if let Err(e) = recognizer.recognize(&samples).await {
+                    error!("recognize error: {:?}", e);
+                }
+            }
+            Err(e) => {
+                error!("frame error: {:?}", e);
+                break;
+            }
+        }
+    }
+}
 
 #[tokio::main]
-async fn main() -> anyhow::Result<()> {
-    tracing_subscriber::fmt::init();
-    let uri = std::env::var("NEO4J_URI").unwrap_or_else(|_| "127.0.0.1:7687".into());
-    let user = std::env::var("NEO4J_USER").unwrap_or_else(|_| "neo4j".into());
-    let pass = std::env::var("NEO4J_PASS").unwrap_or_else(|_| "neo4j".into());
+async fn main() {
+    tracing_subscriber::fmt()
+        .with_env_filter(EnvFilter::from_default_env())
+        .init();
 
-    let graph = Graph::new(&uri, &user, &pass)
+    let recognizer: Arc<dyn SpeechRecognizer> = Arc::new(DummyRecognizer);
+    let app = Router::new()
+        .route("/audio/in", get(audio_in))
+        .route("/", get(|| async { "ok" }))
+        .layer(Extension(recognizer));
+
+    let addr = SocketAddr::from(([127, 0, 0, 1], 3000));
+    info!("listening on {}", addr);
+    let listener = TcpListener::bind(addr).await.unwrap();
+    serve(listener, app.into_make_service())
+        .with_graceful_shutdown(shutdown_signal())
         .await
-        .map_err(|e| anyhow::anyhow!(format!("{:?}", e)))?;
-    let store: Arc<dyn MemoryStore> = Arc::new(Neo4jStore { client: graph });
-    let backend = std::env::var("LLM_BACKEND").unwrap_or_else(|_| "ollama".into());
-    let api_key = std::env::var("LLM_API_KEY").unwrap_or_default();
-    let model = std::env::var("LLM_MODEL").unwrap_or_else(|_| "gemma3:27b".into());
-    let base_url =
-        std::env::var("LLM_BASE_URL").unwrap_or_else(|_| "http://localhost:11434".into());
+        .unwrap();
+}
 
-    let llm_provider = LLMBuilder::new()
-        .backend(LLMBackend::from_str(&backend)?)
-        .api_key(api_key)
-        .base_url(base_url)
-        .model(model)
-        .stream(true)
-        .build()?;
-    let llm: Arc<dyn ChatProvider> = Arc::new(ChatLLM(Arc::<dyn LLMProvider>::from(llm_provider)));
-
-    let mouth = Arc::new(DummyMouth);
-    let face = Arc::new(DummyCountenance);
-
-    let (psyche, tx, stop_rx) = pete::build_pete(store, llm, mouth, face);
-
-    let local = LocalSet::new();
-    local.spawn_local(async move { psyche.tick().await });
-
-    local
-        .run_until(async move {
-            for i in 0..3 {
-                tx.send(Sensation::new_text(format!("This is test {}", i), "cli"))
-                    .await?;
-                tokio::time::sleep(std::time::Duration::from_millis(250)).await;
-            }
-
-            drop(tx);
-
-            tokio::pin!(stop_rx);
-            tokio::select! {
-                _ = signal::ctrl_c() => {
-                    println!("Ctrl-C received. Shutting down...");
-                    let _ = stop_rx.await;
-                }
-                _ = &mut stop_rx => {}
-            }
-            Ok::<(), anyhow::Error>(())
-        })
-        .await?;
-
-    Ok(())
+async fn shutdown_signal() {
+    let _ = tokio::signal::ctrl_c().await;
+    info!("signal received, shutting down");
 }
