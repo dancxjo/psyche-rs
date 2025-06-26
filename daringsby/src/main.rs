@@ -5,7 +5,7 @@ use std::time::Instant;
 use axum::serve;
 use axum::{
     Extension, Router,
-    extract::ws::{Message, WebSocket, WebSocketUpgrade},
+    extract::ws::{CloseFrame, Message, WebSocket, WebSocketUpgrade, close_code},
     response::Html,
     routing::get,
 };
@@ -69,17 +69,35 @@ async fn handle_socket(
     tx: tokio::sync::broadcast::Sender<TranscriptResult>,
 ) {
     let stream = stream::unfold(socket, |mut socket| async {
-        match socket.recv().await {
-            Some(Ok(Message::Binary(b))) => Some((Ok(Bytes::from(b)), socket)),
-            Some(Ok(_)) => Some((
-                Err(std::io::Error::new(std::io::ErrorKind::Other, "non-binary")),
-                socket,
-            )),
-            Some(Err(e)) => Some((
-                Err(std::io::Error::new(std::io::ErrorKind::Other, e)),
-                socket,
-            )),
-            None => None,
+        loop {
+            match socket.recv().await {
+                Some(Ok(Message::Binary(b))) => break Some((Ok(Bytes::from(b)), socket)),
+                Some(Ok(Message::Close(reason))) => {
+                    tracing::debug!(?reason, "WebSocket closed by client");
+                    let _ = socket
+                        .send(Message::Close(Some(CloseFrame {
+                            code: close_code::NORMAL,
+                            reason: reason
+                                .as_ref()
+                                .map(|f| f.reason.clone())
+                                .unwrap_or_default()
+                                .into(),
+                        })))
+                        .await;
+                    break None;
+                }
+                Some(Ok(_)) => {
+                    // Ignore non-binary frames such as ping/pong
+                    continue;
+                }
+                Some(Err(e)) => {
+                    break Some((
+                        Err(std::io::Error::new(std::io::ErrorKind::Other, e)),
+                        socket,
+                    ));
+                }
+                None => break None,
+            }
         }
     });
     let stream: Pin<Box<dyn Stream<Item = Result<Bytes, std::io::Error>> + Send>> =
