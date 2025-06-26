@@ -67,7 +67,12 @@ async fn handle_socket(socket: WebSocket, recognizer: Arc<dyn SpeechRecognizer>)
                     error!("recognize error: {:?}", e);
                 }
                 match recognizer.try_transcribe().await {
-                    Ok(Some(text)) => info!("transcript = {}", text),
+                    Ok(Some(tr)) => {
+                        info!("stable = {}", tr.stable);
+                        if let Some(f) = tr.fuzzy {
+                            info!("fuzzy = {}", f);
+                        }
+                    }
                     Ok(None) => {}
                     Err(e) => error!("transcribe error: {:?}", e),
                 }
