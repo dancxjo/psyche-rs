@@ -1,0 +1,27 @@
+<style>
+  #asr-output {
+    font-family: monospace;
+    white-space: pre-wrap;
+    padding: 1em;
+    border: 1px solid #ccc;
+    min-height: 6em;
+    overflow-y: auto;
+  }
+  .fuzzy {
+    opacity: 0.4;
+    font-style: italic;
+  }
+</style>
+<div id="asr-output"></div>
+<script>
+  const output = document.getElementById("asr-output");
+  const autoscroll = true;
+  const ws = new WebSocket((location.protocol === 'https:' ? 'wss://' : 'ws://') + location.host + '/debug/asr');
+  ws.onmessage = (event) => {
+    const { stable, fuzzy } = JSON.parse(event.data);
+    output.innerHTML = stable + (fuzzy ? `<span class="fuzzy">${fuzzy}</span>` : "");
+    if (autoscroll) {
+      output.scrollTop = output.scrollHeight;
+    }
+  };
+</script>

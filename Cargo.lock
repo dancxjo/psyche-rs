@@ -506,6 +506,7 @@ dependencies = [
  "llm",
  "neo4rs",
  "psyche-rs",
+ "serde_json",
  "tokio",
  "tokio-util",
  "tower 0.4.13",
