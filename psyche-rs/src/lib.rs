@@ -1,7 +1,7 @@
 //! Core types for the `psyche-rs` crate.
 //!
-//! This crate currently exposes the [`Sensation`] type and a simple
-//! [`greet`] helper used by the example binary.
+//! This crate currently exposes [`Sensation`], [`Impression`], [`Sensor`] and
+//! [`Witness`] building blocks for constructing artificial agents.
 
 use async_trait::async_trait;
 use chrono::{DateTime, Utc};
@@ -85,20 +85,9 @@ pub trait Sensor<T = serde_json::Value> {
 #[async_trait(?Send)]
 pub trait Witness<T = serde_json::Value> {
     /// Observes the provided sensors and yields impression batches.
-    async fn stream<S>(&mut self, sensors: Vec<S>) -> BoxStream<'static, Vec<Impression<T>>>
+    async fn observe<S>(&mut self, sensors: Vec<S>) -> BoxStream<'static, Vec<Impression<T>>>
     where
         S: Sensor<T> + 'static;
-}
-
-/// Returns a greeting.
-///
-/// # Examples
-///
-/// ```
-/// assert_eq!(psyche_rs::greet(), "Hello, world!");
-/// ```
-pub fn greet() -> &'static str {
-    "Hello, world!"
 }
 
 #[cfg(test)]
@@ -126,7 +115,7 @@ mod tests {
 
         #[async_trait(?Send)]
         impl Witness<String> for TestWitness {
-            async fn stream<S>(
+            async fn observe<S>(
                 &mut self,
                 mut sensors: Vec<S>,
             ) -> BoxStream<'static, Vec<Impression<String>>>
@@ -145,7 +134,7 @@ mod tests {
 
         let mut witness = TestWitness;
         let s = TestSensor;
-        let mut stream = witness.stream(vec![s]).await;
+        let mut stream = witness.observe(vec![s]).await;
         if let Some(impressions) = stream.next().await {
             assert_eq!(impressions[0].how, "ping event");
         } else {

@@ -1,3 +1,3 @@
 fn main() {
-    println!("{}", psyche_rs::greet());
+    println!("daringsby example");
 }
