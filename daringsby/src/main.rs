@@ -9,7 +9,7 @@ use daringsby::{Heartbeat, LoggingMotor};
 
 #[derive(Parser)]
 struct Args {
-    #[arg(long, default_value = "http://localhost:14434")]
+    #[arg(long, default_value = "http://localhost:11434")]
     base_url: String,
     #[arg(long, default_value = "gemma3:27b")]
     model: String,

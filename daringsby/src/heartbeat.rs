@@ -32,9 +32,9 @@ impl Sensor<String> for Heartbeat {
             loop {
                 let jitter = {
                     let mut rng = rand::thread_rng();
-                    rng.gen_range(0..15)
+                    rng.gen_range(0..2)
                 };
-                tokio::time::sleep(std::time::Duration::from_secs(3 + jitter)).await;
+                tokio::time::sleep(std::time::Duration::from_secs(1 + jitter)).await;
                 let now = chrono::Local::now();
                 let msg = heartbeat_message(now);
                 debug!(?msg, "heartbeat sensed");
