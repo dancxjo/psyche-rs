@@ -11,9 +11,9 @@ use psyche_rs::{Sensation, Sensor};
 /// use chrono::{Local, TimeZone};
 /// use daringsby::heartbeat::heartbeat_message;
 /// let dt = Local.with_ymd_and_hms(2024, 1, 1, 12, 0, 0).unwrap();
-/// let expected = format!(
-///     "It's {}, and I felt my heart beat, so I know I'm alive.",
-///     dt.format("%Y-%m-%d %H:%M:%S %Z")
+/// assert_eq!(
+///     heartbeat_message(dt),
+///     "It's 2024-01-01 12:00:00 +00:00, and I felt my heart beat, so I know I'm alive."
 /// );
 /// assert_eq!(heartbeat_message(dt), expected);
 /// ```

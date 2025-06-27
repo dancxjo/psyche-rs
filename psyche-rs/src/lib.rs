@@ -12,7 +12,7 @@ mod wit;
 mod witness;
 
 pub use impression::Impression;
-pub use motor::{Motor, MotorCommand, MotorExecutor};
+pub use motor::{Action, Completion, Intention, Interruption, Motor, MotorError, Urge};
 pub use psyche::Psyche;
 pub use sensation::Sensation;
 pub use sensor::Sensor;
@@ -26,7 +26,7 @@ mod tests {
     use chrono::Utc;
     use futures::stream::BoxStream;
     use futures::{StreamExt, stream};
-    use std::collections::HashMap;
+    use serde_json::Value;
     use std::sync::{Arc, Mutex};
 
     #[tokio::test]
@@ -118,38 +118,22 @@ mod tests {
         }
 
         struct RecordingMotor {
-            log: Arc<Mutex<Vec<MotorCommand<String>>>>,
+            log: Arc<Mutex<Vec<String>>>,
         }
 
-        #[async_trait(?Send)]
-        impl Motor<String> for RecordingMotor {
-            async fn execute(&mut self, command: MotorCommand<String>) {
-                self.log.lock().unwrap().push(command);
-            }
-        }
-
-        struct SimpleMotorExecutor {
-            motors: HashMap<String, Box<dyn Motor<String>>>,
-        }
-
-        impl SimpleMotorExecutor {
-            fn new() -> Self {
-                Self {
-                    motors: HashMap::new(),
-                }
-            }
-
-            fn register_motor(&mut self, name: &str, motor: Box<dyn Motor<String>>) {
-                self.motors.insert(name.into(), motor);
-            }
-        }
-
-        #[async_trait(?Send)]
-        impl MotorExecutor<String> for SimpleMotorExecutor {
-            async fn submit(&mut self, command: MotorCommand<String>) {
-                if let Some(motor) = self.motors.get_mut(&command.name) {
-                    motor.execute(command).await;
-                }
+        impl Motor for RecordingMotor {
+            fn perform(&self, mut action: Action) -> Result<(), MotorError> {
+                use futures::StreamExt;
+                use futures::executor::block_on;
+                let log = &self.log;
+                block_on(async {
+                    let mut collected = String::new();
+                    while let Some(chunk) = action.body.next().await {
+                        collected.push_str(&chunk);
+                    }
+                    log.lock().unwrap().push(collected);
+                });
+                Ok(())
             }
         }
 
@@ -159,24 +143,19 @@ mod tests {
         let log = Arc::new(Mutex::new(Vec::new()));
         let motor = RecordingMotor { log: log.clone() };
 
-        let mut executor = SimpleMotorExecutor::new();
-        executor.register_motor("say", Box::new(motor));
-
         let mut impressions = witness.observe(vec![sensor]).await;
 
         if let Some(batch) = impressions.next().await {
             for impression in batch {
-                let cmd = MotorCommand::<String> {
-                    name: "say".into(),
-                    args: "meta".to_string(),
-                    content: Some(impression.how.clone()),
-                };
-                executor.submit(cmd).await;
+                let text = impression.how.clone();
+                let body = stream::once(async move { text }).boxed();
+                let action = Action::new("say", Value::Null, body);
+                motor.perform(action).unwrap();
             }
         }
 
         let log = log.lock().unwrap();
         assert_eq!(log.len(), 1);
-        assert_eq!(log[0].content.as_deref(), Some("ping event"));
+        assert_eq!(log[0].as_str(), "ping event");
     }
 }
