@@ -26,6 +26,7 @@ pub struct Wit<T = serde_json::Value> {
     delay_ms: u64,
     window_ms: u64,
     window: Arc<Mutex<Vec<Sensation<T>>>>,
+    last_frame: Arc<Mutex<String>>,
 }
 
 impl<T> Wit<T> {
@@ -37,6 +38,7 @@ impl<T> Wit<T> {
             delay_ms: 1000,
             window_ms: 60_000,
             window: Arc::new(Mutex::new(Vec::new())),
+            last_frame: Arc::new(Mutex::new(String::new())),
         }
     }
 
@@ -91,6 +93,7 @@ where
         let delay = self.delay_ms;
         let window_ms = self.window_ms;
         let window = self.window.clone();
+        let last_frame = self.last_frame.clone();
         let mut pending: Vec<Sensation<T>> = Vec::new();
 
         thread::spawn(move || {
@@ -126,8 +129,11 @@ where
                                 let what = serde_json::to_string(&s.what).unwrap_or_default();
                                 format!("{} {} {}", s.when.to_rfc3339(), s.kind, what)
                             }).collect::<Vec<_>>().join("\n");
+                            let lf = { last_frame.lock().unwrap().clone() };
                             debug!(?timeline, "preparing prompt");
-                            let prompt = template.replace("{template}", &timeline);
+                            let prompt = template
+                                .replace("{last_frame}", &lf)
+                                .replace("{template}", &timeline);
                             trace!(?prompt, "sending LLM prompt");
                             let msgs = vec![ChatMessage::user(prompt)];
                             match llm.chat_stream(&msgs).await {
@@ -137,6 +143,7 @@ where
                                         trace!(%tok, "llm token");
                                         text.push_str(&tok);
                                     }
+                                    *last_frame.lock().unwrap() = text.clone();
                                     let impressions: Vec<Impression<T>> = split_single(&text, SegmentConfig::default())
                                         .into_iter()
                                         .filter_map(|s| {
@@ -288,5 +295,61 @@ mod tests {
         let lines: Vec<_> = tl.lines().collect();
         assert_eq!(lines.len(), 1);
         assert!(lines[0].contains("b"));
+    }
+
+    #[tokio::test]
+    async fn includes_last_frame_in_prompt() {
+        #[derive(Clone)]
+        struct RecLLM {
+            prompts: Arc<Mutex<Vec<String>>>,
+        }
+
+        #[async_trait]
+        impl LLMClient for RecLLM {
+            async fn chat_stream(
+                &self,
+                msgs: &[ChatMessage],
+            ) -> Result<TokenStream, Box<dyn std::error::Error + Send + Sync>> {
+                self.prompts.lock().unwrap().push(msgs[0].content.clone());
+                Ok(Box::pin(stream::once(async { Ok("frame".to_string()) })))
+            }
+        }
+
+        struct TwoBatch;
+
+        impl Sensor<String> for TwoBatch {
+            fn stream(&mut self) -> BoxStream<'static, Vec<Sensation<String>>> {
+                use async_stream::stream;
+                let s = stream! {
+                    yield vec![Sensation {
+                        kind: "test".into(),
+                        when: chrono::Utc::now(),
+                        what: "a".into(),
+                        source: None,
+                    }];
+                    tokio::time::sleep(std::time::Duration::from_millis(20)).await;
+                    yield vec![Sensation {
+                        kind: "test".into(),
+                        when: chrono::Utc::now(),
+                        what: "b".into(),
+                        source: None,
+                    }];
+                };
+                Box::pin(s)
+            }
+        }
+
+        let prompts = Arc::new(Mutex::new(Vec::new()));
+        let llm = Arc::new(RecLLM {
+            prompts: prompts.clone(),
+        });
+        let mut wit = Wit::new(llm).delay_ms(10).prompt("{last_frame}:{template}");
+        let sensor = TwoBatch;
+        let mut stream = wit.observe(vec![sensor]).await;
+        let _ = stream.next().await;
+        let _ = stream.next().await;
+        let data = prompts.lock().unwrap();
+        assert!(data.len() >= 2);
+        assert!(data[1].contains("frame"));
     }
 }

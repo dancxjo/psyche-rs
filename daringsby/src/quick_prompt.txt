@@ -1,5 +1,5 @@
 These are the recent experiences of a character. They tell a story when taken together--or, rather, a frame in an ongoing story.
-In the last moment, this was happening:
+In the last frame, this is what was happening:
 {last_frame}
 In the past instant, these things have taken place:
 {template}

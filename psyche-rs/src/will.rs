@@ -35,6 +35,8 @@ pub struct Will<T = serde_json::Value> {
     window_ms: u64,
     window: Arc<Mutex<Vec<Sensation<T>>>>,
     motors: Vec<MotorDescription>,
+    latest_instant: Arc<Mutex<String>>,
+    latest_moment: Arc<Mutex<String>>,
 }
 
 impl<T> Will<T> {
@@ -47,6 +49,8 @@ impl<T> Will<T> {
             window_ms: 60_000,
             window: Arc::new(Mutex::new(Vec::new())),
             motors: Vec::new(),
+            latest_instant: Arc::new(Mutex::new(String::new())),
+            latest_moment: Arc::new(Mutex::new(String::new())),
         }
     }
 
@@ -107,6 +111,8 @@ impl<T> Will<T> {
         let window_ms = self.window_ms;
         let window = self.window.clone();
         let motors = self.motors.clone();
+        let latest_instant_store = self.latest_instant.clone();
+        let latest_moment_store = self.latest_moment.clone();
 
         thread::spawn(move || {
             let rt = tokio::runtime::Builder::new_current_thread()
@@ -135,9 +141,23 @@ impl<T> Will<T> {
                                 format!("{} {} {}", s.when.to_rfc3339(), s.kind, what)
                             }).collect::<Vec<_>>().join("\n");
                             let motor_text = motors.iter().map(|m| format!("{}: {}", m.name, m.description)).collect::<Vec<_>>().join("\n");
+                            let mut last_instant = String::new();
+                            let mut last_moment = String::new();
+                            for s in &snapshot {
+                                let val = serde_json::to_string(&s.what).unwrap_or_default();
+                                match s.kind.as_str() {
+                                    "instant" => last_instant = val,
+                                    "moment" => last_moment = val,
+                                    _ => {}
+                                }
+                            }
+                            *latest_instant_store.lock().unwrap() = last_instant.clone();
+                            *latest_moment_store.lock().unwrap() = last_moment.clone();
                             let prompt = template
                                 .replace("{situation}", &situation)
-                                .replace("{motors}", &motor_text);
+                                .replace("{motors}", &motor_text)
+                                .replace("{latest_instant}", &last_instant)
+                                .replace("{latest_moment}", &last_moment);
                             trace!(?prompt, "sending will prompt");
                             let msgs = vec![ChatMessage::user(prompt)];
                             match llm.chat_stream(&msgs).await {
@@ -261,5 +281,53 @@ mod tests {
         let chunks: Vec<String> = action.body.collect().await;
         let body: String = chunks.concat();
         assert_eq!(body, "Hello world");
+    }
+
+    #[tokio::test]
+    async fn prompt_includes_latest() {
+        #[derive(Clone)]
+        struct RecLLM {
+            prompts: Arc<Mutex<Vec<String>>>,
+        }
+
+        #[async_trait]
+        impl LLMClient for RecLLM {
+            async fn chat_stream(
+                &self,
+                msgs: &[ChatMessage],
+            ) -> Result<TokenStream, Box<dyn std::error::Error + Send + Sync>> {
+                self.prompts.lock().unwrap().push(msgs[0].content.clone());
+                Ok(Box::pin(stream::once(async { Ok("<say></say>".into()) })))
+            }
+        }
+
+        struct InstantSensor;
+
+        impl Sensor<String> for InstantSensor {
+            fn stream(&mut self) -> BoxStream<'static, Vec<Sensation<String>>> {
+                let s = Sensation {
+                    kind: "instant".into(),
+                    when: chrono::Utc::now(),
+                    what: "flash".into(),
+                    source: None,
+                };
+                stream::once(async move { vec![s] }).boxed()
+            }
+        }
+
+        let prompts = Arc::new(Mutex::new(Vec::new()));
+        let llm = Arc::new(RecLLM {
+            prompts: prompts.clone(),
+        });
+        let mut will = Will::new(llm)
+            .delay_ms(10)
+            .prompt("{latest_instant}-{latest_moment}");
+        will = will.motor("say", "speak");
+        let sensor = InstantSensor;
+        let mut stream = will.observe(vec![sensor]).await;
+        let _ = stream.next().await;
+        let data = prompts.lock().unwrap();
+        assert!(!data.is_empty());
+        assert!(data[0].contains("flash"));
     }
 }
