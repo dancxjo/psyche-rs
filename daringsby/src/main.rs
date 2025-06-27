@@ -20,7 +20,7 @@ struct Args {
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     tracing_subscriber::fmt()
-        .with_max_level(Level::DEBUG)
+        .with_max_level(Level::TRACE)
         .init();
     let args = Args::parse();
     let backend = args.backend.parse::<LLMBackend>()?;
