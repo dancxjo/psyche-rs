@@ -3,7 +3,9 @@
 //! This crate currently exposes the [`Sensation`] type and a simple
 //! [`greet`] helper used by the example binary.
 
+use async_trait::async_trait;
 use chrono::{DateTime, Utc};
+use futures::stream::BoxStream;
 use serde::{Deserialize, Serialize};
 
 /// A generic Sensation type for the Pete runtime.
@@ -38,6 +40,53 @@ pub struct Sensation<T = serde_json::Value> {
     pub source: Option<String>,
 }
 
+/// A high-level summary of one or more sensations.
+///
+/// `Impression` bundles related sensations in [`what`] and expresses
+/// them in natural language via [`how`].
+///
+/// # Examples
+///
+/// ```
+/// use chrono::Utc;
+/// use psyche_rs::{Impression, Sensation};
+///
+/// let what = vec![Sensation::<String> {
+///     kind: "utterance.text".into(),
+///     when: Utc::now(),
+///     what: "salutations".into(),
+///     source: None,
+/// }];
+/// let impression = Impression {
+///     what: what.clone(),
+///     how: "He said salutations".into(),
+/// };
+/// assert_eq!(impression.what[0].kind, "utterance.text");
+/// ```
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Impression<T = serde_json::Value> {
+    /// Sensations that led to this impression.
+    pub what: Vec<Sensation<T>>,
+    /// Natural language summarizing the sensations.
+    pub how: String,
+}
+
+/// A source of sensations.
+pub trait Sensor<T = serde_json::Value> {
+    /// Returns a stream of sensation batches.
+    fn stream(&mut self) -> BoxStream<'static, Vec<Sensation<T>>>;
+}
+
+/// Consumes sensors and emits impressions.
+#[async_trait(?Send)]
+pub trait Witness<T = serde_json::Value> {
+    /// Observes the provided sensors and yields impression batches.
+    async fn stream(
+        &mut self,
+        sensors: Vec<Box<dyn Sensor<T>>>,
+    ) -> BoxStream<'static, Vec<Impression<T>>>;
+}
+
 /// Returns a greeting.
 ///
 /// # Examples
@@ -47,4 +96,54 @@ pub struct Sensation<T = serde_json::Value> {
 /// ```
 pub fn greet() -> &'static str {
     "Hello, world!"
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use futures::{StreamExt, stream};
+
+    #[tokio::test]
+    async fn impression_from_sensor() {
+        struct TestSensor;
+
+        impl Sensor<String> for TestSensor {
+            fn stream(&mut self) -> BoxStream<'static, Vec<Sensation<String>>> {
+                let s = Sensation {
+                    kind: "test".into(),
+                    when: Utc::now(),
+                    what: "ping".into(),
+                    source: None,
+                };
+                stream::once(async move { vec![s] }).boxed()
+            }
+        }
+
+        struct TestWitness;
+
+        #[async_trait(?Send)]
+        impl Witness<String> for TestWitness {
+            async fn stream(
+                &mut self,
+                mut sensors: Vec<Box<dyn Sensor<String>>>,
+            ) -> BoxStream<'static, Vec<Impression<String>>> {
+                let impressions = sensors.pop().unwrap().stream().map(|what| {
+                    vec![Impression {
+                        how: format!("{} event", what[0].what),
+                        what,
+                    }]
+                });
+                impressions.boxed()
+            }
+        }
+
+        let mut witness = TestWitness;
+        let s = TestSensor;
+        let mut stream = witness.stream(vec![Box::new(s)]).await;
+        if let Some(impressions) = stream.next().await {
+            assert_eq!(impressions[0].how, "ping event");
+        } else {
+            panic!("no impression emitted");
+        }
+    }
 }
