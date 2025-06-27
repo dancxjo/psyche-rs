@@ -7,8 +7,8 @@ use futures::{StreamExt, stream};
 use ollama_rs::Ollama;
 use once_cell::sync::Lazy;
 use psyche_rs::{
-    Action, Combobulator, Impression, ImpressionSensor, Motor, OllamaLLM, Sensation,
-    SensationSensor, Sensor, Wit, Witness,
+    Action, Combobulator, Impression, ImpressionSensor, LLMClient, LLMPool, Motor, OllamaLLM,
+    Sensation, SensationSensor, Sensor, Wit, Witness,
 };
 use serde_json::Value;
 
@@ -23,8 +23,8 @@ static MOMENT: Lazy<Arc<Mutex<Vec<Impression<Impression<String>>>>>> =
 
 #[derive(Parser)]
 struct Args {
-    #[arg(long, default_value = "http://localhost:11434")]
-    base_url: String,
+    #[arg(long = "base-url", default_value = "http://localhost:11434", num_args = 1..)]
+    base_url: Vec<String>,
     #[arg(long, default_value = "gemma3:27b")]
     model: String,
 }
@@ -37,8 +37,15 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let args = Args::parse();
     use tokio::sync::mpsc::unbounded_channel;
 
-    let client = Ollama::try_new(&args.base_url)?;
-    let llm = Arc::new(OllamaLLM::new(client, args.model));
+    let clients: Vec<Arc<dyn LLMClient>> = args
+        .base_url
+        .iter()
+        .map(|url| {
+            let cli = Ollama::try_new(url).expect("ollama client");
+            Arc::new(OllamaLLM::new(cli, args.model.clone())) as Arc<dyn LLMClient>
+        })
+        .collect();
+    let llm = Arc::new(LLMPool::new(clients));
 
     let mut quick = Wit::new(llm.clone()).delay_ms(1000);
     let mut combob = Combobulator::new(llm).prompt(COMBO_PROMPT).delay_ms(1000);

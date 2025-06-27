@@ -27,7 +27,7 @@ pub struct Wit<T = serde_json::Value> {
     delay_ms: u64,
     min_queue: usize,
     max_queue: usize,
-    window: Vec<Sensation<T>>,
+    queue: Vec<Sensation<T>>,
 }
 
 impl<T> Wit<T> {
@@ -39,7 +39,7 @@ impl<T> Wit<T> {
             delay_ms: 1000,
             min_queue: 1,
             max_queue: 50,
-            window: Vec::new(),
+            queue: Vec::new(),
         }
     }
 
@@ -67,7 +67,7 @@ impl<T> Wit<T> {
     where
         T: serde::Serialize,
     {
-        self.window
+        self.queue
             .iter()
             .map(|s| {
                 let what = serde_json::to_string(&s.what).unwrap_or_default();
@@ -93,7 +93,7 @@ where
         let delay = self.delay_ms;
         let min_queue = self.min_queue;
         let max_queue = self.max_queue;
-        let mut window = Vec::new();
+        let mut pending: Vec<Sensation<T>> = Vec::new();
 
         thread::spawn(move || {
             let rt = tokio::runtime::Builder::new_current_thread()
@@ -104,23 +104,23 @@ where
             rt.block_on(async move {
                 let streams: Vec<_> = sensors.into_iter().map(|mut s| s.stream()).collect();
                 let mut sensor_stream = stream::select_all(streams);
-                let mut pending: Vec<Sensation<T>> = Vec::new();
                 loop {
                     tokio::select! {
                         Some(batch) = sensor_stream.next() => {
                             trace!(count = batch.len(), "sensations received");
                             pending.extend(batch);
+                            if pending.len() > max_queue {
+                                let excess = pending.len() - max_queue;
+                                pending.drain(0..excess);
+                            }
                         }
                         _ = tokio::time::sleep(std::time::Duration::from_millis(delay)) => {
                             if pending.len() < min_queue {
+                                pending.clear();
                                 continue;
                             }
-                            window.extend(pending.drain(..));
-                            if window.len() > max_queue {
-                                let excess = window.len() - max_queue;
-                                window.drain(0..excess);
-                            }
-                            let timeline = window.iter().map(|s| {
+                            let snapshot: Vec<_> = pending.drain(..).collect();
+                            let timeline = snapshot.iter().map(|s| {
                                 let what = serde_json::to_string(&s.what).unwrap_or_default();
                                 format!("{} {} {}", s.when.to_rfc3339(), s.kind, what)
                             }).collect::<Vec<_>>().join("\n");
@@ -142,7 +142,7 @@ where
                                             if t.is_empty() {
                                                 None
                                             } else {
-                                                Some(Impression { how: t.to_string(), what: window.clone() })
+                                                Some(Impression { how: t.to_string(), what: snapshot.clone() })
                                             }
                                         })
                                         .collect();
@@ -220,5 +220,31 @@ mod tests {
         assert_eq!(impressions[0].how, "It was fun!");
         assert_eq!(impressions[1].how, "I loved it.");
         assert_eq!(impressions[2].how, "Let's do it again?");
+    }
+
+    #[tokio::test]
+    async fn clears_queue_between_ticks() {
+        use std::sync::atomic::{AtomicUsize, Ordering};
+        struct CountLLM(Arc<AtomicUsize>);
+
+        #[async_trait]
+        impl LLMClient for CountLLM {
+            async fn chat_stream(
+                &self,
+                _msgs: &[ChatMessage],
+            ) -> Result<TokenStream, Box<dyn std::error::Error + Send + Sync>> {
+                self.0.fetch_add(1, Ordering::SeqCst);
+                Ok(Box::pin(stream::once(async { Ok("done".to_string()) })))
+            }
+        }
+
+        let calls = Arc::new(AtomicUsize::new(0));
+        let llm = Arc::new(CountLLM(calls.clone()));
+        let mut wit = Wit::new(llm).delay_ms(10);
+        let sensor = TestSensor;
+        let mut stream = wit.observe(vec![sensor]).await;
+        let _ = stream.next().await.unwrap();
+        tokio::time::sleep(std::time::Duration::from_millis(30)).await;
+        assert_eq!(calls.load(Ordering::SeqCst), 1);
     }
 }
