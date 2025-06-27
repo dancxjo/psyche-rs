@@ -31,9 +31,9 @@ impl<T> Combobulator<T> {
         self
     }
 
-    /// Sets queue thresholds before invoking the LLM.
-    pub fn queue(mut self, min: usize, max: usize) -> Self {
-        self.wit = self.wit.queue(min, max);
+    /// Sets the sensation window duration in milliseconds.
+    pub fn window_ms(mut self, ms: u64) -> Self {
+        self.wit = self.wit.window_ms(ms);
         self
     }
 
