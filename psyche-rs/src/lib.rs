@@ -90,6 +90,46 @@ pub trait Witness<T = serde_json::Value> {
         S: Sensor<T> + 'static;
 }
 
+/// A command issued by the "Will" for a motor to carry out.
+///
+/// The command payload `T` defaults to [`serde_json::Value`].
+///
+/// # Examples
+///
+/// ```
+/// use psyche_rs::MotorCommand;
+///
+/// let cmd: MotorCommand = MotorCommand {
+///     name: "say".into(),
+///     args: serde_json::json!({"volume": 11}),
+///     content: Some("Hello".into()),
+/// };
+/// assert_eq!(cmd.name, "say");
+/// ```
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct MotorCommand<T = serde_json::Value> {
+    /// Target motor name.
+    pub name: String,
+    /// Structured arguments for the motor.
+    pub args: T,
+    /// Optional free-form text.
+    pub content: Option<String>,
+}
+
+/// A device capable of executing motor commands.
+#[async_trait(?Send)]
+pub trait Motor<T = serde_json::Value> {
+    /// Carry out the provided command.
+    async fn execute(&mut self, command: MotorCommand<T>);
+}
+
+/// Dispatches commands to registered motors.
+#[async_trait(?Send)]
+pub trait MotorExecutor<T = serde_json::Value> {
+    /// Route the command to an appropriate motor.
+    async fn submit(&mut self, command: MotorCommand<T>);
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -140,5 +180,112 @@ mod tests {
         } else {
             panic!("no impression emitted");
         }
+    }
+
+    #[tokio::test]
+    async fn round_trip_to_motor() {
+        use std::collections::HashMap;
+        use std::sync::{Arc, Mutex};
+
+        struct TestSensor;
+
+        impl Sensor<String> for TestSensor {
+            fn stream(&mut self) -> BoxStream<'static, Vec<Sensation<String>>> {
+                let s = Sensation {
+                    kind: "utterance.text".into(),
+                    when: Utc::now(),
+                    what: "ping".into(),
+                    source: None,
+                };
+                stream::once(async move { vec![s] }).boxed()
+            }
+        }
+
+        struct TestWitness;
+
+        #[async_trait(?Send)]
+        impl Witness<String> for TestWitness {
+            async fn observe<S>(
+                &mut self,
+                mut sensors: Vec<S>,
+            ) -> BoxStream<'static, Vec<Impression<String>>>
+            where
+                S: Sensor<String> + 'static,
+            {
+                sensors
+                    .pop()
+                    .unwrap()
+                    .stream()
+                    .map(|what| {
+                        vec![Impression {
+                            how: format!("{} event", what[0].what),
+                            what,
+                        }]
+                    })
+                    .boxed()
+            }
+        }
+
+        struct RecordingMotor {
+            log: Arc<Mutex<Vec<MotorCommand<String>>>>,
+        }
+
+        #[async_trait(?Send)]
+        impl Motor<String> for RecordingMotor {
+            async fn execute(&mut self, command: MotorCommand<String>) {
+                self.log.lock().unwrap().push(command);
+            }
+        }
+
+        struct SimpleMotorExecutor {
+            motors: HashMap<String, Box<dyn Motor<String>>>,
+        }
+
+        impl SimpleMotorExecutor {
+            fn new() -> Self {
+                Self {
+                    motors: HashMap::new(),
+                }
+            }
+
+            fn register_motor(&mut self, name: &str, motor: Box<dyn Motor<String>>) {
+                self.motors.insert(name.into(), motor);
+            }
+        }
+
+        #[async_trait(?Send)]
+        impl MotorExecutor<String> for SimpleMotorExecutor {
+            async fn submit(&mut self, command: MotorCommand<String>) {
+                if let Some(motor) = self.motors.get_mut(&command.name) {
+                    motor.execute(command).await;
+                }
+            }
+        }
+
+        let mut witness = TestWitness;
+        let sensor = TestSensor;
+
+        let log = Arc::new(Mutex::new(Vec::new()));
+        let motor = RecordingMotor { log: log.clone() };
+
+        let mut executor = SimpleMotorExecutor::new();
+        executor.register_motor("say", Box::new(motor));
+
+        let mut impressions = witness.observe(vec![sensor]).await;
+
+        if let Some(batch) = impressions.next().await {
+            for impression in batch {
+                let cmd = MotorCommand::<String> {
+                    name: "say".into(),
+                    args: "meta".to_string(),
+                    content: Some(impression.how.clone()),
+                };
+                executor.submit(cmd).await;
+            }
+        }
+
+        let log = log.lock().unwrap();
+        assert_eq!(log.len(), 1);
+        assert_eq!(log[0].content.as_deref(), Some("ping event"));
     }
 }
