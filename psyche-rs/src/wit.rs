@@ -1,7 +1,6 @@
 use std::sync::{Arc, Mutex};
 use std::thread;
 
-use async_trait::async_trait;
 use futures::{
     StreamExt,
     stream::{self, BoxStream},
@@ -12,7 +11,7 @@ use tracing::{debug, trace};
 
 use segtok::segmenter::{SegmentConfig, split_single};
 
-use crate::{Impression, Sensation, Sensor, Witness};
+use crate::{Impression, Sensation, Sensor};
 
 use crate::llm_client::LLMClient;
 use ollama_rs::generation::chat::ChatMessage;
@@ -77,12 +76,12 @@ impl<T> Wit<T> {
     }
 }
 
-#[async_trait(?Send)]
-impl<T> Witness<T> for Wit<T>
+impl<T> Wit<T>
 where
     T: Clone + Send + 'static + serde::Serialize,
 {
-    async fn observe<S>(&mut self, sensors: Vec<S>) -> BoxStream<'static, Vec<Impression<T>>>
+    /// Observe the provided sensors and yield impression batches.
+    pub async fn observe<S>(&mut self, sensors: Vec<S>) -> BoxStream<'static, Vec<Impression<T>>>
     where
         S: Sensor<T> + Send + 'static,
     {

@@ -1,9 +1,8 @@
 use std::sync::Arc;
 
-use async_trait::async_trait;
 use futures::stream::BoxStream;
 
-use crate::{Impression, LLMClient, Sensor, Wit, Witness};
+use crate::{Impression, LLMClient, Sensor, Wit};
 
 /// Second order wit that summarizes impressions from another wit.
 ///
@@ -46,12 +45,12 @@ impl<T> Combobulator<T> {
     }
 }
 
-#[async_trait(?Send)]
-impl<T> Witness<Impression<T>> for Combobulator<T>
+impl<T> Combobulator<T>
 where
     T: Clone + Send + 'static + serde::Serialize,
 {
-    async fn observe<S>(
+    /// Observe provided impression sensors and yield summarized impressions.
+    pub async fn observe<S>(
         &mut self,
         sensors: Vec<S>,
     ) -> BoxStream<'static, Vec<Impression<Impression<T>>>>

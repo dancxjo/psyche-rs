@@ -1,7 +1,7 @@
 //! Core types for the `psyche-rs` crate.
 //!
 //! This crate currently exposes [`Sensation`], [`Impression`], [`Sensor`] and
-//! [`Witness`] building blocks for constructing artificial agents.
+//! [`Wit`] building blocks for constructing artificial agents.
 
 mod combobulator;
 mod impression;
@@ -13,8 +13,8 @@ mod psyche;
 mod sensation;
 mod sensation_channel_sensor;
 mod sensor;
+mod will;
 mod wit;
-mod witness;
 
 pub use crate::llm_client::{LLMClient, OllamaLLM, TokenStream};
 pub use combobulator::Combobulator;
@@ -26,8 +26,8 @@ pub use psyche::Psyche;
 pub use sensation::Sensation;
 pub use sensation_channel_sensor::SensationSensor;
 pub use sensor::Sensor;
+pub use will::{MotorDescription, Will};
 pub use wit::Wit;
-pub use witness::Witness;
 
 #[cfg(test)]
 mod tests {
@@ -55,28 +55,24 @@ mod tests {
             }
         }
 
-        struct TestWitness;
+        use async_trait::async_trait;
+        #[derive(Clone)]
+        struct StaticLLM;
 
-        #[async_trait(?Send)]
-        impl Witness<String> for TestWitness {
-            async fn observe<S>(
-                &mut self,
-                mut sensors: Vec<S>,
-            ) -> BoxStream<'static, Vec<Impression<String>>>
-            where
-                S: Sensor<String> + 'static,
-            {
-                let impressions = sensors.pop().unwrap().stream().map(|what| {
-                    vec![Impression {
-                        how: format!("{} event", what[0].what),
-                        what,
-                    }]
-                });
-                impressions.boxed()
+        #[async_trait]
+        impl LLMClient for StaticLLM {
+            async fn chat_stream(
+                &self,
+                _msgs: &[ollama_rs::generation::chat::ChatMessage],
+            ) -> Result<TokenStream, Box<dyn std::error::Error + Send + Sync>> {
+                Ok(Box::pin(stream::once(async {
+                    Ok("ping event".to_string())
+                })))
             }
         }
 
-        let mut witness = TestWitness;
+        let llm = Arc::new(StaticLLM);
+        let mut witness = Wit::new(llm).delay_ms(10);
         let s = TestSensor;
         let mut stream = witness.observe(vec![s]).await;
         if let Some(impressions) = stream.next().await {
@@ -102,36 +98,32 @@ mod tests {
             }
         }
 
-        struct TestWitness;
+        use async_trait::async_trait;
+        #[derive(Clone)]
+        struct StaticLLM;
 
-        #[async_trait(?Send)]
-        impl Witness<String> for TestWitness {
-            async fn observe<S>(
-                &mut self,
-                mut sensors: Vec<S>,
-            ) -> BoxStream<'static, Vec<Impression<String>>>
-            where
-                S: Sensor<String> + 'static,
-            {
-                sensors
-                    .pop()
-                    .unwrap()
-                    .stream()
-                    .map(|what| {
-                        vec![Impression {
-                            how: format!("{} event", what[0].what),
-                            what,
-                        }]
-                    })
-                    .boxed()
+        #[async_trait]
+        impl LLMClient for StaticLLM {
+            async fn chat_stream(
+                &self,
+                _msgs: &[ollama_rs::generation::chat::ChatMessage],
+            ) -> Result<TokenStream, Box<dyn std::error::Error + Send + Sync>> {
+                Ok(Box::pin(stream::once(async {
+                    Ok("ping event".to_string())
+                })))
             }
         }
+
+        let llm = Arc::new(StaticLLM);
 
         struct RecordingMotor {
             log: Arc<Mutex<Vec<String>>>,
         }
 
         impl Motor for RecordingMotor {
+            fn description(&self) -> &'static str {
+                "records actions into a vector"
+            }
             fn perform(&self, mut action: Action) -> Result<(), MotorError> {
                 use futures::StreamExt;
                 use futures::executor::block_on;
@@ -147,7 +139,7 @@ mod tests {
             }
         }
 
-        let mut witness = TestWitness;
+        let mut witness = Wit::new(llm).delay_ms(10);
         let sensor = TestSensor;
 
         let log = Arc::new(Mutex::new(Vec::new()));
