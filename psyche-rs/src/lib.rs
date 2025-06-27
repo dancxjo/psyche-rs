@@ -78,13 +78,16 @@ pub trait Sensor<T = serde_json::Value> {
 }
 
 /// Consumes sensors and emits impressions.
+///
+/// `Witness` takes ownership of provided sensors and outputs batches of
+/// [`Impression`]s.  Callers remain free to box or share sensor instances as
+/// desired and simply pass them as a `Vec`.
 #[async_trait(?Send)]
 pub trait Witness<T = serde_json::Value> {
     /// Observes the provided sensors and yields impression batches.
-    async fn stream(
-        &mut self,
-        sensors: Vec<Box<dyn Sensor<T>>>,
-    ) -> BoxStream<'static, Vec<Impression<T>>>;
+    async fn stream<S>(&mut self, sensors: Vec<S>) -> BoxStream<'static, Vec<Impression<T>>>
+    where
+        S: Sensor<T> + 'static;
 }
 
 /// Returns a greeting.
@@ -123,10 +126,13 @@ mod tests {
 
         #[async_trait(?Send)]
         impl Witness<String> for TestWitness {
-            async fn stream(
+            async fn stream<S>(
                 &mut self,
-                mut sensors: Vec<Box<dyn Sensor<String>>>,
-            ) -> BoxStream<'static, Vec<Impression<String>>> {
+                mut sensors: Vec<S>,
+            ) -> BoxStream<'static, Vec<Impression<String>>>
+            where
+                S: Sensor<String> + 'static,
+            {
                 let impressions = sensors.pop().unwrap().stream().map(|what| {
                     vec![Impression {
                         how: format!("{} event", what[0].what),
@@ -139,7 +145,7 @@ mod tests {
 
         let mut witness = TestWitness;
         let s = TestSensor;
-        let mut stream = witness.stream(vec![Box::new(s)]).await;
+        let mut stream = witness.stream(vec![s]).await;
         if let Some(impressions) = stream.next().await {
             assert_eq!(impressions[0].how, "ping event");
         } else {
