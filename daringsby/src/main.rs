@@ -2,11 +2,13 @@ use clap::Parser;
 use std::sync::{Arc, Mutex};
 use tracing::Level;
 
+use chrono::Utc;
 use futures::{StreamExt, stream};
 use ollama_rs::Ollama;
 use once_cell::sync::Lazy;
 use psyche_rs::{
     Action, Combobulator, Impression, ImpressionSensor, Motor, OllamaLLM, Sensor, Wit, Witness,
+    Sensation, SensationSensor,
 };
 use serde_json::Value;
 
@@ -42,11 +44,13 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut combob = Combobulator::new(llm).prompt(COMBO_PROMPT).delay_ms(1000);
 
     let (tx, rx) = unbounded_channel::<Vec<Impression<String>>>();
+    let (sens_tx, sens_rx) = unbounded_channel::<Vec<Sensation<String>>>();
 
     let mut quick_stream = quick
         .observe(vec![
             Box::new(Heartbeat) as Box<dyn Sensor<String> + Send>,
             Box::new(SelfDiscovery) as Box<dyn Sensor<String> + Send>,
+            Box::new(SensationSensor::new(sens_rx)), // Senses the moment coming out of the combobulator (?)
         ])
         .await;
     let sensor = ImpressionSensor::new(rx);
@@ -64,6 +68,16 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     tokio::spawn(async move {
         while let Some(imps) = combo_stream.next().await {
             *MOMENT.lock().unwrap() = imps.clone();
+            let sensed: Vec<Sensation<String>> = imps
+                .iter()
+                .map(|imp| Sensation {
+                    kind: "impression".into(),
+                    when: Utc::now(),
+                    what: imp.how.clone(),
+                    source: None,
+                })
+                .collect();
+            let _ = sens_tx.send(sensed);
             for imp in imps {
                 let text = imp.how.clone();
                 let body = stream::once(async move { text }).boxed();

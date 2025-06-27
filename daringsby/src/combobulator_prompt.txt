@@ -1,3 +1,3 @@
-Summarize the recent impressions into a coherent reflection.
+These are the recent experiences of a character. They tell a story when taken altogether.
 {template}
-Respond in one short sentence.
+Narrate that story in natural language. Concisely in about one sentence, in the first person (from the perspective of the character), based on the timeline above, what's happening?
