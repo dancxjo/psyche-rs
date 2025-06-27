@@ -13,7 +13,7 @@ use psyche_rs::{Sensation, Sensor};
 /// let dt = Local.with_ymd_and_hms(2024, 1, 1, 12, 0, 0).unwrap();
 /// assert_eq!(
 ///     heartbeat_message(dt),
-///     "It's 2024-01-01 12:00:00 CET, and I felt my heart beat, so I know I'm alive."
+///     "It's 2024-01-01 12:00:00 +00:00, and I felt my heart beat, so I know I'm alive."
 /// );
 /// ```
 pub fn heartbeat_message(now: chrono::DateTime<chrono::Local>) -> String {
@@ -60,9 +60,10 @@ mod tests {
     fn formats_message() {
         let dt = chrono::Local.with_ymd_and_hms(2024, 1, 1, 8, 0, 0).unwrap();
         let msg = heartbeat_message(dt);
-        assert_eq!(
-            msg,
-            "It's 08 o'clock, and I felt my heart beat, so I know I'm alive."
+        let expected = format!(
+            "It's {}, and I felt my heart beat, so I know I'm alive.",
+            dt.format("%Y-%m-%d %H:%M:%S %Z")
         );
+        assert_eq!(msg, expected);
     }
 }

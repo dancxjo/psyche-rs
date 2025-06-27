@@ -1,15 +1,21 @@
-use async_trait::async_trait;
+use futures::StreamExt;
 use tracing::info;
 
-use psyche_rs::{Motor, MotorCommand};
+use psyche_rs::{Action, Motor, MotorError};
 
 /// Simple motor that logs every received command.
 #[derive(Default)]
 pub struct LoggingMotor;
 
-#[async_trait(?Send)]
-impl Motor<String> for LoggingMotor {
-    async fn execute(&mut self, command: MotorCommand<String>) {
-        info!(?command.content, "motor log");
+impl Motor for LoggingMotor {
+    fn perform(&self, mut action: Action) -> Result<(), MotorError> {
+        futures::executor::block_on(async {
+            let mut text = String::new();
+            while let Some(chunk) = action.body.next().await {
+                text.push_str(&chunk);
+            }
+            info!(body = %text, name = %action.name, "motor log");
+        });
+        Ok(())
     }
 }

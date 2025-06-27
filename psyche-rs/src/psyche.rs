@@ -7,7 +7,10 @@ use futures::{
 };
 use tracing::{debug, info};
 
-use crate::{Impression, Motor, MotorCommand, Sensation, Sensor, Witness};
+#[cfg(test)]
+use crate::MotorError;
+use crate::{Action, Impression, Motor, Sensation, Sensor, Witness};
+use serde_json::Value;
 
 #[async_trait(?Send)]
 trait WitnessRunner<T> {
@@ -77,7 +80,7 @@ impl<T> Sensor<T> for SharedSensor<T> {
 /// Core orchestrator coordinating sensors, wits and motors.
 pub struct Psyche<T = serde_json::Value> {
     sensors: Vec<Arc<Mutex<dyn Sensor<T> + Send>>>,
-    motors: Vec<Box<dyn Motor<T> + Send>>,
+    motors: Vec<Box<dyn Motor + Send>>,
     wits: Vec<Box<dyn WitnessRunner<T> + Send>>,
 }
 
@@ -101,7 +104,7 @@ where
     }
 
     /// Add a motor to the psyche.
-    pub fn motor(mut self, motor: impl Motor<T> + Send + 'static) -> Self {
+    pub fn motor(mut self, motor: impl Motor + Send + 'static) -> Self {
         self.motors.push(Box::new(motor));
         self
     }
@@ -152,9 +155,15 @@ where
                 Some(batch) = merged.next() => {
                     for impression in batch {
                         debug!(?impression.how, "impression received");
-                        for motor in self.motors.iter_mut() {
-                            let cmd = MotorCommand::<T> { name: "log".into(), args: T::default(), content: Some(impression.how.clone()) };
-                            motor.execute(cmd).await;
+                        let text = impression.how.clone();
+                        for motor in self.motors.iter() {
+                            use futures::stream;
+                            let t = text.clone();
+                            let body = stream::once(async move { t }).boxed();
+                            let action = Action::new("log", Value::Null, body);
+                            if let Err(e) = motor.perform(action) {
+                                debug!(?e, "motor action failed");
+                            }
                         }
                     }
                 }
@@ -208,10 +217,10 @@ mod tests {
     }
 
     struct CountMotor(Arc<AtomicUsize>);
-    #[async_trait(?Send)]
-    impl Motor<String> for CountMotor {
-        async fn execute(&mut self, _cmd: MotorCommand<String>) {
+    impl Motor for CountMotor {
+        fn perform(&self, _action: Action) -> Result<(), MotorError> {
             self.0.fetch_add(1, Ordering::SeqCst);
+            Ok(())
         }
     }
 
