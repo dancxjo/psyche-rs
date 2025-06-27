@@ -17,7 +17,9 @@ use serde_json::Value;
 
 use daringsby::{Heartbeat, LoggingMotor, SelfDiscovery, SourceDiscovery};
 
+const QUICK_PROMPT: &str = include_str!("quick_prompt.txt");
 const COMBO_PROMPT: &str = include_str!("combobulator_prompt.txt");
+const WILL_PROMPT: &str = include_str!("will_prompt.txt");
 
 static INSTANT: Lazy<Arc<Mutex<Vec<Impression<String>>>>> =
     Lazy::new(|| Arc::new(Mutex::new(Vec::new())));
@@ -51,7 +53,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .collect();
     let llm = Arc::new(LLMPool::new(clients));
 
-    let mut quick = Wit::new(llm.clone()).delay_ms(1000);
+    let mut quick = Wit::new(llm.clone()).prompt(QUICK_PROMPT).delay_ms(1000);
     let mut combob = Combobulator::new(llm).prompt(COMBO_PROMPT).delay_ms(1000);
 
     let (tx, rx) = unbounded_channel::<Vec<Impression<String>>>();
