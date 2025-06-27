@@ -15,6 +15,7 @@ use psyche_rs::{Sensation, Sensor};
 ///     heartbeat_message(dt),
 ///     "It's 2024-01-01 12:00:00 +00:00, and I felt my heart beat, so I know I'm alive."
 /// );
+/// assert_eq!(heartbeat_message(dt), expected);
 /// ```
 pub fn heartbeat_message(now: chrono::DateTime<chrono::Local>) -> String {
     format!(

@@ -124,28 +124,35 @@ where
                                 let what = serde_json::to_string(&s.what).unwrap_or_default();
                                 format!("{} {} {}", s.when.to_rfc3339(), s.kind, what)
                             }).collect::<Vec<_>>().join("\n");
-                            debug!(?timeline, "sending prompt");
+                            debug!(?timeline, "preparing prompt");
                             let prompt = template.replace("{template}", &timeline);
+                            trace!(?prompt, "sending LLM prompt");
                             let msgs = vec![ChatMessage::user().content(prompt).build()];
-                            if let Ok(mut stream) = llm.chat_stream(&msgs).await {
-                                let mut text = String::new();
-                                while let Some(Ok(tok)) = stream.next().await {
-                                    text.push_str(&tok);
+                            match llm.chat_stream(&msgs).await {
+                                Ok(mut stream) => {
+                                    let mut text = String::new();
+                                    while let Some(Ok(tok)) = stream.next().await {
+                                        trace!(%tok, "llm token");
+                                        text.push_str(&tok);
+                                    }
+                                    let impressions: Vec<Impression<T>> = split_single(&text, SegmentConfig::default())
+                                        .into_iter()
+                                        .filter_map(|s| {
+                                            let t = s.trim();
+                                            if t.is_empty() {
+                                                None
+                                            } else {
+                                                Some(Impression { how: t.to_string(), what: window.clone() })
+                                            }
+                                        })
+                                        .collect();
+                                    if !impressions.is_empty() {
+                                        debug!(count = impressions.len(), "impressions generated");
+                                        let _ = tx.send(impressions);
+                                    }
                                 }
-                                let impressions: Vec<Impression<T>> = split_single(&text, SegmentConfig::default())
-                                    .into_iter()
-                                    .filter_map(|s| {
-                                        let t = s.trim();
-                                        if t.is_empty() {
-                                            None
-                                        } else {
-                                            Some(Impression { how: t.to_string(), what: window.clone() })
-                                        }
-                                    })
-                                    .collect();
-                                if !impressions.is_empty() {
-                                    debug!(count = impressions.len(), "impressions generated");
-                                    let _ = tx.send(impressions);
+                                Err(err) => {
+                                    trace!(?err, "llm streaming failed");
                                 }
                             }
                         }
