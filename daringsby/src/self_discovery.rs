@@ -26,6 +26,7 @@ static SENTENCES: Lazy<Vec<&'static str>> = Lazy::new(|| {
 ///
 /// let rt = Runtime::new().unwrap();
 /// rt.block_on(async {
+///     unsafe { std::env::set_var("FAST_TEST", "1") };
 ///     let mut sensor = SelfDiscovery::default();
 ///     let mut stream = sensor.stream();
 ///     if let Some(batch) = stream.next().await {
@@ -34,6 +35,14 @@ static SENTENCES: Lazy<Vec<&'static str>> = Lazy::new(|| {
 /// });
 /// ```
 pub struct SelfDiscovery;
+
+fn interval_secs() -> u64 {
+    if std::env::var("FAST_TEST").is_ok() {
+        0
+    } else {
+        60
+    }
+}
 
 impl Default for SelfDiscovery {
     fn default() -> Self {
@@ -51,7 +60,7 @@ impl Sensor<String> for SelfDiscovery {
                     let mut rng = rand::thread_rng();
                     rng.gen_range(0..2)
                 };
-                tokio::time::sleep(std::time::Duration::from_secs(1 + jitter)).await;
+                tokio::time::sleep(std::time::Duration::from_secs(interval_secs() + jitter)).await;
                 let msg = sentences[index].to_string();
                 index = (index + 1) % sentences.len();
                 debug!(?msg, "self discovery sensed");
@@ -75,10 +84,12 @@ mod tests {
 
     #[tokio::test]
     async fn emits_first_sentence() {
+        unsafe { std::env::set_var("FAST_TEST", "1") };
         let mut sensor = SelfDiscovery;
         let mut stream = sensor.stream();
         if let Some(batch) = stream.next().await {
-            assert_eq!(batch[0].what, SENTENCES[0]);
+            let expected = format!("I hear a voice inside my mind say: \"{}\"", SENTENCES[0]);
+            assert_eq!(batch[0].what, expected);
         } else {
             panic!("no sentence emitted");
         }
