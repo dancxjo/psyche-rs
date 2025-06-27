@@ -58,8 +58,8 @@ impl Sensor<String> for SelfDiscovery {
                 let s = Sensation {
                     kind: "self_discovery".into(),
                     when: chrono::Utc::now(),
-                    what: msg,
-                    source: None,
+                    what: format!("I hear a voice inside my mind say: \"{}\"", msg),
+                    source: Some("voice_inside_my_mind".into()),
                 };
                 yield vec![s];
             }
