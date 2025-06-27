@@ -5,6 +5,7 @@
 
 mod impression;
 mod motor;
+mod psyche;
 mod sensation;
 mod sensor;
 mod wit;
@@ -12,6 +13,7 @@ mod witness;
 
 pub use impression::Impression;
 pub use motor::{Motor, MotorCommand, MotorExecutor};
+pub use psyche::Psyche;
 pub use sensation::Sensation;
 pub use sensor::Sensor;
 pub use wit::Wit;
