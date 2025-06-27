@@ -7,12 +7,12 @@ use futures::{StreamExt, stream};
 use ollama_rs::Ollama;
 use once_cell::sync::Lazy;
 use psyche_rs::{
-    Action, Combobulator, Impression, ImpressionSensor, Motor, OllamaLLM, Sensor, Wit, Witness,
-    Sensation, SensationSensor,
+    Action, Combobulator, Impression, ImpressionSensor, Motor, OllamaLLM, Sensation,
+    SensationSensor, Sensor, Wit, Witness,
 };
 use serde_json::Value;
 
-use daringsby::{Heartbeat, LoggingMotor, SelfDiscovery};
+use daringsby::{Heartbeat, LoggingMotor, SelfDiscovery, SourceDiscovery};
 
 const COMBO_PROMPT: &str = include_str!("combobulator_prompt.txt");
 
@@ -50,6 +50,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .observe(vec![
             Box::new(Heartbeat) as Box<dyn Sensor<String> + Send>,
             Box::new(SelfDiscovery) as Box<dyn Sensor<String> + Send>,
+            Box::new(SourceDiscovery) as Box<dyn Sensor<String> + Send>,
             Box::new(SensationSensor::new(sens_rx)), // Senses the moment coming out of the combobulator (?)
         ])
         .await;
