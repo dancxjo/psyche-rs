@@ -14,15 +14,15 @@ use segtok::segmenter::{SegmentConfig, split_single};
 
 use crate::{Impression, Sensation, Sensor, Witness};
 
-use llm::LLMProvider;
-use llm::chat::ChatMessage;
+use crate::llm_client::LLMClient;
+use ollama_rs::generation::chat::ChatMessage;
 
 /// Default prompt text for [`Wit`].
 const DEFAULT_PROMPT: &str = include_str!("wit_prompt.txt");
 
 /// A looping prompt witness that summarizes sensed experiences using an LLM.
 pub struct Wit<T = serde_json::Value> {
-    llm: Arc<dyn LLMProvider>,
+    llm: Arc<dyn LLMClient>,
     prompt: String,
     delay_ms: u64,
     min_queue: usize,
@@ -32,7 +32,7 @@ pub struct Wit<T = serde_json::Value> {
 
 impl<T> Wit<T> {
     /// Creates a new [`Wit`] with default configuration.
-    pub fn new(llm: Arc<dyn LLMProvider>) -> Self {
+    pub fn new(llm: Arc<dyn LLMClient>) -> Self {
         Self {
             llm,
             prompt: DEFAULT_PROMPT.to_string(),
@@ -127,7 +127,7 @@ where
                             debug!(?timeline, "preparing prompt");
                             let prompt = template.replace("{template}", &timeline);
                             trace!(?prompt, "sending LLM prompt");
-                            let msgs = vec![ChatMessage::user().content(prompt).build()];
+                            let msgs = vec![ChatMessage::user(prompt)];
                             match llm.chat_stream(&msgs).await {
                                 Ok(mut stream) => {
                                     let mut text = String::new();
@@ -168,97 +168,30 @@ where
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::llm_client::{LLMClient, TokenStream};
     use async_trait::async_trait;
-    use futures::StreamExt;
-    use llm::chat::ChatProvider;
+    use futures::{StreamExt, stream};
 
     #[derive(Clone)]
     struct StaticLLM {
         reply: String,
     }
 
-    #[derive(Debug)]
-    struct SimpleResponse(String);
-
-    impl std::fmt::Display for SimpleResponse {
-        fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-            write!(f, "{}", self.0)
-        }
-    }
-
-    impl llm::chat::ChatResponse for SimpleResponse {
-        fn text(&self) -> Option<String> {
-            Some(self.0.clone())
-        }
-
-        fn tool_calls(&self) -> Option<Vec<llm::ToolCall>> {
-            None
-        }
-    }
-
     #[async_trait]
-    impl ChatProvider for StaticLLM {
-        async fn chat_with_tools(
-            &self,
-            _msgs: &[ChatMessage],
-            _tools: Option<&[llm::chat::Tool]>,
-        ) -> Result<Box<dyn llm::chat::ChatResponse>, llm::error::LLMError> {
-            Ok(Box::new(SimpleResponse(self.reply.clone())))
-        }
-
+    impl LLMClient for StaticLLM {
         async fn chat_stream(
             &self,
             _msgs: &[ChatMessage],
-        ) -> Result<
-            std::pin::Pin<
-                Box<dyn futures::Stream<Item = Result<String, llm::error::LLMError>> + Send>,
-            >,
-            llm::error::LLMError,
-        > {
+        ) -> Result<TokenStream, Box<dyn std::error::Error + Send + Sync>> {
             let words: Vec<String> = self
                 .reply
                 .split_whitespace()
                 .map(|w| format!("{} ", w))
                 .collect();
-            let stream = stream::iter(words.into_iter().map(Ok));
+            let stream = stream::iter(words.into_iter().map(Result::Ok));
             Ok(Box::pin(stream))
         }
     }
-
-    #[async_trait]
-    impl llm::completion::CompletionProvider for StaticLLM {
-        async fn complete(
-            &self,
-            _req: &llm::completion::CompletionRequest,
-        ) -> Result<llm::completion::CompletionResponse, llm::error::LLMError> {
-            Ok(llm::completion::CompletionResponse {
-                text: self.reply.clone(),
-            })
-        }
-    }
-
-    #[async_trait]
-    impl llm::embedding::EmbeddingProvider for StaticLLM {
-        async fn embed(&self, _text: Vec<String>) -> Result<Vec<Vec<f32>>, llm::error::LLMError> {
-            Ok(vec![])
-        }
-    }
-
-    #[async_trait]
-    impl llm::stt::SpeechToTextProvider for StaticLLM {
-        async fn transcribe(&self, _audio: Vec<u8>) -> Result<String, llm::error::LLMError> {
-            Ok(String::new())
-        }
-    }
-
-    #[async_trait]
-    impl llm::tts::TextToSpeechProvider for StaticLLM {
-        async fn speech(&self, _text: &str) -> Result<Vec<u8>, llm::error::LLMError> {
-            Ok(vec![])
-        }
-    }
-
-    impl LLMProvider for StaticLLM {}
 
     struct TestSensor;
 

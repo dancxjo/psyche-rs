@@ -4,6 +4,7 @@
 //! [`Witness`] building blocks for constructing artificial agents.
 
 mod impression;
+mod llm_client;
 mod motor;
 mod psyche;
 mod sensation;
@@ -11,6 +12,7 @@ mod sensor;
 mod wit;
 mod witness;
 
+pub use crate::llm_client::{LLMClient, OllamaLLM};
 pub use impression::Impression;
 pub use motor::{Action, Completion, Intention, Interruption, Motor, MotorError, Urge};
 pub use psyche::Psyche;
