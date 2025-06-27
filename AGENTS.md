@@ -8,6 +8,7 @@
 - When adding async traits that don't need `Send`, annotate with `#[async_trait(?Send)]`.
 - If running `rustfmt` touches unrelated files, it's fine to keep those changes.
 - Run `cargo fmt` before committing changes.
+- Instrument code with tracing logs at appropriate levels.
 - When implementing test memory stores that persist `Memory::Of`, clone the inner
   value before saving to prevent panics when cloning.
 - Ensure every async call is awaited unless intentionally detached with

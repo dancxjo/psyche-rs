@@ -1,0 +1,65 @@
+use async_stream::stream;
+use rand::Rng;
+use tracing::debug;
+
+use psyche_rs::{Sensation, Sensor};
+
+/// Formats a heartbeat message from the provided time.
+///
+/// # Examples
+/// ```
+/// use chrono::{Local, TimeZone};
+/// use daringsby::heartbeat::heartbeat_message;
+/// let dt = Local.with_ymd_and_hms(2024, 1, 1, 12, 0, 0).unwrap();
+/// assert_eq!(heartbeat_message(dt), "It's 12 o'clock, and I felt my heart beat, so I know I'm alive.");
+/// ```
+pub fn heartbeat_message(now: chrono::DateTime<chrono::Local>) -> String {
+    format!(
+        "It's {} o'clock, and I felt my heart beat, so I know I'm alive.",
+        now.format("%H")
+    )
+}
+
+/// A sensor that emits a heartbeat sensation roughly every minute.
+pub struct Heartbeat;
+
+impl Sensor<String> for Heartbeat {
+    fn stream(&mut self) -> futures::stream::BoxStream<'static, Vec<Sensation<String>>> {
+        let stream = stream! {
+            loop {
+                let jitter = {
+                    let mut rng = rand::thread_rng();
+                    rng.gen_range(0..15)
+                };
+                tokio::time::sleep(std::time::Duration::from_secs(60 + jitter)).await;
+                let now = chrono::Local::now();
+                let msg = heartbeat_message(now);
+                debug!(?msg, "heartbeat sensed");
+                let s = Sensation {
+                    kind: "heartbeat".into(),
+                    when: chrono::Utc::now(),
+                    what: msg,
+                    source: None,
+                };
+                yield vec![s];
+            }
+        };
+        Box::pin(stream)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use chrono::TimeZone;
+
+    #[test]
+    fn formats_message() {
+        let dt = chrono::Local.with_ymd_and_hms(2024, 1, 1, 8, 0, 0).unwrap();
+        let msg = heartbeat_message(dt);
+        assert_eq!(
+            msg,
+            "It's 08 o'clock, and I felt my heart beat, so I know I'm alive."
+        );
+    }
+}
