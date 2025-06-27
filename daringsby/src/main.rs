@@ -19,7 +19,7 @@ use daringsby::{Heartbeat, LoggingMotor, SelfDiscovery, SourceDiscovery};
 
 const QUICK_PROMPT: &str = include_str!("quick_prompt.txt");
 const COMBO_PROMPT: &str = include_str!("combobulator_prompt.txt");
-const WILL_PROMPT: &str = include_str!("will_prompt.txt");
+const _WILL_PROMPT: &str = include_str!("will_prompt.txt");
 
 static INSTANT: Lazy<Arc<Mutex<Vec<Impression<String>>>>> =
     Lazy::new(|| Arc::new(Mutex::new(Vec::new())));

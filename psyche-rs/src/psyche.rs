@@ -8,7 +8,7 @@ use tracing::{debug, info};
 
 #[cfg(test)]
 use crate::MotorError;
-use crate::{Action, Impression, Motor, Sensation, Sensor, Wit};
+use crate::{Action, Motor, Sensation, Sensor, Wit};
 use serde_json::Value;
 
 /// Sensor wrapper enabling shared ownership.
