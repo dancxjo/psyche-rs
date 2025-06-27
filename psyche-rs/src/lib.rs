@@ -7,12 +7,14 @@ mod impression;
 mod motor;
 mod sensation;
 mod sensor;
+mod wit;
 mod witness;
 
 pub use impression::Impression;
 pub use motor::{Motor, MotorCommand, MotorExecutor};
 pub use sensation::Sensation;
 pub use sensor::Sensor;
+pub use wit::Wit;
 pub use witness::Witness;
 
 #[cfg(test)]
