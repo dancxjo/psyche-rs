@@ -1,36 +1,10 @@
-pub mod action;
-pub mod codec;
-pub mod conversation;
-pub mod countenance;
-pub mod ear;
-pub mod llm;
-pub mod memory;
-pub mod motor;
-pub mod mouth;
-pub mod narrator;
-pub mod pete;
-pub mod psyche;
-pub mod runtime;
-pub mod speech;
-pub mod store;
-pub mod stream_parser;
-pub mod voice;
-pub mod wit;
-pub mod wits;
-
-pub use action::*;
-pub use conversation::*;
-pub use countenance::*;
-pub use ear::*;
-pub use llm::*;
-pub use memory::*;
-pub use motor::*;
-pub use mouth::*;
-pub use narrator::*;
-pub use pete::*;
-pub use psyche::*;
-pub use runtime::*;
-pub use speech::*;
-pub use store::*;
-pub use stream_parser::*;
-pub use voice::*;
+/// Returns a greeting.
+///
+/// # Examples
+///
+/// ```
+/// assert_eq!(psyche_rs::greet(), "Hello, world!");
+/// ```
+pub fn greet() -> &'static str {
+    "Hello, world!"
+}
