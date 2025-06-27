@@ -9,7 +9,7 @@ use ollama_rs::Ollama;
 use once_cell::sync::Lazy;
 use psyche_rs::{
     Action, Combobulator, Impression, ImpressionSensor, LLMClient, LLMPool, Motor, OllamaLLM,
-    Sensor, Wit, Witness,
+    Sensor, Wit,
 };
 #[cfg(feature = "moment-feedback")]
 use psyche_rs::{Sensation, SensationSensor};

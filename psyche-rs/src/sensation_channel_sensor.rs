@@ -7,7 +7,7 @@ use crate::{Sensation, Sensor};
 /// Sensor backed by an unbounded channel of sensation batches.
 ///
 /// This is useful for feeding programmatically generated sensations
-/// back into a [`Witness`].
+/// back into a [`Wit`].
 ///
 /// # Examples
 /// ```no_run

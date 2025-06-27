@@ -1691,6 +1691,7 @@ dependencies = [
  "futures",
  "httpmock",
  "ollama-rs",
+ "regex",
  "segtok",
  "serde",
  "serde_json",

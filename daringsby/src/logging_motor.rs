@@ -8,6 +8,9 @@ use psyche_rs::{Action, Motor, MotorError};
 pub struct LoggingMotor;
 
 impl Motor for LoggingMotor {
+    fn description(&self) -> &'static str {
+        "Prints received actions to the log"
+    }
     fn perform(&self, mut action: Action) -> Result<(), MotorError> {
         futures::executor::block_on(async {
             let mut text = String::new();

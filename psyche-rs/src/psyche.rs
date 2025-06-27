@@ -1,6 +1,5 @@
 use std::sync::{Arc, Mutex};
 
-use async_trait::async_trait;
 use futures::{
     StreamExt,
     stream::{self, BoxStream},
@@ -9,47 +8,8 @@ use tracing::{debug, info};
 
 #[cfg(test)]
 use crate::MotorError;
-use crate::{Action, Impression, Motor, Sensation, Sensor, Witness};
+use crate::{Action, Impression, Motor, Sensation, Sensor, Wit};
 use serde_json::Value;
-
-#[async_trait(?Send)]
-trait WitnessRunner<T> {
-    async fn observe_boxed(
-        &mut self,
-        sensors: Vec<SharedSensor<T>>,
-    ) -> BoxStream<'static, Vec<Impression<T>>>;
-}
-
-struct BoxedWitness<T, W: Witness<T> + Send> {
-    inner: W,
-    _phantom: std::marker::PhantomData<T>,
-}
-
-impl<T, W> BoxedWitness<T, W>
-where
-    W: Witness<T> + Send,
-{
-    fn new(inner: W) -> Self {
-        Self {
-            inner,
-            _phantom: std::marker::PhantomData,
-        }
-    }
-}
-
-#[async_trait(?Send)]
-impl<T, W> WitnessRunner<T> for BoxedWitness<T, W>
-where
-    T: Clone + Default + Send + 'static + serde::Serialize,
-    W: Witness<T> + Send,
-{
-    async fn observe_boxed(
-        &mut self,
-        sensors: Vec<SharedSensor<T>>,
-    ) -> BoxStream<'static, Vec<Impression<T>>> {
-        self.inner.observe(sensors).await
-    }
-}
 
 /// Sensor wrapper enabling shared ownership.
 struct SharedSensor<T> {
@@ -81,7 +41,7 @@ impl<T> Sensor<T> for SharedSensor<T> {
 pub struct Psyche<T = serde_json::Value> {
     sensors: Vec<Arc<Mutex<dyn Sensor<T> + Send>>>,
     motors: Vec<Box<dyn Motor + Send>>,
-    wits: Vec<Box<dyn WitnessRunner<T> + Send>>,
+    wits: Vec<Wit<T>>,
 }
 
 impl<T> Psyche<T>
@@ -110,11 +70,8 @@ where
     }
 
     /// Add a wit to the psyche.
-    pub fn wit<W>(mut self, wit: W) -> Self
-    where
-        W: Witness<T> + Send + 'static,
-    {
-        self.wits.push(Box::new(BoxedWitness::new(wit)));
+    pub fn wit(mut self, wit: Wit<T>) -> Self {
+        self.wits.push(wit);
         self
     }
 }
@@ -142,7 +99,7 @@ where
                 .iter()
                 .map(|s| SharedSensor::new(s.clone()))
                 .collect();
-            let stream = wit.observe_boxed(sensors_for_wit).await;
+            let stream = wit.observe(sensors_for_wit).await;
             streams.push(stream);
         }
         let mut merged = stream::select_all(streams);
@@ -175,8 +132,8 @@ where
 #[cfg(test)]
 mod tests {
     use super::*;
-    use async_trait::async_trait;
-    use futures::StreamExt;
+    use crate::{LLMClient, TokenStream};
+    use futures::{StreamExt, stream};
     use std::sync::atomic::{AtomicUsize, Ordering};
 
     struct TestSensor;
@@ -192,32 +149,24 @@ mod tests {
         }
     }
 
-    struct TestWit;
-    #[async_trait(?Send)]
-    impl Witness<String> for TestWit {
-        async fn observe<S>(
-            &mut self,
-            mut sensors: Vec<S>,
-        ) -> BoxStream<'static, Vec<Impression<String>>>
-        where
-            S: Sensor<String> + Send + 'static,
-        {
-            sensors
-                .pop()
-                .unwrap()
-                .stream()
-                .map(|s| {
-                    vec![Impression {
-                        how: s[0].what.clone(),
-                        what: s,
-                    }]
-                })
-                .boxed()
+    #[derive(Clone)]
+    struct StaticLLM;
+
+    #[async_trait::async_trait]
+    impl LLMClient for StaticLLM {
+        async fn chat_stream(
+            &self,
+            _msgs: &[ollama_rs::generation::chat::ChatMessage],
+        ) -> Result<TokenStream, Box<dyn std::error::Error + Send + Sync>> {
+            Ok(Box::pin(stream::once(async { Ok("hi".to_string()) })))
         }
     }
 
     struct CountMotor(Arc<AtomicUsize>);
     impl Motor for CountMotor {
+        fn description(&self) -> &'static str {
+            "counts how many actions were performed"
+        }
         fn perform(&self, _action: Action) -> Result<(), MotorError> {
             self.0.fetch_add(1, Ordering::SeqCst);
             Ok(())
@@ -227,9 +176,11 @@ mod tests {
     #[tokio::test]
     async fn psyche_runs() {
         let count = Arc::new(AtomicUsize::new(0));
+        let llm = Arc::new(StaticLLM);
+        let wit = Wit::new(llm).delay_ms(10);
         let psyche = Psyche::new()
             .sensor(TestSensor)
-            .wit(TestWit)
+            .wit(wit)
             .motor(CountMotor(count.clone()));
         let _ = tokio::time::timeout(std::time::Duration::from_millis(50), psyche.run()).await;
         assert!(count.load(Ordering::SeqCst) > 0);

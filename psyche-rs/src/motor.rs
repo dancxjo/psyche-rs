@@ -34,6 +34,8 @@ impl Action {
 
 /// A motor capable of performing an action.
 pub trait Motor {
+    /// Returns a brief description of the motor's purpose.
+    fn description(&self) -> &'static str;
     /// Attempt to perform the provided action.
     ///
     /// The implementor may consume the action body stream as desired.
