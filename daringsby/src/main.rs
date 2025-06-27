@@ -1,42 +1,11 @@
-use async_stream::stream;
-use async_trait::async_trait;
 use clap::Parser;
-use rand::Rng;
 use std::sync::Arc;
-use tracing::{Level, info};
+use tracing::Level;
 
 use llm::builder::{LLMBackend, LLMBuilder};
-use psyche_rs::{Motor, MotorCommand, Psyche, Sensation, Sensor, Wit};
+use psyche_rs::{Psyche, Wit};
 
-struct Heartbeat;
-
-impl Sensor<String> for Heartbeat {
-    fn stream(&mut self) -> futures::stream::BoxStream<'static, Vec<Sensation<String>>> {
-        let stream = stream! {
-            loop {
-                let jitter = {
-                    let mut rng = rand::thread_rng();
-                    rng.gen_range(0..15)
-                };
-                tokio::time::sleep(std::time::Duration::from_secs(60 + jitter)).await;
-                let now = chrono::Local::now();
-                let msg = format!("It's {} o'clock, and I felt my heart beat, so I know I'm alive.", now.format("%H"));
-                let s = Sensation { kind: "heartbeat".into(), when: chrono::Utc::now(), what: msg, source: None };
-                yield vec![s];
-            }
-        };
-        Box::pin(stream)
-    }
-}
-
-struct LoggingMotor;
-
-#[async_trait(?Send)]
-impl Motor<String> for LoggingMotor {
-    async fn execute(&mut self, command: MotorCommand<String>) {
-        info!(?command.content, "motor log");
-    }
-}
+use daringsby::{Heartbeat, LoggingMotor};
 
 #[derive(Parser)]
 struct Args {

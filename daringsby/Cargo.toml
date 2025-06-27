@@ -3,6 +3,9 @@ name = "daringsby"
 version = "0.1.0"
 edition = "2024"
 
+[lib]
+path = "src/lib.rs"
+
 [dependencies]
 psyche-rs = { path = "../psyche-rs" }
 tokio = { version = "1", features = ["macros", "rt"] }

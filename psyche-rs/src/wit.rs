@@ -8,6 +8,7 @@ use futures::{
 };
 use tokio::sync::mpsc::unbounded_channel;
 use tokio_stream::wrappers::UnboundedReceiverStream;
+use tracing::{debug, trace};
 
 use segtok::segmenter::{SegmentConfig, split_single};
 
@@ -99,6 +100,7 @@ where
                 .enable_all()
                 .build()
                 .expect("runtime");
+            debug!("wit runtime started");
             rt.block_on(async move {
                 let streams: Vec<_> = sensors.into_iter().map(|mut s| s.stream()).collect();
                 let mut sensor_stream = stream::select_all(streams);
@@ -106,6 +108,7 @@ where
                 loop {
                     tokio::select! {
                         Some(batch) = sensor_stream.next() => {
+                            trace!(count = batch.len(), "sensations received");
                             pending.extend(batch);
                         }
                         _ = tokio::time::sleep(std::time::Duration::from_millis(delay)) => {
@@ -121,6 +124,7 @@ where
                                 let what = serde_json::to_string(&s.what).unwrap_or_default();
                                 format!("{} {} {}", s.when.to_rfc3339(), s.kind, what)
                             }).collect::<Vec<_>>().join("\n");
+                            debug!(?timeline, "sending prompt");
                             let prompt = template.replace("{template}", &timeline);
                             let msgs = vec![ChatMessage::user().content(prompt).build()];
                             if let Ok(mut stream) = llm.chat_stream(&msgs).await {
@@ -140,6 +144,7 @@ where
                                     })
                                     .collect();
                                 if !impressions.is_empty() {
+                                    debug!(count = impressions.len(), "impressions generated");
                                     let _ = tx.send(impressions);
                                 }
                             }
