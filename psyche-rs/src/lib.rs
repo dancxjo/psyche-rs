@@ -3,137 +3,27 @@
 //! This crate currently exposes [`Sensation`], [`Impression`], [`Sensor`] and
 //! [`Witness`] building blocks for constructing artificial agents.
 
-use async_trait::async_trait;
-use chrono::{DateTime, Utc};
-use futures::stream::BoxStream;
-use serde::{Deserialize, Serialize};
+mod impression;
+mod motor;
+mod sensation;
+mod sensor;
+mod witness;
 
-/// A generic Sensation type for the Pete runtime.
-///
-/// The payload type `T` defaults to [`serde_json::Value`].
-///
-/// # Examples
-///
-/// Creating a typed sensation:
-///
-/// ```
-/// use chrono::Utc;
-/// use psyche_rs::Sensation;
-///
-/// let s: Sensation<String> = Sensation {
-///     kind: "utterance.text".into(),
-///     when: Utc::now(),
-///     what: "hello".into(),
-///     source: Some("interlocutor".into()),
-/// };
-/// assert_eq!(s.what, "hello");
-/// ```
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct Sensation<T = serde_json::Value> {
-    /// Category of sensation, e.g. `"utterance.text"`.
-    pub kind: String,
-    /// Timestamp for when the sensation occurred.
-    pub when: DateTime<Utc>,
-    /// Payload describing what was sensed.
-    pub what: T,
-    /// Optional origin identifier.
-    pub source: Option<String>,
-}
-
-/// A high-level summary of one or more sensations.
-///
-/// `Impression` bundles related sensations in [`what`] and expresses
-/// them in natural language via [`how`].
-///
-/// # Examples
-///
-/// ```
-/// use chrono::Utc;
-/// use psyche_rs::{Impression, Sensation};
-///
-/// let what = vec![Sensation::<String> {
-///     kind: "utterance.text".into(),
-///     when: Utc::now(),
-///     what: "salutations".into(),
-///     source: None,
-/// }];
-/// let impression = Impression {
-///     what: what.clone(),
-///     how: "He said salutations".into(),
-/// };
-/// assert_eq!(impression.what[0].kind, "utterance.text");
-/// ```
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct Impression<T = serde_json::Value> {
-    /// Sensations that led to this impression.
-    pub what: Vec<Sensation<T>>,
-    /// Natural language summarizing the sensations.
-    pub how: String,
-}
-
-/// A source of sensations.
-pub trait Sensor<T = serde_json::Value> {
-    /// Returns a stream of sensation batches.
-    fn stream(&mut self) -> BoxStream<'static, Vec<Sensation<T>>>;
-}
-
-/// Consumes sensors and emits impressions.
-///
-/// `Witness` takes ownership of provided sensors and outputs batches of
-/// [`Impression`]s.  Callers remain free to box or share sensor instances as
-/// desired and simply pass them as a `Vec`.
-#[async_trait(?Send)]
-pub trait Witness<T = serde_json::Value> {
-    /// Observes the provided sensors and yields impression batches.
-    async fn observe<S>(&mut self, sensors: Vec<S>) -> BoxStream<'static, Vec<Impression<T>>>
-    where
-        S: Sensor<T> + 'static;
-}
-
-/// A command issued by the "Will" for a motor to carry out.
-///
-/// The command payload `T` defaults to [`serde_json::Value`].
-///
-/// # Examples
-///
-/// ```
-/// use psyche_rs::MotorCommand;
-///
-/// let cmd: MotorCommand = MotorCommand {
-///     name: "say".into(),
-///     args: serde_json::json!({"volume": 11}),
-///     content: Some("Hello".into()),
-/// };
-/// assert_eq!(cmd.name, "say");
-/// ```
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct MotorCommand<T = serde_json::Value> {
-    /// Target motor name.
-    pub name: String,
-    /// Structured arguments for the motor.
-    pub args: T,
-    /// Optional free-form text.
-    pub content: Option<String>,
-}
-
-/// A device capable of executing motor commands.
-#[async_trait(?Send)]
-pub trait Motor<T = serde_json::Value> {
-    /// Carry out the provided command.
-    async fn execute(&mut self, command: MotorCommand<T>);
-}
-
-/// Dispatches commands to registered motors.
-#[async_trait(?Send)]
-pub trait MotorExecutor<T = serde_json::Value> {
-    /// Route the command to an appropriate motor.
-    async fn submit(&mut self, command: MotorCommand<T>);
-}
+pub use impression::Impression;
+pub use motor::{Motor, MotorCommand, MotorExecutor};
+pub use sensation::Sensation;
+pub use sensor::Sensor;
+pub use witness::Witness;
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use async_trait::async_trait;
+    use chrono::Utc;
+    use futures::stream::BoxStream;
     use futures::{StreamExt, stream};
+    use std::collections::HashMap;
+    use std::sync::{Arc, Mutex};
 
     #[tokio::test]
     async fn impression_from_sensor() {
@@ -184,9 +74,6 @@ mod tests {
 
     #[tokio::test]
     async fn round_trip_to_motor() {
-        use std::collections::HashMap;
-        use std::sync::{Arc, Mutex};
-
         struct TestSensor;
 
         impl Sensor<String> for TestSensor {
