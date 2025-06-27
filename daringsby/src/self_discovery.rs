@@ -88,7 +88,10 @@ mod tests {
         let mut sensor = SelfDiscovery;
         let mut stream = sensor.stream();
         if let Some(batch) = stream.next().await {
-            let expected = format!("I hear a voice inside my mind say: \"{}\"", SENTENCES[0]);
+            let expected = format!(
+                "I hear a voice inside my mind say: \"Behold! A message to the LLM Narrators of Pete Daringsby: {}\"",
+                SENTENCES[0]
+            );
             assert_eq!(batch[0].what, expected);
         } else {
             panic!("no sentence emitted");
