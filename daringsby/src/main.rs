@@ -1,11 +1,23 @@
 use clap::Parser;
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 use tracing::Level;
 
+use futures::{StreamExt, stream};
 use ollama_rs::Ollama;
-use psyche_rs::{OllamaLLM, Psyche, Wit};
+use once_cell::sync::Lazy;
+use psyche_rs::{
+    Action, Combobulator, Impression, ImpressionSensor, Motor, OllamaLLM, Wit, Witness,
+};
+use serde_json::Value;
 
 use daringsby::{Heartbeat, LoggingMotor};
+
+const COMBO_PROMPT: &str = include_str!("combobulator_prompt.txt");
+
+static INSTANT: Lazy<Arc<Mutex<Vec<Impression<String>>>>> =
+    Lazy::new(|| Arc::new(Mutex::new(Vec::new())));
+static MOMENT: Lazy<Arc<Mutex<Vec<Impression<Impression<String>>>>>> =
+    Lazy::new(|| Arc::new(Mutex::new(Vec::new())));
 
 #[derive(Parser)]
 struct Args {
@@ -21,10 +33,41 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .with_max_level(Level::TRACE)
         .init();
     let args = Args::parse();
+    use tokio::sync::mpsc::unbounded_channel;
+
     let client = Ollama::try_new(&args.base_url)?;
     let llm = Arc::new(OllamaLLM::new(client, args.model));
-    let wit = Wit::new(llm);
-    let psyche = Psyche::new().sensor(Heartbeat).motor(LoggingMotor).wit(wit);
-    psyche.run().await;
+
+    let mut quick = Wit::new(llm.clone()).delay_ms(1000);
+    let mut combob = Combobulator::new(llm).prompt(COMBO_PROMPT).delay_ms(1000);
+
+    let (tx, rx) = unbounded_channel::<Vec<Impression<String>>>();
+
+    let mut quick_stream = quick.observe(vec![Heartbeat]).await;
+    let sensor = ImpressionSensor::new(rx);
+    let mut combo_stream = combob.observe(vec![sensor]).await;
+    let motor = LoggingMotor;
+
+    let q_instant = INSTANT.clone();
+    tokio::spawn(async move {
+        while let Some(imps) = quick_stream.next().await {
+            *q_instant.lock().unwrap() = imps.clone();
+            let _ = tx.send(imps);
+        }
+    });
+
+    tokio::spawn(async move {
+        while let Some(imps) = combo_stream.next().await {
+            *MOMENT.lock().unwrap() = imps.clone();
+            for imp in imps {
+                let text = imp.how.clone();
+                let body = stream::once(async move { text }).boxed();
+                let action = Action::new("log", Value::Null, body);
+                motor.perform(action).unwrap();
+            }
+        }
+    });
+
+    tokio::signal::ctrl_c().await?;
     Ok(())
 }

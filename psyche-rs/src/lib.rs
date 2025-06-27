@@ -3,7 +3,9 @@
 //! This crate currently exposes [`Sensation`], [`Impression`], [`Sensor`] and
 //! [`Witness`] building blocks for constructing artificial agents.
 
+mod combobulator;
 mod impression;
+mod impression_sensor;
 mod llm_client;
 mod motor;
 mod psyche;
@@ -13,7 +15,9 @@ mod wit;
 mod witness;
 
 pub use crate::llm_client::{LLMClient, OllamaLLM};
+pub use combobulator::Combobulator;
 pub use impression::Impression;
+pub use impression_sensor::ImpressionSensor;
 pub use motor::{Action, Completion, Intention, Interruption, Motor, MotorError, Urge};
 pub use psyche::Psyche;
 pub use sensation::Sensation;
