@@ -1,4 +1,4 @@
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 use std::thread;
 
 use async_trait::async_trait;
@@ -25,9 +25,8 @@ pub struct Wit<T = serde_json::Value> {
     llm: Arc<dyn LLMClient>,
     prompt: String,
     delay_ms: u64,
-    min_queue: usize,
-    max_queue: usize,
-    queue: Vec<Sensation<T>>,
+    window_ms: u64,
+    window: Arc<Mutex<Vec<Sensation<T>>>>,
 }
 
 impl<T> Wit<T> {
@@ -37,9 +36,8 @@ impl<T> Wit<T> {
             llm,
             prompt: DEFAULT_PROMPT.to_string(),
             delay_ms: 1000,
-            min_queue: 1,
-            max_queue: 50,
-            queue: Vec::new(),
+            window_ms: 60_000,
+            window: Arc::new(Mutex::new(Vec::new())),
         }
     }
 
@@ -55,10 +53,9 @@ impl<T> Wit<T> {
         self
     }
 
-    /// Sets queue thresholds before invoking the LLM.
-    pub fn queue(mut self, min: usize, max: usize) -> Self {
-        self.min_queue = min;
-        self.max_queue = max;
+    /// Sets the duration of the sensation window in milliseconds.
+    pub fn window_ms(mut self, ms: u64) -> Self {
+        self.window_ms = ms;
         self
     }
 
@@ -67,7 +64,9 @@ impl<T> Wit<T> {
     where
         T: serde::Serialize,
     {
-        self.queue
+        self.window
+            .lock()
+            .unwrap()
             .iter()
             .map(|s| {
                 let what = serde_json::to_string(&s.what).unwrap_or_default();
@@ -91,8 +90,8 @@ where
         let llm = self.llm.clone();
         let template = self.prompt.clone();
         let delay = self.delay_ms;
-        let min_queue = self.min_queue;
-        let max_queue = self.max_queue;
+        let window_ms = self.window_ms;
+        let window = self.window.clone();
         let mut pending: Vec<Sensation<T>> = Vec::new();
 
         thread::spawn(move || {
@@ -109,17 +108,21 @@ where
                         Some(batch) = sensor_stream.next() => {
                             trace!(count = batch.len(), "sensations received");
                             pending.extend(batch);
-                            if pending.len() > max_queue {
-                                let excess = pending.len() - max_queue;
-                                pending.drain(0..excess);
-                            }
                         }
                         _ = tokio::time::sleep(std::time::Duration::from_millis(delay)) => {
-                            if pending.len() < min_queue {
-                                pending.clear();
+                            if pending.is_empty() {
                                 continue;
                             }
-                            let snapshot: Vec<_> = pending.drain(..).collect();
+                            {
+                                let mut w = window.lock().unwrap();
+                                w.extend(pending.drain(..));
+                                let cutoff = chrono::Utc::now() - chrono::Duration::milliseconds(window_ms as i64);
+                                w.retain(|s| s.when > cutoff);
+                            }
+                            let snapshot = {
+                                let w = window.lock().unwrap();
+                                w.clone()
+                            };
                             let timeline = snapshot.iter().map(|s| {
                                 let what = serde_json::to_string(&s.what).unwrap_or_default();
                                 format!("{} {} {}", s.when.to_rfc3339(), s.kind, what)
@@ -223,7 +226,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn clears_queue_between_ticks() {
+    async fn avoids_duplicates_without_input() {
         use std::sync::atomic::{AtomicUsize, Ordering};
         struct CountLLM(Arc<AtomicUsize>);
 
@@ -246,5 +249,45 @@ mod tests {
         let _ = stream.next().await.unwrap();
         tokio::time::sleep(std::time::Duration::from_millis(30)).await;
         assert_eq!(calls.load(Ordering::SeqCst), 1);
+    }
+
+    #[tokio::test]
+    async fn window_discards_old_sensations() {
+        let llm = Arc::new(StaticLLM { reply: "ok".into() });
+        let mut wit = Wit::new(llm).delay_ms(10).window_ms(30);
+
+        struct TwoEventSensor;
+
+        impl Sensor<String> for TwoEventSensor {
+            fn stream(&mut self) -> BoxStream<'static, Vec<Sensation<String>>> {
+                use async_stream::stream;
+                let s = stream! {
+                    yield vec![Sensation {
+                        kind: "test".into(),
+                        when: chrono::Utc::now(),
+                        what: "a".into(),
+                        source: None,
+                    }];
+                    tokio::time::sleep(std::time::Duration::from_millis(40)).await;
+                    yield vec![Sensation {
+                        kind: "test".into(),
+                        when: chrono::Utc::now(),
+                        what: "b".into(),
+                        source: None,
+                    }];
+                };
+                Box::pin(s)
+            }
+        }
+
+        let sensor = TwoEventSensor;
+        let mut stream = wit.observe(vec![sensor]).await;
+        let _ = stream.next().await;
+        let _ = stream.next().await;
+        tokio::time::sleep(std::time::Duration::from_millis(10)).await;
+        let tl = wit.timeline();
+        let lines: Vec<_> = tl.lines().collect();
+        assert_eq!(lines.len(), 1);
+        assert!(lines[0].contains("b"));
     }
 }
