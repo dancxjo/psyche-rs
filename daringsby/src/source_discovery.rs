@@ -10,17 +10,32 @@ use psyche_rs::{Sensation, Sensor};
 static SRC_DIR: Dir = include_dir!("$CARGO_MANIFEST_DIR/src");
 
 /// The source code chunks that will be revealed sequentially.
-static CHUNKS: Lazy<Vec<&'static str>> = Lazy::new(|| {
-    SRC_DIR
-        .files()
-        .filter_map(|f| {
-            if f.path().extension().and_then(|e| e.to_str()) == Some("rs") {
-                f.contents_utf8()
-            } else {
-                None
+/// Maximum number of lines yielded in a single chunk.
+const MAX_LINES: usize = 20;
+
+fn interval_secs() -> u64 {
+    if std::env::var("FAST_TEST").is_ok() {
+        0
+    } else {
+        60
+    }
+}
+
+/// Source code chunks that will be revealed sequentially. Files are split into
+/// reasonably sized segments so the agent only sees a portion at a time.
+static CHUNKS: Lazy<Vec<String>> = Lazy::new(|| {
+    let mut pieces = Vec::new();
+    for file in SRC_DIR.files() {
+        if file.path().extension().and_then(|e| e.to_str()) == Some("rs") {
+            if let Some(text) = file.contents_utf8() {
+                let lines: Vec<&str> = text.lines().collect();
+                for chunk in lines.chunks(MAX_LINES) {
+                    pieces.push(chunk.join("\n"));
+                }
             }
-        })
-        .collect()
+        }
+    }
+    pieces
 });
 
 /// Sensor that emits large chunks of the crate's source code.
@@ -40,6 +55,7 @@ static CHUNKS: Lazy<Vec<&'static str>> = Lazy::new(|| {
 ///
 /// let rt = Runtime::new().unwrap();
 /// rt.block_on(async {
+///     unsafe { std::env::set_var("FAST_TEST", "1") };
 ///     let mut sensor = SourceDiscovery::default();
 ///     let mut stream = sensor.stream();
 ///     if let Some(batch) = stream.next().await {
@@ -56,9 +72,12 @@ impl Sensor<String> for SourceDiscovery {
         let stream = stream! {
             let mut index = 0usize;
             loop {
-                let jitter = { let mut rng = rand::thread_rng(); rng.gen_range(0..2) };
-                tokio::time::sleep(std::time::Duration::from_secs(1 + jitter)).await;
-                let chunk = chunks[index];
+                let jitter = {
+                    let mut rng = rand::thread_rng();
+                    rng.gen_range(0..2)
+                };
+                tokio::time::sleep(std::time::Duration::from_secs(interval_secs() + jitter)).await;
+                let chunk = &chunks[index];
                 index = (index + 1) % chunks.len();
                 debug!(?index, "self source sensed");
                 let msg = format!("I know that this is from my own source code:\n{}", chunk);
@@ -82,6 +101,7 @@ mod tests {
 
     #[tokio::test]
     async fn emits_first_chunk() {
+        unsafe { std::env::set_var("FAST_TEST", "1") };
         let mut sensor = SourceDiscovery::default();
         let mut stream = sensor.stream();
         if let Some(batch) = stream.next().await {
