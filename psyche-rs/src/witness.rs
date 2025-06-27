@@ -13,5 +13,5 @@ pub trait Witness<T = serde_json::Value> {
     /// Observes the provided sensors and yields impression batches.
     async fn observe<S>(&mut self, sensors: Vec<S>) -> BoxStream<'static, Vec<Impression<T>>>
     where
-        S: Sensor<T> + 'static;
+        S: Sensor<T> + Send + 'static;
 }
