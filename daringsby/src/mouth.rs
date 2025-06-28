@@ -125,7 +125,7 @@ impl Motor for Mouth {
             .get("speaker_id")
             .map(|v| v.as_str())
             .map(|s| s.to_string())
-            .or_else(|| "p330".into())
+            .or_else(|| Some("p330".into()))
             .unwrap_or_default();
         let lang = action
             .intention
