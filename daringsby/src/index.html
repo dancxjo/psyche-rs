@@ -1,11 +1,11 @@
 <!DOCTYPE html>
 <html lang="en">
 <body>
+<button id="start">Start</button>
 <script>
 const SAMPLE_RATE = 16000;
-const ws = new WebSocket(`ws://${location.host}/ws/audio/out`);
-ws.binaryType = 'arraybuffer';
 const ctx = new (window.AudioContext || window.webkitAudioContext)({ sampleRate: SAMPLE_RATE });
+let ws;
 let queue = [];
 let playing = false;
 
@@ -23,11 +23,19 @@ function play() {
   src.start();
 }
 
-ws.onmessage = ev => {
-  queue.push(new Int16Array(ev.data));
-  if (ctx.state === 'suspended') ctx.resume();
-  play();
-};
+function start() {
+  if (ws) return;
+  ws = new WebSocket(`ws://${location.host}/ws/audio/out`);
+  ws.binaryType = 'arraybuffer';
+  ws.onmessage = ev => {
+    queue.push(new Int16Array(ev.data));
+    if (ctx.state === 'suspended') ctx.resume();
+    play();
+  };
+  document.getElementById('start').style.display = 'none';
+}
+
+document.getElementById('start').addEventListener('click', start);
 </script>
 </body>
 </html>

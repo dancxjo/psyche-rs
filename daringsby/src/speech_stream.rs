@@ -127,6 +127,7 @@ mod tests {
         let html = std::str::from_utf8(&body).unwrap();
         assert!(html.contains("ws://"));
         assert!(html.contains("/ws/audio/out"));
+        assert!(html.contains("id=\"start\""));
     }
 
     /// The router upgrades connections to WebSocket.
