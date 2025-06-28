@@ -228,7 +228,7 @@ mod tests {
                     sensations: vec![Sensation {
                         kind: match self.0 {
                             "look" => "image/jpeg",
-                            "listen" => "audio/wav",
+                            "listen" => "audio/mpeg",
                             "sniff" => "chemical/smell",
                             _ => "unknown",
                         }
@@ -262,7 +262,7 @@ mod tests {
                     args: HashMap::new(),
                     body: None,
                 },
-                "audio/wav",
+                "audio/mpeg",
             ),
             (
                 Urge {
