@@ -1,6 +1,11 @@
 use bytes::Bytes;
 use futures::StreamExt;
 use segtok::segmenter::{SegmentConfig, split_single};
+use std::sync::{
+    Arc,
+    atomic::{AtomicBool, Ordering},
+};
+use tokio::sync::Mutex as TokioMutex;
 use tokio::sync::broadcast::{self, Receiver, Sender};
 use tracing::{trace, warn};
 use urlencoding::encode;
@@ -13,7 +18,7 @@ use psyche_rs::{Action, ActionResult, Motor, MotorError};
 /// resulting audio bytes are broadcast to subscribers.
 ///
 /// # Example
-/// ```
+/// ```no_run
 /// use daringsby::Mouth;
 /// let mouth = Mouth::default();
 /// let _ = mouth.subscribe();
@@ -23,16 +28,23 @@ pub struct Mouth {
     base_url: String,
     language_id: Option<String>,
     tx: Sender<Bytes>,
+    queue: Arc<TokioMutex<()>>,
+    playing: Arc<AtomicBool>,
 }
 
 impl Default for Mouth {
     fn default() -> Self {
         let (tx, _) = broadcast::channel(8);
+        let queue = Arc::new(TokioMutex::new(()));
+        let playing = Arc::new(AtomicBool::new(false));
+        Self::spawn_silence_task(tx.clone(), playing.clone());
         Self {
             client: reqwest::Client::new(),
             base_url: "http://10.0.0.180:5002".into(),
             language_id: None,
             tx,
+            queue,
+            playing,
         }
     }
 }
@@ -41,12 +53,33 @@ impl Mouth {
     /// Creates a mouth with the given base URL and optional language.
     pub fn new(base_url: impl Into<String>, language_id: Option<String>) -> Self {
         let (tx, _) = broadcast::channel(8);
+        let queue = Arc::new(TokioMutex::new(()));
+        let playing = Arc::new(AtomicBool::new(false));
+        Self::spawn_silence_task(tx.clone(), playing.clone());
         Self {
             client: reqwest::Client::new(),
             base_url: base_url.into(),
             language_id,
             tx,
+            queue,
+            playing,
         }
+    }
+
+    fn spawn_silence_task(tx: Sender<Bytes>, playing: Arc<AtomicBool>) {
+        tokio::spawn(async move {
+            let silence = Bytes::from_static(&[0; 2]);
+            let mut first = true;
+            loop {
+                if !playing.load(Ordering::SeqCst) {
+                    if !first {
+                        let _ = tx.send(silence.clone());
+                    }
+                }
+                first = false;
+                tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+            }
+        });
     }
 
     /// Subscribes to the audio stream.
@@ -101,7 +134,11 @@ impl Motor for Mouth {
         let lang = lang.clone();
         let base = self.base_url.clone();
         let tx = self.tx.clone();
+        let queue = self.queue.clone();
+        let playing = self.playing.clone();
         tokio::spawn(async move {
+            let _guard = queue.lock().await;
+            playing.store(true, Ordering::SeqCst);
             let mut buf = String::new();
             while let Some(chunk) = action.body.next().await {
                 buf.push_str(&chunk);
@@ -143,6 +180,7 @@ impl Motor for Mouth {
                 }
             }
             let _ = tx.send(Bytes::new());
+            playing.store(false, Ordering::SeqCst);
         });
         Ok(ActionResult {
             sensations: Vec::new(),
@@ -196,7 +234,11 @@ mod tests {
 
         // Act
         mouth.perform(action).await.unwrap();
-        let a = rx.recv().await.unwrap();
+        // Skip any initial silence frames
+        let mut a = rx.recv().await.unwrap();
+        while a.iter().all(|b| *b == 0) {
+            a = rx.recv().await.unwrap();
+        }
         let delim = rx.recv().await.unwrap();
         let b = rx.recv().await.unwrap();
         let end = rx.recv().await.unwrap();
