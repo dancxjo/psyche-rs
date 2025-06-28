@@ -51,7 +51,7 @@ struct Args {
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     tracing_subscriber::fmt()
-        .with_max_level(Level::TRACE)
+        .with_max_level(Level::DEBUG)
         .init();
     let args = Args::parse();
     use tokio::sync::mpsc::unbounded_channel;
