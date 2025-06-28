@@ -5,14 +5,8 @@ use axum::{
     routing::get,
 };
 use bytes::Bytes;
-use once_cell::sync::Lazy;
 use std::sync::Arc;
 use tokio::sync::broadcast::{self, Receiver};
-
-const SAMPLE_RATE: u32 = 22_050;
-const FRAME_MS: usize = 10;
-const SILENCE_BYTES: usize = (SAMPLE_RATE as usize / 1000 * FRAME_MS) * 2;
-static SILENCE: Lazy<[u8; SILENCE_BYTES]> = Lazy::new(|| [0u8; SILENCE_BYTES]);
 
 /// WebSocket streamer for mouth audio.
 ///
@@ -58,25 +52,16 @@ impl SpeechStream {
         let rx = self.tts_rx.clone();
         let mut rx = rx.lock().await;
         loop {
-            match tokio::time::timeout(std::time::Duration::from_millis(100), rx.recv()).await {
-                Ok(Ok(bytes)) => {
+            match rx.recv().await {
+                Ok(bytes) => {
                     if !bytes.is_empty()
                         && socket.send(Message::Binary(bytes.to_vec())).await.is_err()
                     {
                         break;
                     }
                 }
-                Ok(Err(broadcast::error::RecvError::Lagged(_))) => continue,
-                Ok(Err(broadcast::error::RecvError::Closed)) => break,
-                Err(_) => {
-                    if socket
-                        .send(Message::Binary(SILENCE.to_vec()))
-                        .await
-                        .is_err()
-                    {
-                        break;
-                    }
-                }
+                Err(broadcast::error::RecvError::Lagged(_)) => continue,
+                Err(broadcast::error::RecvError::Closed) => break,
             }
         }
     }
@@ -140,22 +125,17 @@ mod tests {
         let (_ws, _) = connect_async(url).await.unwrap();
     }
 
-    /// When idle the stream emits silence bytes.
+    /// When idle the stream does not emit any audio frames.
     #[tokio::test]
-    async fn emits_silence_when_idle() {
+    async fn does_not_emit_when_idle() {
         let (_tx, rx) = broadcast::channel(1);
         let stream = Arc::new(SpeechStream::new(rx));
         let addr = start_server(stream.clone()).await;
         let url = format!("ws://{addr}/ws/audio/out");
         let (mut ws, _) = connect_async(url).await.unwrap();
-        let first = ws.next().await.unwrap().unwrap();
-        assert_eq!(first, WsMessage::Binary(SILENCE.to_vec()));
-        let chunk = tokio::time::timeout(std::time::Duration::from_millis(150), ws.next())
-            .await
-            .unwrap()
-            .unwrap()
-            .unwrap();
-        assert_eq!(chunk, WsMessage::Binary(SILENCE.to_vec()));
+        let recv = tokio::time::timeout(std::time::Duration::from_millis(150), ws.next()).await;
+        assert!(recv.is_err(), "stream should be silent when idle");
+        drop(ws);
     }
 
     /// Lagged broadcast messages do not close the connection.

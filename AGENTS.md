@@ -20,3 +20,4 @@
 - Keep `.rs` files focused. Create a new source file for each new type and split
   large modules like `lib.rs` into smaller pieces.
 - Use the `LLMClient` trait for streaming LLM interactions.
+- Avoid streaming silence frames when audio is not playing.
