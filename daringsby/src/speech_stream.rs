@@ -1,7 +1,6 @@
 use axum::{
     Router,
-    body::Body,
-    response::{IntoResponse, Response},
+    extract::ws::{Message, WebSocket, WebSocketUpgrade},
     routing::get,
 };
 use bytes::Bytes;
@@ -14,14 +13,11 @@ const FRAME_MS: usize = 10;
 const SILENCE_BYTES: usize = (SAMPLE_RATE as usize / 1000 * FRAME_MS) * 2;
 static SILENCE: Lazy<[u8; SILENCE_BYTES]> = Lazy::new(|| [0u8; SILENCE_BYTES]);
 
-/// HTTP streamer for mouth audio.
+/// WebSocket streamer for mouth audio.
 ///
-/// This type exposes a router serving two routes:
-/// - `/` an HTML page with an `<audio>` element.
-/// - `/speech.opus` streaming Opus bytes as they arrive from a TTS backend.
-///
-/// A [`Receiver`] is provided at construction and any bytes received are
-/// forwarded directly to the HTTP client.
+/// Exposes a single `/` route which upgrades to a WebSocket connection.
+/// Bytes received from the provided [`Receiver`] are forwarded to connected
+/// clients as binary messages. Silence frames are emitted when idle.
 pub struct SpeechStream {
     tts_rx: Arc<tokio::sync::Mutex<Receiver<Bytes>>>,
 }
@@ -34,99 +30,83 @@ impl SpeechStream {
         }
     }
 
-    /// Build an [`axum::Router`] exposing the streaming and index routes.
+    /// Build an [`axum::Router`] exposing the WebSocket streaming route.
     pub fn router(self: Arc<Self>) -> Router {
-        Router::new()
-            .route("/", get(Self::index))
-            .route("/speech.opus", get(move || self.clone().stream_audio()))
+        Router::new().route(
+            "/",
+            get({
+                let stream = self.clone();
+                move |ws: WebSocketUpgrade| async move {
+                    ws.on_upgrade(move |sock| stream.clone().stream_audio(sock))
+                }
+            }),
+        )
     }
 
-    async fn index() -> impl IntoResponse {
-        const INDEX: &str = r#"<!DOCTYPE html>
-<html lang="en">
-<body>
-<audio controls autoplay>
-  <source src="/speech.opus" type="audio/ogg">
-  Your browser does not support the audio element.
-</audio>
-</body>
-</html>
-"#;
-        axum::response::Html(INDEX)
-    }
-
-    async fn stream_audio(self: Arc<Self>) -> Response {
+    async fn stream_audio(self: Arc<Self>, mut socket: WebSocket) {
         let rx = self.tts_rx.clone();
-        let stream = async_stream::stream! {
-            let mut rx = rx.lock().await;
-            loop {
-                match tokio::time::timeout(
-                    std::time::Duration::from_millis(100),
-                    rx.recv(),
-                ).await {
-                    Ok(Ok(bytes)) => {
-                        if !bytes.is_empty() {
-                            yield Ok::<Bytes, std::io::Error>(bytes);
-                        }
+        let mut rx = rx.lock().await;
+        loop {
+            match tokio::time::timeout(std::time::Duration::from_millis(100), rx.recv()).await {
+                Ok(Ok(bytes)) => {
+                    if !bytes.is_empty()
+                        && socket.send(Message::Binary(bytes.to_vec())).await.is_err()
+                    {
+                        break;
                     }
-                    Ok(Err(_)) => break,
-                    Err(_) => {
-                        yield Ok::<Bytes, std::io::Error>(Bytes::from_static(&SILENCE[..]));
+                }
+                Ok(Err(_)) => break,
+                Err(_) => {
+                    if socket
+                        .send(Message::Binary(SILENCE.to_vec()))
+                        .await
+                        .is_err()
+                    {
+                        break;
                     }
                 }
             }
-        };
-        Response::builder()
-            .header("Content-Type", "audio/ogg")
-            .body(Body::from_stream(stream))
-            .unwrap()
+        }
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use axum::http::Request;
-    use http_body_util::BodyExt;
+    use futures::StreamExt;
     use tokio::sync::broadcast;
-    use tower::ServiceExt;
+    use tokio_tungstenite::{connect_async, tungstenite::Message as WsMessage};
+
+    async fn start_server(stream: Arc<SpeechStream>) -> std::net::SocketAddr {
+        let app = stream.router();
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+        tokio::spawn(async move { axum::serve(listener, app).await.unwrap() });
+        addr
+    }
 
     /// When bytes are sent on the channel they stream to the client.
     #[tokio::test]
     async fn streams_bytes_to_client() {
         let (tx, rx) = broadcast::channel(4);
         let stream = Arc::new(SpeechStream::new(rx));
-        let app = stream.router();
-
-        let handle = tokio::spawn(async move {
-            let req = Request::builder()
-                .uri("/speech.opus")
-                .body(Body::empty())
-                .unwrap();
-            let resp = app.oneshot(req).await.unwrap();
-            assert_eq!(resp.status(), axum::http::StatusCode::OK);
-            let body = resp.into_body().collect().await.unwrap().to_bytes();
-            assert_eq!(body.as_ref(), b"A");
-        });
-
+        let addr = start_server(stream.clone()).await;
+        let url = format!("ws://{addr}");
+        let (mut ws, _) = connect_async(url).await.unwrap();
         tx.send(Bytes::from_static(b"A")).unwrap();
         drop(tx);
-        handle.await.unwrap();
+        let msg = ws.next().await.unwrap().unwrap();
+        assert_eq!(msg, WsMessage::Binary(b"A".to_vec()));
     }
 
-    /// The index route serves an HTML page with an audio element.
+    /// The router upgrades connections to WebSocket.
     #[tokio::test]
-    async fn serves_index_html() {
+    async fn upgrades_via_router() {
         let (_tx, rx) = broadcast::channel(1);
         let stream = Arc::new(SpeechStream::new(rx));
-        let app = stream.router();
-        let req = Request::builder().uri("/").body(Body::empty()).unwrap();
-        let resp = app.oneshot(req).await.unwrap();
-        assert_eq!(resp.status(), axum::http::StatusCode::OK);
-        let body = resp.into_body().collect().await.unwrap().to_bytes();
-        let html = std::str::from_utf8(&body).unwrap();
-        assert!(html.contains("<audio"));
-        assert!(html.contains("/speech.opus"));
+        let addr = start_server(stream).await;
+        let url = format!("ws://{addr}");
+        let (_ws, _) = connect_async(url).await.unwrap();
     }
 
     /// When idle the stream emits silence bytes.
@@ -134,22 +114,16 @@ mod tests {
     async fn emits_silence_when_idle() {
         let (_tx, rx) = broadcast::channel(1);
         let stream = Arc::new(SpeechStream::new(rx));
-        let app = stream.router();
-        let req = Request::builder()
-            .uri("/speech.opus")
-            .body(Body::empty())
-            .unwrap();
-        let resp = app.oneshot(req).await.unwrap();
-        assert_eq!(resp.status(), axum::http::StatusCode::OK);
-        use futures::StreamExt;
-        let mut stream = resp.into_body().into_data_stream();
-        // first chunk is silence when nothing is playing
-        let _first = stream.next().await.unwrap().unwrap();
-        let chunk = tokio::time::timeout(std::time::Duration::from_millis(150), stream.next())
+        let addr = start_server(stream.clone()).await;
+        let url = format!("ws://{addr}");
+        let (mut ws, _) = connect_async(url).await.unwrap();
+        let first = ws.next().await.unwrap().unwrap();
+        assert_eq!(first, WsMessage::Binary(SILENCE.to_vec()));
+        let chunk = tokio::time::timeout(std::time::Duration::from_millis(150), ws.next())
             .await
             .unwrap()
             .unwrap()
             .unwrap();
-        assert_eq!(chunk.as_ref(), &SILENCE[..]);
+        assert_eq!(chunk, WsMessage::Binary(SILENCE.to_vec()));
     }
 }
