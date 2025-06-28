@@ -8,12 +8,11 @@ use futures::{StreamExt, stream};
 use ollama_rs::Ollama;
 use once_cell::sync::Lazy;
 use psyche_rs::{
-    Action, Combobulator, Impression, ImpressionSensor, LLMClient, LLMPool, Motor, OllamaLLM,
-    Sensor, Wit,
+    Action, Combobulator, Impression, ImpressionSensor, Intention, LLMClient, LLMPool, Motor,
+    OllamaLLM, Sensor, Urge, Wit,
 };
 #[cfg(feature = "moment-feedback")]
 use psyche_rs::{Sensation, SensationSensor};
-use serde_json::Value;
 
 use daringsby::{Heartbeat, LoggingMotor, SelfDiscovery, SourceDiscovery};
 
@@ -60,6 +59,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     #[cfg(feature = "moment-feedback")]
     let (sens_tx, sens_rx) = unbounded_channel::<Vec<Sensation<String>>>();
 
+    #[allow(unused_mut)]
     let mut sensors: Vec<Box<dyn Sensor<String> + Send>> = vec![
         Box::new(Heartbeat) as Box<dyn Sensor<String> + Send>,
         Box::new(SelfDiscovery) as Box<dyn Sensor<String> + Send>,
@@ -98,8 +98,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             for imp in imps {
                 let text = imp.how.clone();
                 let body = stream::once(async move { text }).boxed();
-                let action = Action::new("log", Value::Null, body);
-                motor.perform(action).unwrap();
+                let urge = Urge::new("log");
+                let intention = Intention::new(urge, "log");
+                let action = Action::from_intention(intention, body);
+                futures::executor::block_on(motor.perform(action)).unwrap();
             }
         }
     });
@@ -110,8 +112,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             for imp in imps {
                 let text = imp.how.clone();
                 let body = stream::once(async move { text }).boxed();
-                let action = Action::new("log", Value::Null, body);
-                motor.perform(action).unwrap();
+                let urge = Urge::new("log");
+                let intention = Intention::new(urge, "log");
+                let action = Action::from_intention(intention, body);
+                futures::executor::block_on(motor.perform(action)).unwrap();
             }
         }
     });

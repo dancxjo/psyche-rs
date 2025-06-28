@@ -12,7 +12,7 @@ use tracing::{debug, trace};
 use regex::Regex;
 
 use crate::llm_client::LLMClient;
-use crate::{Action, Sensation, Sensor};
+use crate::{Action, Intention, Sensation, Sensor, Urge};
 use ollama_rs::generation::chat::ChatMessage;
 use serde_json::{Map, Value};
 
@@ -199,7 +199,10 @@ impl<T> Will<T> {
                                                     let closing = format!("</{}>", tag);
                                                     let _ = buf.drain(..caps.get(0).unwrap().end());
                                                     let (btx, brx) = unbounded_channel();
-                                                    let action = Action::new(tag.clone(), Value::Object(map), UnboundedReceiverStream::new(brx).boxed());
+                                                    let mut urge = Urge::new(tag.clone());
+                                                    urge.args = map.iter().map(|(k,v)| (k.clone(), v.as_str().unwrap_or_default().to_string())).collect();
+                                                    let intention = Intention::new(urge, tag.clone());
+                                                    let action = Action::from_intention(intention, UnboundedReceiverStream::new(brx).boxed());
                                                     let _ = tx.send(vec![action]);
                                                     state = Some((tag, closing, btx));
                                                 } else {
@@ -276,8 +279,8 @@ mod tests {
         let sensor = DummySensor;
         let mut stream = will.observe(vec![sensor]).await;
         let mut actions = stream.next().await.unwrap();
-        let mut action = actions.pop().unwrap();
-        assert_eq!(action.name, "say");
+        let action = actions.pop().unwrap();
+        assert_eq!(action.intention.urge.name, "say");
         let chunks: Vec<String> = action.body.collect().await;
         let body: String = chunks.concat();
         assert_eq!(body, "Hello world");

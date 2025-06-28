@@ -21,7 +21,9 @@ pub use combobulator::Combobulator;
 pub use impression::Impression;
 pub use impression_sensor::ImpressionSensor;
 pub use llm_pool::LLMPool;
-pub use motor::{Action, Completion, Intention, Interruption, Motor, MotorError, Urge};
+pub use motor::{
+    Action, ActionResult, Completion, Intention, Interruption, Motor, MotorError, Urge,
+};
 pub use psyche::Psyche;
 pub use sensation::Sensation;
 pub use sensation_channel_sensor::SensationSensor;
@@ -36,7 +38,6 @@ mod tests {
     use chrono::Utc;
     use futures::stream::BoxStream;
     use futures::{StreamExt, stream};
-    use serde_json::Value;
     use std::sync::{Arc, Mutex};
 
     #[tokio::test]
@@ -120,11 +121,15 @@ mod tests {
             log: Arc<Mutex<Vec<String>>>,
         }
 
+        #[async_trait::async_trait]
         impl Motor for RecordingMotor {
+            fn name(&self) -> &'static str {
+                "rec"
+            }
             fn description(&self) -> &'static str {
                 "records actions into a vector"
             }
-            fn perform(&self, mut action: Action) -> Result<(), MotorError> {
+            async fn perform(&self, mut action: Action) -> Result<ActionResult, MotorError> {
                 use futures::StreamExt;
                 use futures::executor::block_on;
                 let log = &self.log;
@@ -135,7 +140,10 @@ mod tests {
                     }
                     log.lock().unwrap().push(collected);
                 });
-                Ok(())
+                Ok(ActionResult {
+                    sensations: Vec::new(),
+                    completed: true,
+                })
             }
         }
 
@@ -151,8 +159,10 @@ mod tests {
             for impression in batch {
                 let text = impression.how.clone();
                 let body = stream::once(async move { text }).boxed();
-                let action = Action::new("say", Value::Null, body);
-                motor.perform(action).unwrap();
+                let urge = Urge::new("say");
+                let intention = Intention::new(urge, motor.name());
+                let action = Action::from_intention(intention, body);
+                motor.perform(action).await.unwrap();
             }
         }
 

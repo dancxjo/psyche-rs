@@ -6,10 +6,7 @@ use futures::{
 };
 use tracing::{debug, info};
 
-#[cfg(test)]
-use crate::MotorError;
-use crate::{Action, Motor, Sensation, Sensor, Wit};
-use serde_json::Value;
+use crate::{Action, ActionResult, Intention, Motor, MotorError, Sensation, Sensor, Urge, Wit};
 
 /// Sensor wrapper enabling shared ownership.
 struct SharedSensor<T> {
@@ -40,7 +37,7 @@ impl<T> Sensor<T> for SharedSensor<T> {
 /// Core orchestrator coordinating sensors, wits and motors.
 pub struct Psyche<T = serde_json::Value> {
     sensors: Vec<Arc<Mutex<dyn Sensor<T> + Send>>>,
-    motors: Vec<Box<dyn Motor + Send>>,
+    motors: std::collections::HashMap<String, Box<dyn Motor + Send>>,
     wits: Vec<Wit<T>>,
 }
 
@@ -52,7 +49,7 @@ where
     pub fn new() -> Self {
         Self {
             sensors: Vec::new(),
-            motors: Vec::new(),
+            motors: std::collections::HashMap::new(),
             wits: Vec::new(),
         }
     }
@@ -65,7 +62,8 @@ where
 
     /// Add a motor to the psyche.
     pub fn motor(mut self, motor: impl Motor + Send + 'static) -> Self {
-        self.motors.push(Box::new(motor));
+        let name = motor.name().to_string();
+        self.motors.insert(name, Box::new(motor));
         self
     }
 
@@ -113,12 +111,14 @@ where
                     for impression in batch {
                         debug!(?impression.how, "impression received");
                         let text = impression.how.clone();
-                        for motor in self.motors.iter() {
+                        for motor in self.motors.values() {
                             use futures::stream;
                             let t = text.clone();
                             let body = stream::once(async move { t }).boxed();
-                            let action = Action::new("log", Value::Null, body);
-                            if let Err(e) = motor.perform(action) {
+                            let urge = Urge::new("log");
+                            let intention = Intention::new(urge, motor.name());
+                            let action = Action::from_intention(intention, body);
+                            if let Err(e) = motor.perform(action).await {
                                 debug!(?e, "motor action failed");
                             }
                         }
@@ -126,6 +126,30 @@ where
                 }
             }
         }
+    }
+
+    /// Process a single [`Urge`] by dispatching it to the matching motor.
+    pub async fn process_urge(&self, urge: Urge) -> Result<ActionResult, MotorError> {
+        use futures::stream;
+        tracing::trace!(?urge, "processing urge");
+        let motor = self
+            .motors
+            .get(&urge.name)
+            .ok_or(MotorError::Unrecognized)?;
+        let body = match urge.body.clone() {
+            Some(b) => stream::once(async move { b }).boxed(),
+            None => stream::empty().boxed(),
+        };
+        let intention = Intention::new(urge.clone(), motor.name());
+        tracing::trace!(?intention, "created intention");
+        let action = Action::from_intention(intention.clone(), body);
+        tracing::trace!(?action, "dispatching action");
+        let res = motor.perform(action).await;
+        match &res {
+            Ok(r) => tracing::trace!(?r, "action completed"),
+            Err(e) => tracing::trace!(?e, "action failed"),
+        }
+        res
     }
 }
 
@@ -163,13 +187,20 @@ mod tests {
     }
 
     struct CountMotor(Arc<AtomicUsize>);
+    #[async_trait::async_trait]
     impl Motor for CountMotor {
+        fn name(&self) -> &'static str {
+            "count"
+        }
         fn description(&self) -> &'static str {
             "counts how many actions were performed"
         }
-        fn perform(&self, _action: Action) -> Result<(), MotorError> {
+        async fn perform(&self, _action: Action) -> Result<ActionResult, MotorError> {
             self.0.fetch_add(1, Ordering::SeqCst);
-            Ok(())
+            Ok(ActionResult {
+                sensations: Vec::new(),
+                completed: true,
+            })
         }
     }
 
@@ -178,11 +209,64 @@ mod tests {
         let count = Arc::new(AtomicUsize::new(0));
         let llm = Arc::new(StaticLLM);
         let wit = Wit::new(llm).delay_ms(10);
-        let psyche = Psyche::new()
+        let psyche = Psyche::<String>::new()
             .sensor(TestSensor)
             .wit(wit)
             .motor(CountMotor(count.clone()));
         let _ = tokio::time::timeout(std::time::Duration::from_millis(50), psyche.run()).await;
         assert!(count.load(Ordering::SeqCst) > 0);
+    }
+
+    #[tokio::test]
+    async fn process_urge_returns_sensations() {
+        struct EchoMotor {
+            name: &'static str,
+            kind: &'static str,
+        }
+        #[async_trait::async_trait]
+        impl Motor for EchoMotor {
+            fn name(&self) -> &'static str {
+                self.name
+            }
+            fn description(&self) -> &'static str {
+                "echo"
+            }
+            async fn perform(&self, _action: Action) -> Result<ActionResult, MotorError> {
+                Ok(ActionResult {
+                    sensations: vec![Sensation {
+                        kind: self.kind.into(),
+                        when: chrono::Utc::now(),
+                        what: serde_json::Value::Null,
+                        source: None,
+                    }],
+                    completed: true,
+                })
+            }
+        }
+
+        let psyche = Psyche::<serde_json::Value>::new()
+            .motor(EchoMotor {
+                name: "look",
+                kind: "image/jpeg",
+            })
+            .motor(EchoMotor {
+                name: "listen",
+                kind: "audio/wav",
+            })
+            .motor(EchoMotor {
+                name: "sniff",
+                kind: "chemical/smell",
+            });
+
+        for (name, kind) in [
+            ("look", "image/jpeg"),
+            ("listen", "audio/wav"),
+            ("sniff", "chemical/smell"),
+        ] {
+            let urge = Urge::new(name);
+            let res = psyche.process_urge(urge).await.unwrap();
+            assert_eq!(res.sensations[0].kind, kind);
+            assert!(res.completed);
+        }
     }
 }
