@@ -1,6 +1,8 @@
 use bytes::Bytes;
 use futures::StreamExt;
+use hound::WavReader;
 use segtok::segmenter::{SegmentConfig, split_single};
+use std::io::Cursor;
 use std::sync::{
     Arc,
     atomic::{AtomicBool, Ordering},
@@ -68,7 +70,7 @@ impl Mouth {
 
     fn spawn_silence_task(tx: Sender<Bytes>, playing: Arc<AtomicBool>) {
         tokio::spawn(async move {
-            const SAMPLE_RATE: usize = 16_000;
+            const SAMPLE_RATE: usize = 22_050;
             const FRAME_MS: usize = 10;
             const SILENCE_BYTES: usize = (SAMPLE_RATE / 1000 * FRAME_MS) * 2;
             let silence = Bytes::from_static(&[0u8; SILENCE_BYTES]);
@@ -88,6 +90,40 @@ impl Mouth {
     /// Subscribes to the audio stream.
     pub fn subscribe(&self) -> Receiver<Bytes> {
         self.tx.subscribe()
+    }
+
+    /// Convert a WAV byte buffer to 16-bit PCM bytes.
+    ///
+    /// ```
+    /// use daringsby::mouth::Mouth;
+    /// # fn make_wav() -> Vec<u8> {
+    /// #   let spec = hound::WavSpec {
+    /// #       channels: 1,
+    /// #       sample_rate: 22_050,
+    /// #       bits_per_sample: 16,
+    /// #       sample_format: hound::SampleFormat::Int,
+    /// #   };
+    /// #   let mut bytes = Vec::new();
+    /// #   let mut w = hound::WavWriter::new(std::io::Cursor::new(&mut bytes), spec).unwrap();
+    /// #   w.write_sample(0i16).unwrap();
+    /// #   w.write_sample(1i16).unwrap();
+    /// #   w.finalize().unwrap();
+    /// #   bytes
+    /// # }
+    /// let wav = make_wav();
+    /// let pcm = Mouth::wav_to_pcm(&wav).unwrap();
+    /// assert_eq!(pcm.len(), 4); // two i16 samples
+    /// ```
+    fn wav_to_pcm(data: &[u8]) -> Result<Bytes, MotorError> {
+        let mut reader = WavReader::new(Cursor::new(data))
+            .map_err(|e| MotorError::Failed(format!("wav decode failed: {e}")))?;
+        let samples: Result<Vec<i16>, _> = reader.samples::<i16>().collect();
+        let samples = samples.map_err(|e| MotorError::Failed(format!("wav read failed: {e}")))?;
+        let mut buf = Vec::with_capacity(samples.len() * 2);
+        for s in samples {
+            buf.extend_from_slice(&s.to_le_bytes());
+        }
+        Ok(Bytes::from(buf))
     }
 
     fn tts_url(base: &str, text: &str, speaker_id: &str, language: &str) -> String {
@@ -161,12 +197,15 @@ impl Motor for Mouth {
                     trace!(%sent, "tts sentence");
                     let url = Mouth::tts_url(&base, &sent, &speaker_id, &lang);
                     match client.get(url).send().await {
-                        Ok(resp) => {
-                            let mut stream = resp.bytes_stream();
-                            while let Some(Ok(bytes)) = stream.next().await {
-                                let _ = tx.send(bytes);
-                            }
-                        }
+                        Ok(resp) => match resp.bytes().await {
+                            Ok(body) => match Mouth::wav_to_pcm(&body) {
+                                Ok(pcm) => {
+                                    let _ = tx.send(pcm);
+                                }
+                                Err(e) => warn!(error = ?e, "wav decode failed"),
+                            },
+                            Err(e) => warn!(error = ?e, "tts body error"),
+                        },
                         Err(e) => warn!(error = ?e, "tts request failed"),
                     }
                     let _ = tx.send(Bytes::new());
@@ -176,12 +215,15 @@ impl Motor for Mouth {
                 trace!(sentence = %buf, "tts final sentence");
                 let url = Mouth::tts_url(&base, &buf, &speaker_id, &lang);
                 match client.get(url).send().await {
-                    Ok(resp) => {
-                        let mut stream = resp.bytes_stream();
-                        while let Some(Ok(bytes)) = stream.next().await {
-                            let _ = tx.send(bytes);
-                        }
-                    }
+                    Ok(resp) => match resp.bytes().await {
+                        Ok(body) => match Mouth::wav_to_pcm(&body) {
+                            Ok(pcm) => {
+                                let _ = tx.send(pcm);
+                            }
+                            Err(e) => warn!(error = ?e, "wav decode failed"),
+                        },
+                        Err(e) => warn!(error = ?e, "tts body error"),
+                    },
                     Err(e) => warn!(error = ?e, "tts request failed"),
                 }
             }
@@ -208,6 +250,24 @@ mod tests {
     async fn streams_audio_by_sentence() {
         // Arrange
         let server = MockServer::start_async().await;
+        let mut wav1 = Vec::new();
+        let spec = hound::WavSpec {
+            channels: 1,
+            sample_rate: 22_050,
+            bits_per_sample: 16,
+            sample_format: hound::SampleFormat::Int,
+        };
+        {
+            let mut w = hound::WavWriter::new(std::io::Cursor::new(&mut wav1), spec).unwrap();
+            w.write_sample(1i16).unwrap();
+            w.finalize().unwrap();
+        }
+        let mut wav2 = Vec::new();
+        {
+            let mut w = hound::WavWriter::new(std::io::Cursor::new(&mut wav2), spec).unwrap();
+            w.write_sample(2i16).unwrap();
+            w.finalize().unwrap();
+        }
         let m1 = server
             .mock_async(|when, then| {
                 when.method(GET)
@@ -216,7 +276,7 @@ mod tests {
                     .query_param("speaker_id", "p330")
                     .query_param("style_wav", "")
                     .query_param("language_id", "");
-                then.status(200).body("A");
+                then.status(200).body(wav1.clone());
             })
             .await;
         let m2 = server
@@ -227,7 +287,7 @@ mod tests {
                     .query_param("speaker_id", "p330")
                     .query_param("style_wav", "")
                     .query_param("language_id", "");
-                then.status(200).body("B");
+                then.status(200).body(wav2.clone());
             })
             .await;
         let mouth = Mouth::new(server.url(""), None);
@@ -287,5 +347,47 @@ mod tests {
 
         // Assert
         mock.assert();
+    }
+
+    /// When a WAV response is received, then the header is stripped before broadcasting.
+    #[tokio::test]
+    async fn strips_wav_header() {
+        // Arrange
+        let mut wav_bytes = Vec::new();
+        let spec = hound::WavSpec {
+            channels: 1,
+            sample_rate: 22_050,
+            bits_per_sample: 16,
+            sample_format: hound::SampleFormat::Int,
+        };
+        {
+            let mut writer =
+                hound::WavWriter::new(std::io::Cursor::new(&mut wav_bytes), spec).unwrap();
+            writer.write_sample(1i16).unwrap();
+            writer.finalize().unwrap();
+        }
+        let server = MockServer::start_async().await;
+        let _mock = server
+            .mock_async(|when, then| {
+                when.method(GET);
+                then.status(200).body(wav_bytes.clone());
+            })
+            .await;
+        let mouth = Mouth::new(server.url(""), None);
+        let mut rx = mouth.subscribe();
+        let body = stream::once(async { "Hi.".to_string() }).boxed();
+        let mut action = Action::new("speak", Map::new().into(), body);
+        action.intention.assigned_motor = "speak".into();
+
+        // Act
+        mouth.perform(action).await.unwrap();
+        let mut pcm = rx.recv().await.unwrap();
+        while pcm.iter().all(|b| *b == 0) {
+            pcm = rx.recv().await.unwrap();
+        }
+
+        // Assert
+        assert_eq!(pcm.len(), 2);
+        assert_eq!(pcm.as_ref(), &[1, 0]);
     }
 }
