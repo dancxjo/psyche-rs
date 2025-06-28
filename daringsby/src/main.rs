@@ -13,9 +13,10 @@ use psyche_rs::{
 };
 #[cfg(feature = "moment-feedback")]
 use psyche_rs::{Sensation, SensationSensor};
-use serde_json::Value;
+use serde_json::{Map, Value};
 
-use daringsby::{Heartbeat, LoggingMotor, SelfDiscovery, SourceDiscovery};
+use daringsby::{Heartbeat, LoggingMotor, Mouth, SelfDiscovery, SourceDiscovery, SpeechStream};
+use std::net::SocketAddr;
 
 const QUICK_PROMPT: &str = include_str!("quick_prompt.txt");
 const COMBO_PROMPT: &str = include_str!("combobulator_prompt.txt");
@@ -33,6 +34,18 @@ struct Args {
     base_url: Vec<String>,
     #[arg(long, default_value = "gemma3:27b")]
     model: String,
+    /// Host interface for the speech server
+    #[arg(long, default_value = "0.0.0.0")]
+    host: String,
+    /// Port for the speech server
+    #[arg(long, default_value_t = 3000)]
+    port: u16,
+    /// Base URL of the Coqui TTS service
+    #[arg(long, default_value = "http://10.0.0.180:5002")]
+    tts_url: String,
+    /// Optional language identifier for TTS
+    #[arg(long)]
+    language_id: Option<String>,
 }
 
 #[tokio::main]
@@ -53,6 +66,17 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .collect();
     let llm = Arc::new(LLMPool::new(clients));
 
+    let mouth = Arc::new(Mouth::new(args.tts_url.clone(), args.language_id));
+    let rx = mouth.subscribe();
+    let stream = Arc::new(SpeechStream::new(rx));
+    let app = stream.clone().router();
+    let addr: SocketAddr = format!("{}:{}", args.host, args.port).parse()?;
+    tokio::spawn(async move {
+        tracing::info!(%addr, "serving speech stream");
+        let listener = tokio::net::TcpListener::bind(addr).await.unwrap();
+        axum::serve(listener, app).await.unwrap();
+    });
+
     let mut quick = Wit::new(llm.clone()).prompt(QUICK_PROMPT).delay_ms(1000);
     let mut combob = Combobulator::new(llm).prompt(COMBO_PROMPT).delay_ms(1000);
 
@@ -72,7 +96,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut quick_stream = quick.observe(sensors).await;
     let sensor = ImpressionSensor::new(rx);
     let mut combo_stream = combob.observe(vec![sensor]).await;
-    let motor = LoggingMotor;
+    let logger = Arc::new(LoggingMotor);
 
     let q_instant = INSTANT.clone();
     tokio::spawn(async move {
@@ -83,39 +107,63 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     });
 
     #[cfg(feature = "moment-feedback")]
-    tokio::spawn(async move {
-        while let Some(imps) = combo_stream.next().await {
-            *MOMENT.lock().unwrap() = imps.clone();
-            let sensed: Vec<Sensation<String>> = imps
-                .iter()
-                .map(|imp| Sensation {
-                    kind: "impression".into(),
-                    when: Utc::now(),
-                    what: imp.how.clone(),
-                    source: None,
-                })
-                .collect();
-            let _ = sens_tx.send(sensed);
-            for imp in imps {
-                let text = imp.how.clone();
-                let body = stream::once(async move { text }).boxed();
-                let action = Action::new("log", Value::Null, body);
-                motor.perform(action).unwrap();
+    {
+        let logger_task = logger.clone();
+        let mouth_task = mouth.clone();
+        tokio::spawn(async move {
+            while let Some(imps) = combo_stream.next().await {
+                *MOMENT.lock().unwrap() = imps.clone();
+                let sensed: Vec<Sensation<String>> = imps
+                    .iter()
+                    .map(|imp| Sensation {
+                        kind: "impression".into(),
+                        when: Utc::now(),
+                        what: imp.how.clone(),
+                        source: None,
+                    })
+                    .collect();
+                let _ = sens_tx.send(sensed);
+                for imp in imps {
+                    let text = imp.how.clone();
+                    let log_text = text.clone();
+                    let body = stream::once(async move { log_text }).boxed();
+                    let action = Action::new("log", Value::Null, body);
+                    logger_task.perform(action).unwrap();
+
+                    let mut map = Map::new();
+                    map.insert("speaker_id".into(), Value::String("p1".into()));
+                    let speak_text = text;
+                    let speak_body = stream::once(async move { speak_text }).boxed();
+                    let speak = Action::new("speak", Value::Object(map), speak_body);
+                    mouth_task.perform(speak).unwrap();
+                }
             }
-        }
-    });
+        });
+    }
 
     #[cfg(not(feature = "moment-feedback"))]
-    tokio::spawn(async move {
-        while let Some(imps) = combo_stream.next().await {
-            for imp in imps {
-                let text = imp.how.clone();
-                let body = stream::once(async move { text }).boxed();
-                let action = Action::new("log", Value::Null, body);
-                motor.perform(action).unwrap();
+    {
+        let logger_task = logger.clone();
+        let mouth_task = mouth.clone();
+        tokio::spawn(async move {
+            while let Some(imps) = combo_stream.next().await {
+                for imp in imps {
+                    let text = imp.how.clone();
+                    let log_text = text.clone();
+                    let body = stream::once(async move { log_text }).boxed();
+                    let action = Action::new("log", Value::Null, body);
+                    logger_task.perform(action).unwrap();
+
+                    let mut map = Map::new();
+                    map.insert("speaker_id".into(), Value::String("p1".into()));
+                    let speak_text = text;
+                    let speak_body = stream::once(async move { speak_text }).boxed();
+                    let speak = Action::new("speak", Value::Object(map), speak_body);
+                    mouth_task.perform(speak).unwrap();
+                }
             }
-        }
-    });
+        });
+    }
 
     tokio::signal::ctrl_c().await?;
     Ok(())
