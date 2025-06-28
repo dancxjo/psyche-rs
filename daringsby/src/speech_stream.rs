@@ -67,7 +67,7 @@ impl SpeechStream {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use axum::{Router, http::Request};
+    use axum::http::Request;
     use http_body_util::BodyExt;
     use tokio::sync::broadcast;
     use tower::ServiceExt;

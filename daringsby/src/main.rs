@@ -60,6 +60,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     #[cfg(feature = "moment-feedback")]
     let (sens_tx, sens_rx) = unbounded_channel::<Vec<Sensation<String>>>();
 
+    #[cfg_attr(not(feature = "moment-feedback"), allow(unused_mut))]
     let mut sensors: Vec<Box<dyn Sensor<String> + Send>> = vec![
         Box::new(Heartbeat) as Box<dyn Sensor<String> + Send>,
         Box::new(SelfDiscovery) as Box<dyn Sensor<String> + Send>,
