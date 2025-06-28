@@ -131,7 +131,11 @@ impl Mouth {
         let r = format!(
             "{}/api/tts?text={}&speaker_id={}&style_wav=&language_id={}",
             base,
-            encode(text),
+            encode(
+                &text.chars()
+                    .filter(|c| *c != '*')
+                    .collect::<String>(),
+            ),
             speaker_id,
             language
         );
@@ -161,7 +165,7 @@ impl Motor for Mouth {
             .get("speaker_id")
             .map(|v| v.as_str())
             .map(|s| s.to_string())
-            .or_else(|| Some("p330".into()))
+            .or_else(|| Some("p234".into()))
             .unwrap_or_default();
         let lang = action
             .intention
@@ -273,7 +277,7 @@ mod tests {
                 when.method(GET)
                     .path("/api/tts")
                     .query_param("text", "Hello world.")
-                    .query_param("speaker_id", "p330")
+                    .query_param("speaker_id", "p234")
                     .query_param("style_wav", "")
                     .query_param("language_id", "");
                 then.status(200).body(wav1.clone());
@@ -284,7 +288,7 @@ mod tests {
                 when.method(GET)
                     .path("/api/tts")
                     .query_param("text", "How are you?")
-                    .query_param("speaker_id", "p330")
+                    .query_param("speaker_id", "p234")
                     .query_param("style_wav", "")
                     .query_param("language_id", "");
                 then.status(200).body(wav2.clone());
@@ -294,7 +298,7 @@ mod tests {
         let mut rx = mouth.subscribe();
         let body = stream::once(async { "Hello world. How are you?".to_string() }).boxed();
         let mut map = Map::new();
-        map.insert("speaker_id".into(), Value::String("p330".into()));
+        map.insert("speaker_id".into(), Value::String("p234".into()));
         let mut action = Action::new("speak", Value::Object(map), body);
         action.intention.assigned_motor = "speak".into();
 
@@ -336,7 +340,7 @@ mod tests {
         let mut rx = mouth.subscribe();
         let body = stream::once(async { "Hi.".to_string() }).boxed();
         let mut map = Map::new();
-        map.insert("speaker_id".into(), Value::String("p330".into()));
+        map.insert("speaker_id".into(), Value::String("p234".into()));
         let mut action = Action::new("speak", Value::Object(map), body);
         action.intention.assigned_motor = "speak".into();
 

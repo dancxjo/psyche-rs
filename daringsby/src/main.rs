@@ -132,7 +132,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     logger_task.perform(action).await.unwrap();
 
                     let mut map = Map::new();
-                    map.insert("speaker_id".into(), Value::String("p330".into()));
+                    map.insert("speaker_id".into(), Value::String("p234".into()));
                     let speak_text = text;
                     let speak_body = stream::once(async move { speak_text }).boxed();
                     let mut speak = Action::new("speak", Value::Object(map), speak_body);
@@ -158,7 +158,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     logger_task.perform(action).await.unwrap();
 
                     let mut map = Map::new();
-                    map.insert("speaker_id".into(), Value::String("p330".into()));
+                    map.insert("speaker_id".into(), Value::String("p234".into()));
                     let speak_text = text;
                     let speak_body = stream::once(async move { speak_text }).boxed();
                     let mut speak = Action::new("speak", Value::Object(map), speak_body);
