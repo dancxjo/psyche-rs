@@ -667,6 +667,7 @@ dependencies = [
  "segtok",
  "serde_json",
  "tokio",
+ "tokio-stream",
  "tokio-tungstenite 0.21.0",
  "tower 0.4.13",
  "tracing",
@@ -2641,6 +2642,7 @@ dependencies = [
  "futures-core",
  "pin-project-lite",
  "tokio",
+ "tokio-util",
 ]
 
 [[package]]

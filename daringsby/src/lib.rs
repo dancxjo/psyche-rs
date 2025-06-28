@@ -1,3 +1,4 @@
+pub mod heard_self_sensor;
 pub mod heartbeat;
 pub mod logging_motor;
 pub mod mouth;
@@ -5,6 +6,7 @@ pub mod self_discovery;
 pub mod source_discovery;
 pub mod speech_stream;
 
+pub use heard_self_sensor::HeardSelfSensor;
 pub use heartbeat::{Heartbeat, heartbeat_message};
 pub use logging_motor::LoggingMotor;
 pub use mouth::Mouth;

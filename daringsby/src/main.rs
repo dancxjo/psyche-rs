@@ -15,7 +15,9 @@ use psyche_rs::{
 use psyche_rs::{Sensation, SensationSensor};
 use serde_json::{Map, Value};
 
-use daringsby::{Heartbeat, LoggingMotor, Mouth, SelfDiscovery, SourceDiscovery, SpeechStream};
+use daringsby::{
+    HeardSelfSensor, Heartbeat, LoggingMotor, Mouth, SelfDiscovery, SourceDiscovery, SpeechStream,
+};
 use std::net::SocketAddr;
 
 const QUICK_PROMPT: &str = include_str!("quick_prompt.txt");
@@ -67,8 +69,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let llm = Arc::new(LLMPool::new(clients));
 
     let mouth = Arc::new(Mouth::new(args.tts_url.clone(), args.language_id));
-    let rx = mouth.subscribe();
-    let stream = Arc::new(SpeechStream::new(rx));
+    let audio_rx = mouth.subscribe();
+    let text_rx = mouth.subscribe_text();
+    let stream = Arc::new(SpeechStream::new(audio_rx, text_rx));
     let app = stream.clone().router();
     let addr: SocketAddr = format!("{}:{}", args.host, args.port).parse()?;
     tokio::spawn(async move {
@@ -89,6 +92,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         Box::new(Heartbeat) as Box<dyn Sensor<String> + Send>,
         Box::new(SelfDiscovery) as Box<dyn Sensor<String> + Send>,
         Box::new(SourceDiscovery) as Box<dyn Sensor<String> + Send>,
+        Box::new(HeardSelfSensor::new(stream.subscribe_heard())) as Box<dyn Sensor<String> + Send>,
     ];
     #[cfg(feature = "moment-feedback")]
     sensors.push(Box::new(SensationSensor::new(sens_rx)));
