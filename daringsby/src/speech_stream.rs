@@ -8,6 +8,8 @@ use bytes::Bytes;
 use std::sync::Arc;
 use tokio::sync::broadcast::Receiver;
 
+const SILENCE: &[u8] = &[0u8; 2];
+
 /// HTTP streamer for mouth audio.
 ///
 /// This type exposes a router serving two routes:
@@ -53,8 +55,19 @@ impl SpeechStream {
         let rx = self.tts_rx.clone();
         let stream = async_stream::stream! {
             let mut rx = rx.lock().await;
-            while let Ok(bytes) = rx.recv().await {
-                yield Ok::<Bytes, std::io::Error>(bytes);
+            loop {
+                match tokio::time::timeout(
+                    std::time::Duration::from_millis(100),
+                    rx.recv(),
+                ).await {
+                    Ok(Ok(bytes)) => {
+                        yield Ok::<Bytes, std::io::Error>(bytes);
+                    }
+                    Ok(Err(_)) => break,
+                    Err(_) => {
+                        yield Ok::<Bytes, std::io::Error>(Bytes::from_static(SILENCE));
+                    }
+                }
             }
         };
         Response::builder()
@@ -106,5 +119,28 @@ mod tests {
         assert_eq!(resp.status(), axum::http::StatusCode::OK);
         let body = resp.into_body().collect().await.unwrap().to_bytes();
         assert!(std::str::from_utf8(&body).unwrap().contains("<audio"));
+    }
+
+    /// When idle the stream emits silence bytes.
+    #[tokio::test]
+    async fn emits_silence_when_idle() {
+        let (_tx, rx) = broadcast::channel(1);
+        let stream = Arc::new(SpeechStream::new(rx));
+        let app = stream.router();
+        let req = Request::builder()
+            .uri("/speech.wav")
+            .body(Body::empty())
+            .unwrap();
+        let resp = app.oneshot(req).await.unwrap();
+        assert_eq!(resp.status(), axum::http::StatusCode::OK);
+        use futures::StreamExt;
+        use http_body_util::BodyExt as _;
+        let mut stream = resp.into_body().into_data_stream();
+        let chunk = tokio::time::timeout(std::time::Duration::from_millis(150), stream.next())
+            .await
+            .unwrap()
+            .unwrap()
+            .unwrap();
+        assert!(chunk.iter().all(|b| *b == 0));
     }
 }
