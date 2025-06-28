@@ -9,7 +9,7 @@ use once_cell::sync::Lazy;
 use std::sync::Arc;
 use tokio::sync::broadcast::{self, Receiver};
 
-const SAMPLE_RATE: u32 = 16_000;
+const SAMPLE_RATE: u32 = 22_050;
 const FRAME_MS: usize = 10;
 const SILENCE_BYTES: usize = (SAMPLE_RATE as usize / 1000 * FRAME_MS) * 2;
 static SILENCE: Lazy<[u8; SILENCE_BYTES]> = Lazy::new(|| [0u8; SILENCE_BYTES]);
