@@ -14,7 +14,7 @@ const SILENCE: &[u8] = &[0u8; 2];
 ///
 /// This type exposes a router serving two routes:
 /// - `/` an HTML page with an `<audio>` element.
-/// - `/speech.wav` streaming WAV bytes as they arrive from a TTS backend.
+/// - `/speech.wav` streaming MP3 bytes as they arrive from a TTS backend.
 ///
 /// A [`Receiver`] is provided at construction and any bytes received are
 /// forwarded directly to the HTTP client.
@@ -42,7 +42,7 @@ impl SpeechStream {
 <html lang=\"en\">
 <body>
 <audio controls autoplay>
-  <source src=\"/speech.wav\" type=\"audio/wav\">
+  <source src=\"/speech.wav\" type=\"audio/mpeg\">
   Your browser does not support the audio element.
 </audio>
 </body>
@@ -71,7 +71,7 @@ impl SpeechStream {
             }
         };
         Response::builder()
-            .header("Content-Type", "audio/wav")
+            .header("Content-Type", "audio/mpeg")
             .body(Body::from_stream(stream))
             .unwrap()
     }
