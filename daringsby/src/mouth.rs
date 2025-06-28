@@ -7,7 +7,6 @@ use std::sync::Arc;
 use tokio::sync::Mutex as TokioMutex;
 use tokio::sync::broadcast::{self, Receiver, Sender};
 use tracing::{trace, warn};
-use urlencoding::encode;
 
 use psyche_rs::{Action, ActionResult, Motor, MotorError};
 
@@ -97,21 +96,23 @@ impl Mouth {
         Ok(Bytes::from(buf))
     }
 
-    fn tts_url(base: &str, text: &str, speaker_id: &str, language: &str) -> String {
-        let base = base.trim_end_matches('/');
-        let r = format!(
-            "{}/api/tts?text={}&speaker_id={}&style_wav=&language_id={}",
-            base,
-            encode(
-                &text.chars()
-                    .filter(|c| *c != '*')
-                    .collect::<String>(),
-            ),
-            speaker_id,
-            language
-        );
-        trace!(%r, "TTS URL");
-        r
+    fn tts_url(
+        base: &str,
+        text: &str,
+        speaker_id: &str,
+        language: &str,
+    ) -> Result<String, url::ParseError> {
+        let mut url = reqwest::Url::parse(base)?.join("api/tts")?;
+        url.query_pairs_mut()
+            .append_pair(
+                "text",
+                &text.chars().filter(|c| *c != '*').collect::<String>(),
+            )
+            .append_pair("speaker_id", speaker_id)
+            .append_pair("style_wav", "")
+            .append_pair("language_id", language);
+        trace!(url = %url, "TTS URL");
+        Ok(url.into())
     }
 }
 
@@ -168,7 +169,13 @@ impl Motor for Mouth {
                 }
                 for sent in sents {
                     trace!(%sent, "tts sentence");
-                    let url = Mouth::tts_url(&base, &sent, &speaker_id, &lang);
+                    let url = match Mouth::tts_url(&base, &sent, &speaker_id, &lang) {
+                        Ok(u) => u,
+                        Err(e) => {
+                            warn!(error=?e, "tts url error");
+                            continue;
+                        }
+                    };
                     match client.get(url).send().await {
                         Ok(resp) => match resp.bytes().await {
                             Ok(body) => match Mouth::wav_to_pcm(&body) {
@@ -186,7 +193,13 @@ impl Motor for Mouth {
             }
             if !buf.trim().is_empty() {
                 trace!(sentence = %buf, "tts final sentence");
-                let url = Mouth::tts_url(&base, &buf, &speaker_id, &lang);
+                let url = match Mouth::tts_url(&base, &buf, &speaker_id, &lang) {
+                    Ok(u) => u,
+                    Err(e) => {
+                        warn!(error=?e, "tts url error");
+                        return;
+                    }
+                };
                 match client.get(url).send().await {
                     Ok(resp) => match resp.bytes().await {
                         Ok(body) => match Mouth::wav_to_pcm(&body) {
