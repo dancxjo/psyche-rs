@@ -7,7 +7,7 @@ use axum::{
 use bytes::Bytes;
 use once_cell::sync::Lazy;
 use std::sync::Arc;
-use tokio::sync::broadcast::Receiver;
+use tokio::sync::broadcast::{self, Receiver};
 
 const SAMPLE_RATE: u32 = 16_000;
 const FRAME_MS: usize = 10;
@@ -66,7 +66,8 @@ impl SpeechStream {
                         break;
                     }
                 }
-                Ok(Err(_)) => break,
+                Ok(Err(broadcast::error::RecvError::Lagged(_))) => continue,
+                Ok(Err(broadcast::error::RecvError::Closed)) => break,
                 Err(_) => {
                     if socket
                         .send(Message::Binary(SILENCE.to_vec()))
@@ -154,5 +155,30 @@ mod tests {
             .unwrap()
             .unwrap();
         assert_eq!(chunk, WsMessage::Binary(SILENCE.to_vec()));
+    }
+
+    /// Lagged broadcast messages do not close the connection.
+    #[tokio::test]
+    async fn continues_after_lagged_message() {
+        let (tx, rx) = broadcast::channel(4);
+        let stream = Arc::new(SpeechStream::new(rx));
+        let addr = start_server(stream.clone()).await;
+        let url = format!("ws://{addr}/ws/audio/out");
+        let (mut ws, _) = connect_async(url).await.unwrap();
+        // exceed capacity quickly
+        for _ in 0..10 {
+            tx.send(Bytes::from_static(b"A")).unwrap();
+        }
+        tx.send(Bytes::from_static(b"Z")).unwrap();
+        drop(tx);
+        let mut got_z = false;
+        while let Some(msg) = ws.next().await {
+            let m = msg.unwrap();
+            if m == WsMessage::Binary(b"Z".to_vec()) {
+                got_z = true;
+                break;
+            }
+        }
+        assert!(got_z);
     }
 }
