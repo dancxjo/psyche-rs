@@ -68,7 +68,10 @@ impl Mouth {
 
     fn spawn_silence_task(tx: Sender<Bytes>, playing: Arc<AtomicBool>) {
         tokio::spawn(async move {
-            let silence = Bytes::from_static(&[0; 2]);
+            const SAMPLE_RATE: usize = 16_000;
+            const FRAME_MS: usize = 10;
+            const SILENCE_BYTES: usize = (SAMPLE_RATE / 1000 * FRAME_MS) * 2;
+            let silence = Bytes::from_static(&[0u8; SILENCE_BYTES]);
             let mut first = true;
             loop {
                 if !playing.load(Ordering::SeqCst) {
@@ -90,10 +93,10 @@ impl Mouth {
     fn tts_url(base: &str, text: &str, speaker_id: &str, language: &str) -> String {
         let base = base.trim_end_matches('/');
         let r = format!(
-            "{}/api/tts?text={}&speaker_id=p330&style_wav=&language_id={}",
+            "{}/api/tts?text={}&speaker_id={}&style_wav=&language_id={}",
             base,
             encode(text),
-            // speaker_id,
+            speaker_id,
             language
         );
         trace!(%r, "TTS URL");
