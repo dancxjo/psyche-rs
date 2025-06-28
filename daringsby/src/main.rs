@@ -41,7 +41,7 @@ struct Args {
     #[arg(long, default_value_t = 3000)]
     port: u16,
     /// Base URL of the Coqui TTS service
-    #[arg(long, default_value = "http://10.0.0.180:5002")]
+    #[arg(long, default_value = "http://localhost:5002")]
     tts_url: String,
     /// Optional language identifier for TTS
     #[arg(long)]
@@ -132,7 +132,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     logger_task.perform(action).await.unwrap();
 
                     let mut map = Map::new();
-                    map.insert("speaker_id".into(), Value::String("p1".into()));
+                    map.insert("speaker_id".into(), Value::String("p330".into()));
                     let speak_text = text;
                     let speak_body = stream::once(async move { speak_text }).boxed();
                     let mut speak = Action::new("speak", Value::Object(map), speak_body);
@@ -158,7 +158,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     logger_task.perform(action).await.unwrap();
 
                     let mut map = Map::new();
-                    map.insert("speaker_id".into(), Value::String("p1".into()));
+                    map.insert("speaker_id".into(), Value::String("p330".into()));
                     let speak_text = text;
                     let speak_body = stream::once(async move { speak_text }).boxed();
                     let mut speak = Action::new("speak", Value::Object(map), speak_body);
