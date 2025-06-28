@@ -127,15 +127,17 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     let text = imp.how.clone();
                     let log_text = text.clone();
                     let body = stream::once(async move { log_text }).boxed();
-                    let action = Action::new("log", Value::Null, body);
-                    logger_task.perform(action).unwrap();
+                    let mut action = Action::new("log", Value::Null, body);
+                    action.intention.assigned_motor = "log".into();
+                    logger_task.perform(action).await.unwrap();
 
                     let mut map = Map::new();
                     map.insert("speaker_id".into(), Value::String("p1".into()));
                     let speak_text = text;
                     let speak_body = stream::once(async move { speak_text }).boxed();
-                    let speak = Action::new("speak", Value::Object(map), speak_body);
-                    mouth_task.perform(speak).unwrap();
+                    let mut speak = Action::new("speak", Value::Object(map), speak_body);
+                    speak.intention.assigned_motor = "speak".into();
+                    mouth_task.perform(speak).await.unwrap();
                 }
             }
         });
@@ -151,15 +153,17 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     let text = imp.how.clone();
                     let log_text = text.clone();
                     let body = stream::once(async move { log_text }).boxed();
-                    let action = Action::new("log", Value::Null, body);
-                    logger_task.perform(action).unwrap();
+                    let mut action = Action::new("log", Value::Null, body);
+                    action.intention.assigned_motor = "log".into();
+                    logger_task.perform(action).await.unwrap();
 
                     let mut map = Map::new();
                     map.insert("speaker_id".into(), Value::String("p1".into()));
                     let speak_text = text;
                     let speak_body = stream::once(async move { speak_text }).boxed();
-                    let speak = Action::new("speak", Value::Object(map), speak_body);
-                    mouth_task.perform(speak).unwrap();
+                    let mut speak = Action::new("speak", Value::Object(map), speak_body);
+                    speak.intention.assigned_motor = "speak".into();
+                    mouth_task.perform(speak).await.unwrap();
                 }
             }
         });

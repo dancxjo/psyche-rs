@@ -6,9 +6,7 @@ use futures::{
 };
 use tracing::{debug, info};
 
-#[cfg(test)]
-use crate::MotorError;
-use crate::{Action, Motor, Sensation, Sensor, Wit};
+use crate::{Action, ActionResult, Intention, Motor, MotorError, Sensation, Sensor, Urge, Wit};
 use serde_json::Value;
 
 /// Sensor wrapper enabling shared ownership.
@@ -117,8 +115,9 @@ where
                             use futures::stream;
                             let t = text.clone();
                             let body = stream::once(async move { t }).boxed();
-                            let action = Action::new("log", Value::Null, body);
-                            if let Err(e) = motor.perform(action) {
+                            let mut action = Action::new("log", Value::Null, body);
+                            action.intention.assigned_motor = motor.name().to_string();
+                            if let Err(e) = motor.perform(action).await {
                                 debug!(?e, "motor action failed");
                             }
                         }
@@ -127,6 +126,24 @@ where
             }
         }
     }
+
+    /// Process a single urge by dispatching it to the appropriate motor.
+    pub async fn process_urge(&self, urge: Urge) -> Result<ActionResult, MotorError> {
+        for motor in &self.motors {
+            if motor.name() == urge.name {
+                let body = if let Some(b) = &urge.body {
+                    let text = b.clone();
+                    futures::stream::once(async move { text }).boxed()
+                } else {
+                    futures::stream::empty().boxed()
+                };
+                let intention = Intention::assign(urge.clone(), motor.name().to_string());
+                let action = Action { intention, body };
+                return motor.perform(action).await;
+            }
+        }
+        Err(MotorError::Unrecognized)
+    }
 }
 
 #[cfg(test)]
@@ -134,6 +151,7 @@ mod tests {
     use super::*;
     use crate::{LLMClient, TokenStream};
     use futures::{StreamExt, stream};
+    use std::collections::HashMap;
     use std::sync::atomic::{AtomicUsize, Ordering};
 
     struct TestSensor;
@@ -163,13 +181,20 @@ mod tests {
     }
 
     struct CountMotor(Arc<AtomicUsize>);
+    #[async_trait::async_trait]
     impl Motor for CountMotor {
         fn description(&self) -> &'static str {
             "counts how many actions were performed"
         }
-        fn perform(&self, _action: Action) -> Result<(), MotorError> {
+        fn name(&self) -> &'static str {
+            "log"
+        }
+        async fn perform(&self, _action: Action) -> Result<ActionResult, MotorError> {
             self.0.fetch_add(1, Ordering::SeqCst);
-            Ok(())
+            Ok(ActionResult {
+                sensations: Vec::new(),
+                completed: true,
+            })
         }
     }
 
@@ -184,5 +209,73 @@ mod tests {
             .motor(CountMotor(count.clone()));
         let _ = tokio::time::timeout(std::time::Duration::from_millis(50), psyche.run()).await;
         assert!(count.load(Ordering::SeqCst) > 0);
+    }
+
+    #[tokio::test]
+    async fn process_urge_routes_to_motor() {
+        struct SenseMotor(&'static str);
+
+        #[async_trait::async_trait]
+        impl Motor for SenseMotor {
+            fn description(&self) -> &'static str {
+                "test motor"
+            }
+            fn name(&self) -> &'static str {
+                self.0
+            }
+            async fn perform(&self, _action: Action) -> Result<ActionResult, MotorError> {
+                Ok(ActionResult {
+                    sensations: vec![Sensation {
+                        kind: match self.0 {
+                            "look" => "image/jpeg",
+                            "listen" => "audio/wav",
+                            "sniff" => "chemical/smell",
+                            _ => "unknown",
+                        }
+                        .into(),
+                        when: chrono::Utc::now(),
+                        what: serde_json::Value::Null,
+                        source: None,
+                    }],
+                    completed: true,
+                })
+            }
+        }
+
+        let psyche: Psyche = Psyche::new()
+            .motor(SenseMotor("look"))
+            .motor(SenseMotor("listen"))
+            .motor(SenseMotor("sniff"));
+
+        for (urge, kind) in [
+            (
+                Urge {
+                    name: "look".into(),
+                    args: HashMap::new(),
+                    body: None,
+                },
+                "image/jpeg",
+            ),
+            (
+                Urge {
+                    name: "listen".into(),
+                    args: HashMap::new(),
+                    body: None,
+                },
+                "audio/wav",
+            ),
+            (
+                Urge {
+                    name: "sniff".into(),
+                    args: HashMap::new(),
+                    body: None,
+                },
+                "chemical/smell",
+            ),
+        ] {
+            let res = psyche.process_urge(urge).await.unwrap();
+            assert!(res.completed);
+            assert_eq!(res.sensations[0].kind, kind);
+        }
     }
 }
