@@ -1,6 +1,7 @@
 use axum::{
     Router,
     extract::ws::{Message, WebSocket, WebSocketUpgrade},
+    response::{Html, IntoResponse},
     routing::get,
 };
 use bytes::Bytes;
@@ -15,7 +16,12 @@ static SILENCE: Lazy<[u8; SILENCE_BYTES]> = Lazy::new(|| [0u8; SILENCE_BYTES]);
 
 /// WebSocket streamer for mouth audio.
 ///
-/// Exposes a single `/` route which upgrades to a WebSocket connection.
+/// Exposes two routes:
+/// - `/` serves a minimal HTML page that connects to the WebSocket and plays
+///   PCM data via the Web Audio API.
+/// - `/ws/audio/out` upgrades the connection to a WebSocket and streams the PCM
+///   bytes.
+///
 /// Bytes received from the provided [`Receiver`] are forwarded to connected
 /// clients as binary messages. Silence frames are emitted when idle.
 pub struct SpeechStream {
@@ -32,8 +38,8 @@ impl SpeechStream {
 
     /// Build an [`axum::Router`] exposing the WebSocket streaming route.
     pub fn router(self: Arc<Self>) -> Router {
-        Router::new().route(
-            "/",
+        Router::new().route("/", get(Self::index)).route(
+            "/ws/audio/out",
             get({
                 let stream = self.clone();
                 move |ws: WebSocketUpgrade| async move {
@@ -41,6 +47,11 @@ impl SpeechStream {
                 }
             }),
         )
+    }
+
+    async fn index() -> impl IntoResponse {
+        const INDEX: &str = include_str!("index.html");
+        Html(INDEX)
     }
 
     async fn stream_audio(self: Arc<Self>, mut socket: WebSocket) {
@@ -73,9 +84,12 @@ impl SpeechStream {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use axum::{body::Body, http::Request};
     use futures::StreamExt;
+    use http_body_util::BodyExt;
     use tokio::sync::broadcast;
     use tokio_tungstenite::{connect_async, tungstenite::Message as WsMessage};
+    use tower::ServiceExt;
 
     async fn start_server(stream: Arc<SpeechStream>) -> std::net::SocketAddr {
         let app = stream.router();
@@ -91,12 +105,27 @@ mod tests {
         let (tx, rx) = broadcast::channel(4);
         let stream = Arc::new(SpeechStream::new(rx));
         let addr = start_server(stream.clone()).await;
-        let url = format!("ws://{addr}");
+        let url = format!("ws://{addr}/ws/audio/out");
         let (mut ws, _) = connect_async(url).await.unwrap();
         tx.send(Bytes::from_static(b"A")).unwrap();
         drop(tx);
         let msg = ws.next().await.unwrap().unwrap();
         assert_eq!(msg, WsMessage::Binary(b"A".to_vec()));
+    }
+
+    /// The index route serves HTML with WebSocket playback code.
+    #[tokio::test]
+    async fn serves_index_html() {
+        let (_tx, rx) = broadcast::channel(1);
+        let stream = Arc::new(SpeechStream::new(rx));
+        let app = stream.router();
+        let req = Request::builder().uri("/").body(Body::empty()).unwrap();
+        let resp = app.oneshot(req).await.unwrap();
+        assert_eq!(resp.status(), axum::http::StatusCode::OK);
+        let body = BodyExt::collect(resp.into_body()).await.unwrap().to_bytes();
+        let html = std::str::from_utf8(&body).unwrap();
+        assert!(html.contains("ws://"));
+        assert!(html.contains("/ws/audio/out"));
     }
 
     /// The router upgrades connections to WebSocket.
@@ -105,7 +134,7 @@ mod tests {
         let (_tx, rx) = broadcast::channel(1);
         let stream = Arc::new(SpeechStream::new(rx));
         let addr = start_server(stream).await;
-        let url = format!("ws://{addr}");
+        let url = format!("ws://{addr}/ws/audio/out");
         let (_ws, _) = connect_async(url).await.unwrap();
     }
 
@@ -115,7 +144,7 @@ mod tests {
         let (_tx, rx) = broadcast::channel(1);
         let stream = Arc::new(SpeechStream::new(rx));
         let addr = start_server(stream.clone()).await;
-        let url = format!("ws://{addr}");
+        let url = format!("ws://{addr}/ws/audio/out");
         let (mut ws, _) = connect_async(url).await.unwrap();
         let first = ws.next().await.unwrap().unwrap();
         assert_eq!(first, WsMessage::Binary(SILENCE.to_vec()));

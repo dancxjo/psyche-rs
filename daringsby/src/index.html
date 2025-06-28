@@ -1,0 +1,33 @@
+<!DOCTYPE html>
+<html lang="en">
+<body>
+<script>
+const SAMPLE_RATE = 16000;
+const ws = new WebSocket(`ws://${location.host}/ws/audio/out`);
+ws.binaryType = 'arraybuffer';
+const ctx = new (window.AudioContext || window.webkitAudioContext)({ sampleRate: SAMPLE_RATE });
+let queue = [];
+let playing = false;
+
+function play() {
+  if (playing || !queue.length) return;
+  playing = true;
+  const pcm = queue.shift();
+  const buf = ctx.createBuffer(1, pcm.length, SAMPLE_RATE);
+  const chan = buf.getChannelData(0);
+  for (let i = 0; i < pcm.length; i++) chan[i] = pcm[i] / 32768;
+  const src = ctx.createBufferSource();
+  src.buffer = buf;
+  src.connect(ctx.destination);
+  src.onended = () => { playing = false; play(); };
+  src.start();
+}
+
+ws.onmessage = ev => {
+  queue.push(new Int16Array(ev.data));
+  if (ctx.state === 'suspended') ctx.resume();
+  play();
+};
+</script>
+</body>
+</html>
