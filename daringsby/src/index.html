@@ -6,13 +6,27 @@
 const SAMPLE_RATE = 22050;
 const ctx = new (window.AudioContext || window.webkitAudioContext)({ sampleRate: SAMPLE_RATE });
 let ws;
+let textWs;
+let heardWs;
 let queue = [];
+let texts = [];
 let playing = false;
+
+function segmentDone() {
+  const text = texts.shift();
+  if (heardWs && text) heardWs.send(text);
+}
 
 function play() {
   if (playing || !queue.length) return;
   playing = true;
   const pcm = queue.shift();
+  if (pcm.length === 0) {
+    playing = false;
+    segmentDone();
+    play();
+    return;
+  }
   const buf = ctx.createBuffer(1, pcm.length, SAMPLE_RATE);
   const chan = buf.getChannelData(0);
   for (let i = 0; i < pcm.length; i++) chan[i] = pcm[i] / 32768;
@@ -32,6 +46,9 @@ function start() {
     if (ctx.state === 'suspended') ctx.resume();
     play();
   };
+  textWs = new WebSocket(`ws://${location.host}/ws/audio/text/out`);
+  textWs.onmessage = ev => texts.push(ev.data);
+  heardWs = new WebSocket(`ws://${location.host}/ws/audio/self/in`);
   document.getElementById('start').style.display = 'none';
 }
 

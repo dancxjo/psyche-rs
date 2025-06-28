@@ -5,8 +5,12 @@ use axum::{
     routing::get,
 };
 use bytes::Bytes;
+use futures::StreamExt;
 use std::sync::Arc;
-use tokio::sync::broadcast::{self, Receiver};
+use tokio::sync::{
+    Mutex,
+    broadcast::{self, Receiver, Sender},
+};
 
 /// WebSocket streamer for mouth audio.
 ///
@@ -19,28 +23,53 @@ use tokio::sync::broadcast::{self, Receiver};
 /// Bytes received from the provided [`Receiver`] are forwarded to connected
 /// clients as binary messages. Silence frames are emitted when idle.
 pub struct SpeechStream {
-    tts_rx: Arc<tokio::sync::Mutex<Receiver<Bytes>>>,
+    tts_rx: Arc<Mutex<Receiver<Bytes>>>,
+    text_rx: Arc<Mutex<Receiver<String>>>,
+    heard_tx: Sender<String>,
 }
 
 impl SpeechStream {
-    /// Create a new streamer from the given broadcast receiver.
-    pub fn new(rx: Receiver<Bytes>) -> Self {
+    /// Create a new streamer from the given broadcast receivers.
+    pub fn new(audio_rx: Receiver<Bytes>, text_rx: Receiver<String>) -> Self {
+        let (heard_tx, _) = broadcast::channel(32);
         Self {
-            tts_rx: Arc::new(tokio::sync::Mutex::new(rx)),
+            tts_rx: Arc::new(Mutex::new(audio_rx)),
+            text_rx: Arc::new(Mutex::new(text_rx)),
+            heard_tx,
         }
     }
 
-    /// Build an [`axum::Router`] exposing the WebSocket streaming route.
+    /// Build an [`axum::Router`] exposing the WebSocket streaming routes.
     pub fn router(self: Arc<Self>) -> Router {
-        Router::new().route("/", get(Self::index)).route(
-            "/ws/audio/out",
-            get({
-                let stream = self.clone();
-                move |ws: WebSocketUpgrade| async move {
-                    ws.on_upgrade(move |sock| stream.clone().stream_audio(sock))
-                }
-            }),
-        )
+        Router::new()
+            .route("/", get(Self::index))
+            .route(
+                "/ws/audio/out",
+                get({
+                    let stream = self.clone();
+                    move |ws: WebSocketUpgrade| async move {
+                        ws.on_upgrade(move |sock| stream.clone().stream_audio(sock))
+                    }
+                }),
+            )
+            .route(
+                "/ws/audio/text/out",
+                get({
+                    let stream = self.clone();
+                    move |ws: WebSocketUpgrade| async move {
+                        ws.on_upgrade(move |sock| stream.clone().stream_text(sock))
+                    }
+                }),
+            )
+            .route(
+                "/ws/audio/self/in",
+                get({
+                    let stream = self.clone();
+                    move |ws: WebSocketUpgrade| async move {
+                        ws.on_upgrade(move |sock| stream.clone().receive_heard(sock))
+                    }
+                }),
+            )
     }
 
     async fn index() -> impl IntoResponse {
@@ -64,6 +93,38 @@ impl SpeechStream {
                 Err(broadcast::error::RecvError::Closed) => break,
             }
         }
+    }
+
+    async fn stream_text(self: Arc<Self>, mut socket: WebSocket) {
+        let rx = self.text_rx.clone();
+        let mut rx = rx.lock().await;
+        while let Ok(text) = rx.recv().await {
+            if socket.send(Message::Text(text)).await.is_err() {
+                break;
+            }
+        }
+    }
+
+    async fn receive_heard(self: Arc<Self>, mut socket: WebSocket) {
+        while let Some(Ok(msg)) = socket.next().await {
+            match msg {
+                Message::Text(t) => {
+                    let _ = self.heard_tx.send(t);
+                }
+                Message::Binary(b) => {
+                    if let Ok(t) = String::from_utf8(b) {
+                        let _ = self.heard_tx.send(t);
+                    }
+                }
+                Message::Close(_) => break,
+                _ => {}
+            }
+        }
+    }
+
+    /// Subscribe to heard-back text messages.
+    pub fn subscribe_heard(&self) -> Receiver<String> {
+        self.heard_tx.subscribe()
     }
 }
 
@@ -89,7 +150,8 @@ mod tests {
     #[tokio::test]
     async fn streams_bytes_to_client() {
         let (tx, rx) = broadcast::channel(4);
-        let stream = Arc::new(SpeechStream::new(rx));
+        let (_txt_tx, txt_rx) = broadcast::channel(4);
+        let stream = Arc::new(SpeechStream::new(rx, txt_rx));
         let addr = start_server(stream.clone()).await;
         let url = format!("ws://{addr}/ws/audio/out");
         let (mut ws, _) = connect_async(url).await.unwrap();
@@ -103,7 +165,8 @@ mod tests {
     #[tokio::test]
     async fn serves_index_html() {
         let (_tx, rx) = broadcast::channel(1);
-        let stream = Arc::new(SpeechStream::new(rx));
+        let (_t, txt_rx) = broadcast::channel(1);
+        let stream = Arc::new(SpeechStream::new(rx, txt_rx));
         let app = stream.router();
         let req = Request::builder().uri("/").body(Body::empty()).unwrap();
         let resp = app.oneshot(req).await.unwrap();
@@ -119,7 +182,8 @@ mod tests {
     #[tokio::test]
     async fn upgrades_via_router() {
         let (_tx, rx) = broadcast::channel(1);
-        let stream = Arc::new(SpeechStream::new(rx));
+        let (_t, txt_rx) = broadcast::channel(1);
+        let stream = Arc::new(SpeechStream::new(rx, txt_rx));
         let addr = start_server(stream).await;
         let url = format!("ws://{addr}/ws/audio/out");
         let (_ws, _) = connect_async(url).await.unwrap();
@@ -129,7 +193,8 @@ mod tests {
     #[tokio::test]
     async fn does_not_emit_when_idle() {
         let (_tx, rx) = broadcast::channel(1);
-        let stream = Arc::new(SpeechStream::new(rx));
+        let (_t, txt_rx) = broadcast::channel(1);
+        let stream = Arc::new(SpeechStream::new(rx, txt_rx));
         let addr = start_server(stream.clone()).await;
         let url = format!("ws://{addr}/ws/audio/out");
         let (mut ws, _) = connect_async(url).await.unwrap();
@@ -142,7 +207,8 @@ mod tests {
     #[tokio::test]
     async fn continues_after_lagged_message() {
         let (tx, rx) = broadcast::channel(4);
-        let stream = Arc::new(SpeechStream::new(rx));
+        let (_t, txt_rx) = broadcast::channel(4);
+        let stream = Arc::new(SpeechStream::new(rx, txt_rx));
         let addr = start_server(stream.clone()).await;
         let url = format!("ws://{addr}/ws/audio/out");
         let (mut ws, _) = connect_async(url).await.unwrap();

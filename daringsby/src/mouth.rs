@@ -26,18 +26,21 @@ pub struct Mouth {
     base_url: String,
     language_id: Option<String>,
     tx: Sender<Bytes>,
+    text_tx: Sender<String>,
     queue: Arc<TokioMutex<()>>,
 }
 
 impl Default for Mouth {
     fn default() -> Self {
         let (tx, _) = broadcast::channel(64);
+        let (text_tx, _) = broadcast::channel(64);
         let queue = Arc::new(TokioMutex::new(()));
         Self {
             client: reqwest::Client::new(),
             base_url: "http://localhost:5002".into(),
             language_id: None,
             tx,
+            text_tx,
             queue,
         }
     }
@@ -47,12 +50,14 @@ impl Mouth {
     /// Creates a mouth with the given base URL and optional language.
     pub fn new(base_url: impl Into<String>, language_id: Option<String>) -> Self {
         let (tx, _) = broadcast::channel(64);
+        let (text_tx, _) = broadcast::channel(64);
         let queue = Arc::new(TokioMutex::new(()));
         Self {
             client: reqwest::Client::new(),
             base_url: base_url.into(),
             language_id,
             tx,
+            text_tx,
             queue,
         }
     }
@@ -60,6 +65,11 @@ impl Mouth {
     /// Subscribes to the audio stream.
     pub fn subscribe(&self) -> Receiver<Bytes> {
         self.tx.subscribe()
+    }
+
+    /// Subscribes to the text stream for spoken sentences.
+    pub fn subscribe_text(&self) -> Receiver<String> {
+        self.text_tx.subscribe()
     }
 
     /// Convert a WAV byte buffer to 16-bit PCM bytes.
@@ -152,6 +162,7 @@ impl Motor for Mouth {
         let lang = lang.clone();
         let base = self.base_url.clone();
         let tx = self.tx.clone();
+        let text_tx = self.text_tx.clone();
         let queue = self.queue.clone();
         tokio::spawn(async move {
             let _guard = queue.lock().await;
@@ -169,6 +180,7 @@ impl Motor for Mouth {
                 }
                 for sent in sents {
                     trace!(%sent, "tts sentence");
+                    let _ = text_tx.send(sent.clone());
                     let url = match Mouth::tts_url(&base, &sent, &speaker_id, &lang) {
                         Ok(u) => u,
                         Err(e) => {
@@ -193,6 +205,7 @@ impl Motor for Mouth {
             }
             if !buf.trim().is_empty() {
                 trace!(sentence = %buf, "tts final sentence");
+                let _ = text_tx.send(buf.clone());
                 let url = match Mouth::tts_url(&base, &buf, &speaker_id, &lang) {
                     Ok(u) => u,
                     Err(e) => {
