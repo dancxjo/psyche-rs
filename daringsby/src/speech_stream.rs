@@ -10,38 +10,15 @@ use std::sync::Arc;
 use tokio::sync::broadcast::Receiver;
 
 const SAMPLE_RATE: u32 = 16_000;
-const CHANNELS: u16 = 1;
-const BITS_PER_SAMPLE: u16 = 16;
 const FRAME_MS: usize = 10;
 const SILENCE_BYTES: usize = (SAMPLE_RATE as usize / 1000 * FRAME_MS) * 2;
 static SILENCE: Lazy<[u8; SILENCE_BYTES]> = Lazy::new(|| [0u8; SILENCE_BYTES]);
-static WAV_HEADER: Lazy<[u8; 44]> = Lazy::new(wav_header);
-
-fn wav_header() -> [u8; 44] {
-    let mut h = [0u8; 44];
-    h[0..4].copy_from_slice(b"RIFF");
-    h[4..8].copy_from_slice(&u32::MAX.to_le_bytes());
-    h[8..12].copy_from_slice(b"WAVE");
-    h[12..16].copy_from_slice(b"fmt ");
-    h[16..20].copy_from_slice(&16u32.to_le_bytes());
-    h[20..22].copy_from_slice(&1u16.to_le_bytes());
-    h[22..24].copy_from_slice(&CHANNELS.to_le_bytes());
-    h[24..28].copy_from_slice(&SAMPLE_RATE.to_le_bytes());
-    let byte_rate = SAMPLE_RATE * CHANNELS as u32 * (BITS_PER_SAMPLE as u32 / 8);
-    h[28..32].copy_from_slice(&byte_rate.to_le_bytes());
-    let block_align = CHANNELS * (BITS_PER_SAMPLE / 8);
-    h[32..34].copy_from_slice(&block_align.to_le_bytes());
-    h[34..36].copy_from_slice(&BITS_PER_SAMPLE.to_le_bytes());
-    h[36..40].copy_from_slice(b"data");
-    h[40..44].copy_from_slice(&u32::MAX.to_le_bytes());
-    h
-}
 
 /// HTTP streamer for mouth audio.
 ///
 /// This type exposes a router serving two routes:
 /// - `/` an HTML page with an `<audio>` element.
-/// - `/speech.wav` streaming WAV bytes as they arrive from a TTS backend.
+/// - `/speech.opus` streaming Opus bytes as they arrive from a TTS backend.
 ///
 /// A [`Receiver`] is provided at construction and any bytes received are
 /// forwarded directly to the HTTP client.
@@ -61,7 +38,7 @@ impl SpeechStream {
     pub fn router(self: Arc<Self>) -> Router {
         Router::new()
             .route("/", get(Self::index))
-            .route("/speech.wav", get(move || self.clone().stream_audio()))
+            .route("/speech.opus", get(move || self.clone().stream_audio()))
     }
 
     async fn index() -> impl IntoResponse {
@@ -69,7 +46,7 @@ impl SpeechStream {
 <html lang="en">
 <body>
 <audio controls autoplay>
-  <source src="/speech.wav" type="audio/wav">
+  <source src="/speech.opus" type="audio/ogg">
   Your browser does not support the audio element.
 </audio>
 </body>
@@ -81,7 +58,6 @@ impl SpeechStream {
     async fn stream_audio(self: Arc<Self>) -> Response {
         let rx = self.tts_rx.clone();
         let stream = async_stream::stream! {
-            yield Ok::<Bytes, std::io::Error>(Bytes::from_static(&WAV_HEADER[..]));
             let mut rx = rx.lock().await;
             loop {
                 match tokio::time::timeout(
@@ -101,7 +77,7 @@ impl SpeechStream {
             }
         };
         Response::builder()
-            .header("Content-Type", "audio/wav")
+            .header("Content-Type", "audio/ogg")
             .body(Body::from_stream(stream))
             .unwrap()
     }
@@ -124,14 +100,13 @@ mod tests {
 
         let handle = tokio::spawn(async move {
             let req = Request::builder()
-                .uri("/speech.wav")
+                .uri("/speech.opus")
                 .body(Body::empty())
                 .unwrap();
             let resp = app.oneshot(req).await.unwrap();
             assert_eq!(resp.status(), axum::http::StatusCode::OK);
             let body = resp.into_body().collect().await.unwrap().to_bytes();
-            assert!(body.starts_with(b"RIFF"));
-            assert_eq!(&body[44..], b"A");
+            assert_eq!(body.as_ref(), b"A");
         });
 
         tx.send(Bytes::from_static(b"A")).unwrap();
@@ -149,7 +124,9 @@ mod tests {
         let resp = app.oneshot(req).await.unwrap();
         assert_eq!(resp.status(), axum::http::StatusCode::OK);
         let body = resp.into_body().collect().await.unwrap().to_bytes();
-        assert!(std::str::from_utf8(&body).unwrap().contains("<audio"));
+        let html = std::str::from_utf8(&body).unwrap();
+        assert!(html.contains("<audio"));
+        assert!(html.contains("/speech.opus"));
     }
 
     /// When idle the stream emits silence bytes.
@@ -159,14 +136,15 @@ mod tests {
         let stream = Arc::new(SpeechStream::new(rx));
         let app = stream.router();
         let req = Request::builder()
-            .uri("/speech.wav")
+            .uri("/speech.opus")
             .body(Body::empty())
             .unwrap();
         let resp = app.oneshot(req).await.unwrap();
         assert_eq!(resp.status(), axum::http::StatusCode::OK);
         use futures::StreamExt;
         let mut stream = resp.into_body().into_data_stream();
-        let _header = stream.next().await.unwrap().unwrap();
+        // first chunk is silence when nothing is playing
+        let _first = stream.next().await.unwrap().unwrap();
         let chunk = tokio::time::timeout(std::time::Duration::from_millis(150), stream.next())
             .await
             .unwrap()

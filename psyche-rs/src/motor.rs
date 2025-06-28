@@ -4,7 +4,6 @@ use serde_json::Value;
 use std::collections::HashMap;
 
 use crate::sensation::Sensation;
-use async_trait::async_trait;
 
 /// Represents an action request with streaming body content.
 pub struct Action {
