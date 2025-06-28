@@ -276,7 +276,7 @@ mod tests {
         let sensor = DummySensor;
         let mut stream = will.observe(vec![sensor]).await;
         let mut actions = stream.next().await.unwrap();
-        let mut action = actions.pop().unwrap();
+        let action = actions.pop().unwrap();
         assert_eq!(action.name, "say");
         let chunks: Vec<String> = action.body.collect().await;
         let body: String = chunks.concat();
