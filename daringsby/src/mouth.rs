@@ -34,7 +34,7 @@ pub struct Mouth {
 
 impl Default for Mouth {
     fn default() -> Self {
-        let (tx, _) = broadcast::channel(8);
+        let (tx, _) = broadcast::channel(64);
         let queue = Arc::new(TokioMutex::new(()));
         let playing = Arc::new(AtomicBool::new(false));
         Self::spawn_silence_task(tx.clone(), playing.clone());
@@ -52,7 +52,7 @@ impl Default for Mouth {
 impl Mouth {
     /// Creates a mouth with the given base URL and optional language.
     pub fn new(base_url: impl Into<String>, language_id: Option<String>) -> Self {
-        let (tx, _) = broadcast::channel(8);
+        let (tx, _) = broadcast::channel(64);
         let queue = Arc::new(TokioMutex::new(()));
         let playing = Arc::new(AtomicBool::new(false));
         Self::spawn_silence_task(tx.clone(), playing.clone());
