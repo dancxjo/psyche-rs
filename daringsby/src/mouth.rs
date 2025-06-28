@@ -89,13 +89,15 @@ impl Mouth {
 
     fn tts_url(base: &str, text: &str, speaker_id: &str, language: &str) -> String {
         let base = base.trim_end_matches('/');
-        format!(
-            "{}/api/tts?text={}&speaker_id={}&style_wav=&language_id={}",
+        let r = format!(
+            "{}/api/tts?text={}&speaker_id=p330&style_wav=&language_id={}",
             base,
             encode(text),
-            speaker_id,
+            // speaker_id,
             language
-        )
+        );
+        trace!(%r, "TTS URL");
+        r
     }
 }
 

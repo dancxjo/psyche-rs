@@ -39,10 +39,10 @@ impl SpeechStream {
 
     async fn index() -> impl IntoResponse {
         const INDEX: &str = r#"<!DOCTYPE html>
-<html lang=\"en\">
+<html lang="en">
 <body>
 <audio controls autoplay>
-  <source src=\"/speech.wav\" type=\"audio/mpeg\">
+  <source src="/speech.wav" type="audio/mpeg">
   Your browser does not support the audio element.
 </audio>
 </body>
