@@ -21,7 +21,9 @@ pub use combobulator::Combobulator;
 pub use impression::Impression;
 pub use impression_sensor::ImpressionSensor;
 pub use llm_pool::LLMPool;
-pub use motor::{Action, Completion, Intention, Interruption, Motor, MotorError, Urge};
+pub use motor::{
+    Action, ActionResult, Completion, Intention, Interruption, Motor, MotorError, Urge,
+};
 pub use psyche::Psyche;
 pub use sensation::Sensation;
 pub use sensation_channel_sensor::SensationSensor;
@@ -120,22 +122,25 @@ mod tests {
             log: Arc<Mutex<Vec<String>>>,
         }
 
+        #[async_trait::async_trait]
         impl Motor for RecordingMotor {
             fn description(&self) -> &'static str {
                 "records actions into a vector"
             }
-            fn perform(&self, mut action: Action) -> Result<(), MotorError> {
+            fn name(&self) -> &'static str {
+                "say"
+            }
+            async fn perform(&self, mut action: Action) -> Result<ActionResult, MotorError> {
                 use futures::StreamExt;
-                use futures::executor::block_on;
-                let log = &self.log;
-                block_on(async {
-                    let mut collected = String::new();
-                    while let Some(chunk) = action.body.next().await {
-                        collected.push_str(&chunk);
-                    }
-                    log.lock().unwrap().push(collected);
-                });
-                Ok(())
+                let mut collected = String::new();
+                while let Some(chunk) = action.body.next().await {
+                    collected.push_str(&chunk);
+                }
+                self.log.lock().unwrap().push(collected);
+                Ok(ActionResult {
+                    sensations: Vec::new(),
+                    completed: true,
+                })
             }
         }
 
@@ -152,7 +157,9 @@ mod tests {
                 let text = impression.how.clone();
                 let body = stream::once(async move { text }).boxed();
                 let action = Action::new("say", Value::Null, body);
-                motor.perform(action).unwrap();
+                futures::executor::block_on(async {
+                    motor.perform(action).await.unwrap();
+                });
             }
         }
 

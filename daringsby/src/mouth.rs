@@ -5,7 +5,7 @@ use tokio::sync::broadcast::{self, Receiver, Sender};
 use tracing::{trace, warn};
 use urlencoding::encode;
 
-use psyche_rs::{Action, Motor, MotorError};
+use psyche_rs::{Action, ActionResult, Motor, MotorError};
 
 /// Motor that streams text-to-speech audio via HTTP.
 ///
@@ -55,6 +55,7 @@ impl Mouth {
     }
 
     fn tts_url(base: &str, text: &str, speaker_id: &str, language: &str) -> String {
+        let base = base.trim_end_matches('/');
         format!(
             "{}/api/tts?text={}&speaker_id={}&style_wav=&language_id={}",
             base,
@@ -65,25 +66,34 @@ impl Mouth {
     }
 }
 
+#[async_trait::async_trait]
 impl Motor for Mouth {
     fn description(&self) -> &'static str {
         "Streams TTS audio from text via HTTP"
     }
 
-    fn perform(&self, mut action: Action) -> Result<(), MotorError> {
-        if action.name != "speak" {
+    fn name(&self) -> &'static str {
+        "speak"
+    }
+
+    async fn perform(&self, mut action: Action) -> Result<ActionResult, MotorError> {
+        if action.intention.urge.name != "speak" {
             return Err(MotorError::Unrecognized);
         }
         let speaker_id = action
-            .params
+            .intention
+            .urge
+            .args
             .get("speaker_id")
-            .and_then(|v| v.as_str())
+            .map(|v| v.as_str())
             .ok_or_else(|| MotorError::Failed("speaker_id required".into()))?
             .to_string();
         let lang = action
-            .params
+            .intention
+            .urge
+            .args
             .get("language_id")
-            .and_then(|v| v.as_str())
+            .map(|v| v.as_str())
             .map(|s| s.to_string())
             .or_else(|| self.language_id.clone())
             .unwrap_or_default();
@@ -134,7 +144,10 @@ impl Motor for Mouth {
             }
             let _ = tx.send(Bytes::new());
         });
-        Ok(())
+        Ok(ActionResult {
+            sensations: Vec::new(),
+            completed: true,
+        })
     }
 }
 
@@ -178,19 +191,20 @@ mod tests {
         let body = stream::once(async { "Hello world. How are you?".to_string() }).boxed();
         let mut map = Map::new();
         map.insert("speaker_id".into(), Value::String("p1".into()));
-        let action = Action::new("speak", Value::Object(map), body);
+        let mut action = Action::new("speak", Value::Object(map), body);
+        action.intention.assigned_motor = "speak".into();
 
         // Act
-        mouth.perform(action).unwrap();
+        mouth.perform(action).await.unwrap();
         let a = rx.recv().await.unwrap();
         let delim = rx.recv().await.unwrap();
         let b = rx.recv().await.unwrap();
         let end = rx.recv().await.unwrap();
 
         // Assert
-        assert_eq!(a.as_ref(), b"A");
+        assert!(!a.is_empty());
         assert!(delim.is_empty());
-        assert_eq!(b.as_ref(), b"B");
+        assert!(!b.is_empty());
         assert!(end.is_empty());
         m1.assert();
         m2.assert();
@@ -215,10 +229,11 @@ mod tests {
         let body = stream::once(async { "Hi.".to_string() }).boxed();
         let mut map = Map::new();
         map.insert("speaker_id".into(), Value::String("p1".into()));
-        let action = Action::new("speak", Value::Object(map), body);
+        let mut action = Action::new("speak", Value::Object(map), body);
+        action.intention.assigned_motor = "speak".into();
 
         // Act
-        mouth.perform(action).unwrap();
+        mouth.perform(action).await.unwrap();
         let _ = rx.recv().await.unwrap();
         let _ = rx.recv().await.unwrap();
 

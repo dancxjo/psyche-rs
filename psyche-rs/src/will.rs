@@ -199,7 +199,8 @@ impl<T> Will<T> {
                                                     let closing = format!("</{}>", tag);
                                                     let _ = buf.drain(..caps.get(0).unwrap().end());
                                                     let (btx, brx) = unbounded_channel();
-                                                    let action = Action::new(tag.clone(), Value::Object(map), UnboundedReceiverStream::new(brx).boxed());
+                                                    let mut action = Action::new(tag.clone(), Value::Object(map), UnboundedReceiverStream::new(brx).boxed());
+                                                    action.intention.assigned_motor = tag.clone();
                                                     let _ = tx.send(vec![action]);
                                                     state = Some((tag, closing, btx));
                                                 } else {
@@ -277,7 +278,7 @@ mod tests {
         let mut stream = will.observe(vec![sensor]).await;
         let mut actions = stream.next().await.unwrap();
         let action = actions.pop().unwrap();
-        assert_eq!(action.name, "say");
+        assert_eq!(action.intention.urge.name, "say");
         let chunks: Vec<String> = action.body.collect().await;
         let body: String = chunks.concat();
         assert_eq!(body, "Hello world");
