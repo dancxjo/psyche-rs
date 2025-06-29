@@ -9,7 +9,10 @@ mod impression;
 mod impression_sensor;
 mod llm_client;
 mod llm_pool;
+mod memory_sensor;
+mod memory_store;
 mod motor;
+mod neo_qdrant_store;
 mod psyche;
 mod sensation;
 mod sensation_channel_sensor;
@@ -23,10 +26,13 @@ pub use fair_llm::FairLLM;
 pub use impression::Impression;
 pub use impression_sensor::ImpressionSensor;
 pub use llm_pool::LLMPool;
+pub use memory_sensor::MemorySensor;
+pub use memory_store::{InMemoryStore, MemoryStore, StoredImpression, StoredSensation};
 pub use motor::{
     Action, ActionResult, Completion, Intention, Interruption, Motor, MotorError,
     SensorDirectingMotor,
 };
+pub use neo_qdrant_store::NeoQdrantMemoryStore;
 pub use psyche::Psyche;
 pub use sensation::Sensation;
 pub use sensation_channel_sensor::SensationSensor;
