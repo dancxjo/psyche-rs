@@ -40,6 +40,30 @@ impl Action {
             body,
         }
     }
+
+    /// Consume the entire body as a [`String`], logging each chunk.
+    pub async fn collect_text(&mut self) -> String {
+        use futures::StreamExt;
+        use tracing::{debug, trace};
+
+        let mut out = String::new();
+        while let Some(chunk) = self.body.next().await {
+            trace!(%chunk, "action body chunk");
+            out.push_str(&chunk);
+        }
+        debug!(%out, "action body collected");
+        out
+    }
+
+    /// Iterate over body chunks, yielding them as they arrive with trace logs.
+    pub fn logged_chunks(&mut self) -> impl futures::Stream<Item = String> + '_ {
+        use futures::StreamExt;
+        use tracing::trace;
+
+        self.body
+            .by_ref()
+            .inspect(|c| trace!(%c, "action body chunk"))
+    }
 }
 
 /// A motor capable of performing an action.
@@ -218,7 +242,7 @@ mod tests {
         let body = stream::empty().boxed();
         let mut action = Action::new("test", Value::Null, body);
         assert_eq!(action.name, "test");
-        let none = futures::executor::block_on(async { action.body.next().await });
+        let none = futures::executor::block_on(async { action.logged_chunks().next().await });
         assert!(none.is_none());
     }
 
@@ -227,11 +251,12 @@ mod tests {
         let body = stream::iter(vec!["one".to_string(), "two".to_string()]).boxed();
         let mut action = Action::new("test", Value::Null, body);
         let collected = futures::executor::block_on(async {
-            let mut chunks = Vec::new();
-            while let Some(chunk) = action.body.next().await {
-                chunks.push(chunk);
+            let mut chunks = action.logged_chunks();
+            let mut out = Vec::new();
+            while let Some(c) = chunks.next().await {
+                out.push(c);
             }
-            chunks
+            out
         });
         assert_eq!(collected, vec!["one", "two"]);
     }

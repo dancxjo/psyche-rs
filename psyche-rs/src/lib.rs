@@ -135,11 +135,7 @@ mod tests {
             }
             async fn perform(&self, intention: Intention) -> Result<ActionResult, MotorError> {
                 let mut action = intention.action;
-                use futures::StreamExt;
-                let mut collected = String::new();
-                while let Some(chunk) = action.body.next().await {
-                    collected.push_str(&chunk);
-                }
+                let collected = action.collect_text().await;
                 self.log.lock().unwrap().push(collected);
                 Ok(ActionResult {
                     sensations: Vec::new(),
