@@ -3,6 +3,7 @@ use std::sync::Arc;
 use tokio::sync::Mutex;
 use tracing::{Level, error};
 
+use chrono::Local;
 use futures::{StreamExt, stream};
 use ollama_rs::Ollama;
 use once_cell::sync::Lazy;
@@ -176,7 +177,7 @@ async fn drive_combo_stream(
                 .iter()
                 .map(|imp| Sensation {
                     kind: "impression".into(),
-                    when: chrono::Local::now(),
+                    when: Local::now(),
                     what: imp.how.clone(),
                     source: None,
                 })
