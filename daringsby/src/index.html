@@ -8,6 +8,9 @@ const ctx = new (window.AudioContext || window.webkitAudioContext)({ sampleRate:
 let ws;
 let textWs;
 let heardWs;
+let lookWs;
+let lookVideo;
+let lookCanvas;
 let queue = [];
 let texts = [];
 let playing = false;
@@ -49,7 +52,27 @@ function start() {
   textWs = new WebSocket(`ws://${location.host}/ws/audio/text/out`);
   textWs.onmessage = ev => texts.push(ev.data);
   heardWs = new WebSocket(`ws://${location.host}/ws/audio/self/in`);
+  lookWs = new WebSocket(`ws://${location.host}/ws/look/in`);
+  lookWs.binaryType = 'arraybuffer';
+  lookWs.onmessage = ev => {
+    if (ev.data === 'snap') capture();
+  };
+  navigator.mediaDevices.getUserMedia({ video: true }).then(s => {
+    lookVideo = document.createElement('video');
+    lookVideo.srcObject = s;
+    lookVideo.play();
+    lookCanvas = document.createElement('canvas');
+  });
   document.getElementById('start').style.display = 'none';
+}
+
+function capture() {
+  if (!lookVideo) return;
+  lookCanvas.width = lookVideo.videoWidth;
+  lookCanvas.height = lookVideo.videoHeight;
+  const ctx2d = lookCanvas.getContext('2d');
+  ctx2d.drawImage(lookVideo, 0, 0);
+  lookCanvas.toBlob(b => b && b.arrayBuffer().then(buf => lookWs.send(buf)), 'image/jpeg', 0.8);
 }
 
 document.getElementById('start').addEventListener('click', start);

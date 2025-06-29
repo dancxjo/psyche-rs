@@ -9,15 +9,13 @@ use ollama_rs::Ollama;
 use once_cell::sync::Lazy;
 use psyche_rs::{
     Action, Combobulator, Impression, ImpressionSensor, LLMClient, LLMPool, Motor, OllamaLLM,
-    Sensor, Wit,
+    Sensation, SensationSensor, Sensor, Wit,
 };
-#[cfg(feature = "moment-feedback")]
-use psyche_rs::{Sensation, SensationSensor};
 use serde_json::{Map, Value};
 
 use daringsby::{
-    DevelopmentStatus, HeardSelfSensor, Heartbeat, LoggingMotor, Mouth, SelfDiscovery,
-    SourceDiscovery, SpeechStream,
+    DevelopmentStatus, HeardSelfSensor, Heartbeat, LoggingMotor, LookMotor, LookStream, Mouth,
+    SelfDiscovery, SourceDiscovery, SpeechStream,
 };
 use std::net::SocketAddr;
 
@@ -73,7 +71,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let audio_rx = mouth.subscribe();
     let text_rx = mouth.subscribe_text();
     let stream = Arc::new(SpeechStream::new(audio_rx, text_rx));
-    let app = stream.clone().router();
+    let vision = Arc::new(LookStream::default());
+    let app = stream.clone().router().merge(vision.clone().router());
     let addr: SocketAddr = format!("{}:{}", args.host, args.port).parse()?;
     tokio::spawn(async move {
         tracing::info!(%addr, "serving speech stream");
@@ -82,9 +81,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     });
 
     let mut quick = Wit::new(llm.clone()).prompt(QUICK_PROMPT).delay_ms(1000);
-    let mut combob = Combobulator::new(llm).prompt(COMBO_PROMPT).delay_ms(1000);
+    let mut combob = Combobulator::new(llm.clone())
+        .prompt(COMBO_PROMPT)
+        .delay_ms(1000);
 
     let (tx, rx) = unbounded_channel::<Vec<Impression<String>>>();
+    let (look_tx, look_rx) = unbounded_channel::<Vec<Sensation<String>>>();
     #[cfg(feature = "moment-feedback")]
     let (sens_tx, sens_rx) = unbounded_channel::<Vec<Sensation<String>>>();
 
@@ -95,6 +97,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         Box::new(DevelopmentStatus) as Box<dyn Sensor<String> + Send>,
         Box::new(SourceDiscovery) as Box<dyn Sensor<String> + Send>,
         Box::new(HeardSelfSensor::new(stream.subscribe_heard())) as Box<dyn Sensor<String> + Send>,
+        Box::new(SensationSensor::new(look_rx)) as Box<dyn Sensor<String> + Send>,
     ];
     #[cfg(feature = "moment-feedback")]
     sensors.push(Box::new(SensationSensor::new(sens_rx)));
@@ -103,6 +106,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let sensor = ImpressionSensor::new(rx);
     let mut combo_stream = combob.observe(vec![sensor]).await;
     let logger = Arc::new(LoggingMotor);
+    let looker = Arc::new(LookMotor::new(vision.clone(), llm.clone(), look_tx));
 
     let q_instant = INSTANT.clone();
     tokio::spawn(async move {
@@ -116,6 +120,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     {
         let logger_task = logger.clone();
         let mouth_task = mouth.clone();
+        let looker_task = looker.clone();
         tokio::spawn(async move {
             while let Some(imps) = combo_stream.next().await {
                 *MOMENT.lock().unwrap() = imps.clone();
@@ -137,6 +142,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     action.intention.assigned_motor = "log".into();
                     logger_task.perform(action).await.unwrap();
 
+                    if text.contains("<look/>") {
+                        let mut l = Action::new("look", Value::Null, stream::empty().boxed());
+                        l.intention.assigned_motor = "look".into();
+                        looker_task.perform(l).await.unwrap();
+                    }
+
                     let mut map = Map::new();
                     map.insert("speaker_id".into(), Value::String("p234".into()));
                     let speak_text = text;
@@ -153,6 +164,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     {
         let logger_task = logger.clone();
         let mouth_task = mouth.clone();
+        let looker_task = looker.clone();
         tokio::spawn(async move {
             while let Some(imps) = combo_stream.next().await {
                 for imp in imps {
@@ -162,6 +174,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     let mut action = Action::new("log", Value::Null, body);
                     action.intention.assigned_motor = "log".into();
                     logger_task.perform(action).await.unwrap();
+
+                    if text.contains("<look/>") {
+                        let mut l = Action::new("look", Value::Null, stream::empty().boxed());
+                        l.intention.assigned_motor = "look".into();
+                        looker_task.perform(l).await.unwrap();
+                    }
 
                     let mut map = Map::new();
                     map.insert("speaker_id".into(), Value::String("p234".into()));
