@@ -24,6 +24,7 @@ pub mod source_tree_motor;
 pub mod speech_segment;
 pub mod speech_stream;
 
+pub mod logger;
 pub mod motors;
 pub mod sensors;
 pub mod streams;

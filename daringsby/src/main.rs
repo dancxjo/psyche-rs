@@ -1,7 +1,7 @@
 use clap::Parser;
+use daringsby::logger;
 use std::sync::Arc;
 use tokio::sync::Mutex;
-use tracing::Level;
 
 #[cfg(feature = "moment-feedback")]
 use chrono::Local;
@@ -60,9 +60,7 @@ struct Args {
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    tracing_subscriber::fmt()
-        .with_max_level(Level::DEBUG)
-        .init();
+    logger::init();
     let args = Args::parse();
     use tokio::sync::mpsc::unbounded_channel;
 
