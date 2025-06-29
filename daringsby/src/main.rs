@@ -16,6 +16,8 @@ use psyche_rs::{
 
 #[cfg(feature = "development-status-sensor")]
 use daringsby::DevelopmentStatus;
+#[cfg(feature = "self-discovery-sensor")]
+use daringsby::SelfDiscovery;
 #[cfg(feature = "source-discovery-sensor")]
 use daringsby::SourceDiscovery;
 use daringsby::{
