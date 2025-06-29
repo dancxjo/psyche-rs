@@ -59,7 +59,6 @@ default = [
     "source-read-motor",
     "source-search-motor",
     "source-tree-motor",
-    "development-status-sensor",
     "heard-self-sensor",
     "heartbeat-sensor",
 ]
