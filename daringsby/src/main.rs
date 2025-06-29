@@ -16,7 +16,8 @@ use psyche_rs::{Sensation, SensationSensor};
 use serde_json::{Map, Value};
 
 use daringsby::{
-    HeardSelfSensor, Heartbeat, LoggingMotor, Mouth, SelfDiscovery, SourceDiscovery, SpeechStream,
+    DevelopmentStatus, HeardSelfSensor, Heartbeat, LoggingMotor, Mouth, SelfDiscovery,
+    SourceDiscovery, SpeechStream,
 };
 use std::net::SocketAddr;
 
@@ -91,6 +92,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut sensors: Vec<Box<dyn Sensor<String> + Send>> = vec![
         Box::new(Heartbeat) as Box<dyn Sensor<String> + Send>,
         Box::new(SelfDiscovery) as Box<dyn Sensor<String> + Send>,
+        Box::new(DevelopmentStatus) as Box<dyn Sensor<String> + Send>,
         Box::new(SourceDiscovery) as Box<dyn Sensor<String> + Send>,
         Box::new(HeardSelfSensor::new(stream.subscribe_heard())) as Box<dyn Sensor<String> + Send>,
     ];
