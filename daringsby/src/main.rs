@@ -14,10 +14,13 @@ use psyche_rs::{
     Sensation, SensationSensor, Sensor, Wit,
 };
 
-use daringsby::{
-    DevelopmentStatus, HeardSelfSensor, Heartbeat, LoggingMotor, LookMotor, LookStream, Mouth,
-    SelfDiscovery, SourceDiscovery, SpeechStream,
-};
+#[cfg(all(feature = "petes_sensors", feature = "source-discovery"))]
+use daringsby::SourceDiscovery;
+#[cfg(feature = "petes_sensors")]
+use daringsby::{DevelopmentStatus, HeardSelfSensor, Heartbeat, SelfDiscovery};
+#[cfg(feature = "petes_motors")]
+use daringsby::{LoggingMotor, LookMotor, Mouth};
+use daringsby::{LookStream, SpeechStream};
 use std::net::SocketAddr;
 
 const QUICK_PROMPT: &str = include_str!("quick_prompt.txt");
@@ -71,12 +74,19 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .collect();
     let llm = Arc::new(LLMPool::new(clients));
 
+    #[cfg(feature = "petes_motors")]
     let mouth = Arc::new(Mouth::new(args.tts_url.clone(), args.language_id));
+    #[cfg(feature = "petes_motors")]
     let audio_rx = mouth.subscribe();
+    #[cfg(feature = "petes_motors")]
     let text_rx = mouth.subscribe_text();
+    #[cfg(feature = "petes_motors")]
     let stream = Arc::new(SpeechStream::new(audio_rx, text_rx));
     let vision = Arc::new(LookStream::default());
+    #[cfg(feature = "petes_motors")]
     let app = stream.clone().router().merge(vision.clone().router());
+    #[cfg(not(feature = "petes_motors"))]
+    let app = vision.clone().router();
     let addr: SocketAddr = format!("{}:{}", args.host, args.port).parse()?;
     tokio::spawn(async move {
         tracing::info!(%addr, "serving speech stream");
@@ -97,22 +107,34 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let (sens_tx, sens_rx) = unbounded_channel::<Vec<Sensation<String>>>();
 
     #[cfg_attr(not(feature = "moment-feedback"), allow(unused_mut))]
-    let mut sensors: Vec<Box<dyn Sensor<String> + Send>> = vec![
-        Box::new(Heartbeat) as Box<dyn Sensor<String> + Send>,
-        Box::new(SelfDiscovery) as Box<dyn Sensor<String> + Send>,
-        Box::new(DevelopmentStatus) as Box<dyn Sensor<String> + Send>,
-        Box::new(SourceDiscovery) as Box<dyn Sensor<String> + Send>,
-        Box::new(HeardSelfSensor::new(stream.subscribe_heard())) as Box<dyn Sensor<String> + Send>,
-        Box::new(SensationSensor::new(look_rx)) as Box<dyn Sensor<String> + Send>,
-    ];
+    let mut sensors: Vec<Box<dyn Sensor<String> + Send>> = Vec::new();
+    #[cfg(feature = "petes_sensors")]
+    {
+        sensors.push(Box::new(Heartbeat) as Box<dyn Sensor<String> + Send>);
+        sensors.push(Box::new(SelfDiscovery) as Box<dyn Sensor<String> + Send>);
+        sensors.push(Box::new(DevelopmentStatus) as Box<dyn Sensor<String> + Send>);
+    }
+    #[cfg(all(feature = "petes_sensors", feature = "source-discovery"))]
+    {
+        sensors.push(Box::new(SourceDiscovery) as Box<dyn Sensor<String> + Send>);
+    }
+    #[cfg(feature = "petes_sensors")]
+    {
+        sensors.push(Box::new(HeardSelfSensor::new(stream.subscribe_heard()))
+            as Box<dyn Sensor<String> + Send>);
+    }
+    sensors.push(Box::new(SensationSensor::new(look_rx)) as Box<dyn Sensor<String> + Send>);
     #[cfg(feature = "moment-feedback")]
     sensors.push(Box::new(SensationSensor::new(sens_rx)));
 
     let mut quick_stream = quick.observe(sensors).await;
     let sensor = ImpressionSensor::new(rx);
     let combo_stream = combob.observe(vec![sensor]).await;
+    #[cfg(feature = "petes_motors")]
     let logger = Arc::new(LoggingMotor);
+    #[cfg(feature = "petes_motors")]
     let looker = Arc::new(LookMotor::new(vision.clone(), llm.clone(), look_tx));
+    #[cfg(feature = "petes_motors")]
     let speaker_id = args.speaker_id.clone();
 
     let q_instant = INSTANT.clone();
@@ -125,7 +147,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
     });
 
-    #[cfg(feature = "moment-feedback")]
+    #[cfg(all(feature = "moment-feedback", feature = "petes_motors"))]
     {
         let moment = MOMENT.clone();
         tokio::spawn(drive_combo_stream(
@@ -139,7 +161,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         ));
     }
 
-    #[cfg(not(feature = "moment-feedback"))]
+    #[cfg(all(not(feature = "moment-feedback"), feature = "petes_motors"))]
     {
         tokio::spawn(drive_combo_stream(
             combo_stream,
@@ -154,6 +176,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     Ok(())
 }
 
+#[cfg(feature = "petes_motors")]
 async fn drive_combo_stream(
     mut combo_stream: impl futures::Stream<Item = Vec<Impression<Impression<String>>>>
     + Unpin
@@ -213,4 +236,21 @@ async fn drive_combo_stream(
             }
         }
     }
+}
+
+#[cfg(not(feature = "petes_motors"))]
+async fn drive_combo_stream<St>(
+    _combo_stream: St,
+    _logger: Arc<LoggingMotor>,
+    _mouth: Arc<Mouth>,
+    _looker: Arc<LookMotor>,
+    _speaker_id: String,
+    #[cfg(feature = "moment-feedback")] _sens_tx: tokio::sync::mpsc::UnboundedSender<
+        Vec<Sensation<String>>,
+    >,
+    #[cfg(feature = "moment-feedback")] _moment: Arc<Mutex<Vec<Impression<Impression<String>>>>>,
+) where
+    St: futures::Stream<Item = Vec<Impression<Impression<String>>>> + Unpin + Send + 'static,
+{
+    // no-op when motors are disabled
 }

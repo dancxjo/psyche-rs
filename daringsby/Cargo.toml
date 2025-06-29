@@ -40,4 +40,8 @@ tower = { version = "0.4", features = ["util"] }
 tokio-tungstenite = "0.21"
 
 [features]
+default = ["petes_motors", "petes_sensors"]
 moment-feedback = []
+petes_motors = []
+petes_sensors = []
+source-discovery = []
