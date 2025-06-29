@@ -133,7 +133,8 @@ mod tests {
             fn name(&self) -> &'static str {
                 "say"
             }
-            async fn perform(&self, mut action: Action) -> Result<ActionResult, MotorError> {
+            async fn perform(&self, mut intention: Intention) -> Result<ActionResult, MotorError> {
+                let mut action = intention.action;
                 use futures::StreamExt;
                 let mut collected = String::new();
                 while let Some(chunk) = action.body.next().await {
@@ -162,8 +163,9 @@ mod tests {
                 let text = impression.how.clone();
                 let body = stream::once(async move { text }).boxed();
                 let action = Action::new("say", Value::Null, body);
+                let intention = Intention::to(action).assign("say");
                 futures::executor::block_on(async {
-                    motor.perform(action).await.unwrap();
+                    motor.perform(intention).await.unwrap();
                 });
             }
         }

@@ -3,7 +3,7 @@ use chrono::Local;
 use include_dir::{Dir, include_dir};
 use tokio::sync::mpsc::UnboundedSender;
 
-use psyche_rs::{Action, ActionResult, Motor, MotorError, Sensation, SensorDirectingMotor};
+use psyche_rs::{ActionResult, Intention, Motor, MotorError, Sensation, SensorDirectingMotor};
 
 static DARINGSBY_SRC_DIR: Dir = include_dir!("$CARGO_MANIFEST_DIR/src");
 static PSYCHE_SRC_DIR: Dir = include_dir!("$CARGO_MANIFEST_DIR/../psyche-rs/src");
@@ -67,12 +67,12 @@ impl Motor for SourceSearchMotor {
         "search_source"
     }
 
-    async fn perform(&self, action: Action) -> Result<ActionResult, MotorError> {
-        if action.intention.name != "search_source" {
+    async fn perform(&self, intention: Intention) -> Result<ActionResult, MotorError> {
+        if intention.action.name != "search_source" {
             return Err(MotorError::Unrecognized);
         }
+        let action = intention.action;
         let query = action
-            .intention
             .params
             .get("query")
             .and_then(|v| v.as_str())

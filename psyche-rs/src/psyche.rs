@@ -6,7 +6,7 @@ use futures::{
 };
 use tracing::{debug, info, warn};
 
-use crate::{Action, ActionResult, Intention, Motor, MotorError, Sensation, Sensor, Will, Wit};
+use crate::{ActionResult, Intention, Motor, MotorError, Sensation, Sensor, Will, Wit};
 
 /// Sensor wrapper enabling shared ownership.
 struct SharedSensor<T> {
@@ -161,17 +161,17 @@ where
                     // Impressions are currently ignored by the psyche. Motors
                     // are only activated by actions produced through the Will.
                 }
-                Some(actions) = merged_wills.next() => {
-                    for action in actions {
-                        debug!(?action, "Psyche received action");
-                        let target = action.intention.assigned_motor.clone();
+                Some(intentions) = merged_wills.next() => {
+                    for intention in intentions {
+                        debug!(?intention, "Psyche received intention");
+                        let target = intention.assigned_motor.clone();
                         if let Some(motor) = self.motors.iter().find(|m| m.name() == target) {
-                            debug!(target_motor = %motor.name(), "Psyche matched action to motor");
-                            if let Err(e) = motor.perform(action).await {
+                            debug!(target_motor = %motor.name(), "Psyche matched intention to motor");
+                            if let Err(e) = motor.perform(intention).await {
                                 debug!(?e, "motor action failed");
                             }
                         } else {
-                            warn!(?action, "Psyche could not match motor for action");
+                            warn!(?intention, "Psyche could not match motor for intention");
                         }
                     }
                 }
@@ -209,7 +209,7 @@ mod tests {
         fn name(&self) -> &'static str {
             "log"
         }
-        async fn perform(&self, _action: Action) -> Result<ActionResult, MotorError> {
+        async fn perform(&self, _intention: Intention) -> Result<ActionResult, MotorError> {
             self.0.fetch_add(1, Ordering::SeqCst);
             Ok(ActionResult {
                 sensations: Vec::new(),
@@ -326,7 +326,7 @@ mod tests {
             fn name(&self) -> &'static str {
                 self.1
             }
-            async fn perform(&self, _action: Action) -> Result<ActionResult, MotorError> {
+            async fn perform(&self, _intention: Intention) -> Result<ActionResult, MotorError> {
                 self.0.fetch_add(1, Ordering::SeqCst);
                 Ok(ActionResult::default())
             }
@@ -396,7 +396,7 @@ mod tests {
             fn name(&self) -> &'static str {
                 self.1
             }
-            async fn perform(&self, _action: Action) -> Result<ActionResult, MotorError> {
+            async fn perform(&self, _intention: Intention) -> Result<ActionResult, MotorError> {
                 self.0.fetch_add(1, Ordering::SeqCst);
                 Ok(ActionResult::default())
             }

@@ -7,7 +7,7 @@ use std::sync::Arc;
 use tokio::sync::mpsc::UnboundedSender;
 use tracing::{debug, trace};
 
-use psyche_rs::{Action, ActionResult, LLMClient, Motor, MotorError, Sensation};
+use psyche_rs::{ActionResult, Intention, LLMClient, Motor, MotorError, Sensation};
 
 use crate::look_stream::LookStream;
 
@@ -39,10 +39,11 @@ impl Motor for LookMotor {
         "look"
     }
 
-    async fn perform(&self, action: Action) -> Result<ActionResult, MotorError> {
-        if action.intention.name != "look" {
+    async fn perform(&self, mut intention: Intention) -> Result<ActionResult, MotorError> {
+        if intention.action.name != "look" {
             return Err(MotorError::Unrecognized);
         }
+        let mut action = intention.action;
         self.stream.request_snap();
         let mut rx = self.stream.subscribe();
         let img = rx

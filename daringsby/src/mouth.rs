@@ -9,7 +9,7 @@ use tokio::sync::broadcast::{self, Receiver, Sender};
 use tracing::{error, trace};
 
 use crate::speech_segment::SpeechSegment;
-use psyche_rs::{Action, ActionResult, Motor, MotorError};
+use psyche_rs::{Action, ActionResult, Intention, Motor, MotorError};
 
 /// Motor that streams text-to-speech audio via HTTP.
 ///
@@ -150,12 +150,12 @@ impl Motor for Mouth {
         "say"
     }
 
-    async fn perform(&self, mut action: Action) -> Result<ActionResult, MotorError> {
-        if action.intention.name != "say" {
+    async fn perform(&self, mut intention: Intention) -> Result<ActionResult, MotorError> {
+        if intention.action.name != "say" {
             return Err(MotorError::Unrecognized);
         }
+        let mut action = intention.action;
         let speaker_id = action
-            .intention
             .params
             .get("speaker_id")
             .and_then(|v| v.as_str())
@@ -163,7 +163,6 @@ impl Motor for Mouth {
             .or_else(|| Some("p234".into()))
             .unwrap_or_default();
         let lang = action
-            .intention
             .params
             .get("language_id")
             .and_then(|v| v.as_str())
@@ -332,11 +331,11 @@ mod tests {
         let body = stream::once(async { "Hello world. How are you?".to_string() }).boxed();
         let mut map = Map::new();
         map.insert("speaker_id".into(), Value::String("p234".into()));
-        let mut action = Action::new("say", Value::Object(map), body);
-        action.intention.assigned_motor = "say".into();
+        let action = Action::new("say", Value::Object(map), body);
+        let intention = Intention::to(action).assign("say");
 
         // Act
-        mouth.perform(action).await.unwrap();
+        mouth.perform(intention).await.unwrap();
         let a = rx.recv().await.unwrap();
         let delim = rx.recv().await.unwrap();
         let b = rx.recv().await.unwrap();
@@ -370,11 +369,11 @@ mod tests {
         let body = stream::once(async { "Hi.".to_string() }).boxed();
         let mut map = Map::new();
         map.insert("speaker_id".into(), Value::String("p234".into()));
-        let mut action = Action::new("say", Value::Object(map), body);
-        action.intention.assigned_motor = "say".into();
+        let action = Action::new("say", Value::Object(map), body);
+        let intention = Intention::to(action).assign("say");
 
         // Act
-        mouth.perform(action).await.unwrap();
+        mouth.perform(intention).await.unwrap();
         let _ = rx.recv().await.unwrap();
         let _ = rx.recv().await.unwrap();
 
@@ -409,11 +408,11 @@ mod tests {
         let mouth = Mouth::new(server.url(""), None);
         let mut rx = mouth.subscribe();
         let body = stream::once(async { "Hi.".to_string() }).boxed();
-        let mut action = Action::new("say", Map::new().into(), body);
-        action.intention.assigned_motor = "say".into();
+        let action = Action::new("say", Map::new().into(), body);
+        let intention = Intention::to(action).assign("say");
 
         // Act
-        mouth.perform(action).await.unwrap();
+        mouth.perform(intention).await.unwrap();
         let mut pcm = rx.recv().await.unwrap();
         while pcm.iter().all(|b| *b == 0) {
             pcm = rx.recv().await.unwrap();
@@ -451,9 +450,9 @@ mod tests {
         let mouth = Mouth::new(server.url(""), None);
         let mut seg_rx = mouth.subscribe_segments();
         let body = stream::once(async { "Hi.".to_string() }).boxed();
-        let mut action = Action::new("say", Map::new().into(), body);
-        action.intention.assigned_motor = "say".into();
-        mouth.perform(action).await.unwrap();
+        let action = Action::new("say", Map::new().into(), body);
+        let intention = Intention::to(action).assign("say");
+        mouth.perform(intention).await.unwrap();
         let seg = seg_rx.recv().await.unwrap();
         assert_eq!(seg.text, "Hi.");
         let decoded = seg.decode_audio().unwrap();
