@@ -9,12 +9,25 @@
 </head>
 <body class="container">
 <button id="start" class="secondary">Start</button>
+<form id="message-form" role="form">
+  <label for="message-input">Message:</label>
+  <input
+    type="text"
+    id="message-input"
+    name="message"
+    required
+    autofocus
+    autocomplete="off"
+  />
+  <button type="submit">Send</button>
+</form>
 <canvas id="drawing-area" class="container" width="640" height="480"></canvas>
 <script>
 const SAMPLE_RATE = 22050;
 const ctx = new (window.AudioContext || window.webkitAudioContext)({ sampleRate: SAMPLE_RATE });
 let segWs;
 let heardWs;
+let userWs;
 let lookWs;
 let lookVideo;
 let lookCanvas;
@@ -46,6 +59,16 @@ function sendHeard() {
   }
   pendingText = null;
   console.log("Queue length", queue.length, "Texts length", texts.length);
+}
+
+function sendMessage(ev) {
+  ev.preventDefault();
+  const input = document.getElementById('message-input');
+  const text = input.value.trim();
+  if (text && userWs && userWs.readyState === WebSocket.OPEN) {
+    userWs.send(text);
+  }
+  input.value = '';
 }
 
 function play() {
@@ -90,6 +113,10 @@ function start() {
   heardWs.onopen = () => console.log("heardWs connected");
   heardWs.onerror = e => console.error("heardWs error", e);
   heardWs.onclose = () => console.warn("heardWs closed");
+  userWs = openSocket(userWs, `ws://${location.host}/speech-text-user-in`);
+  userWs.onopen = () => console.log('userWs connected');
+  userWs.onerror = e => console.error('userWs error', e);
+  userWs.onclose = () => console.warn('userWs closed');
   lookWs = openSocket(lookWs, `ws://${location.host}/vision-jpeg-in`, 'arraybuffer');
   if (lookWs.readyState <= WebSocket.OPEN)
     lookWs.onmessage = ev => {
@@ -115,9 +142,12 @@ function capture() {
 
 // Attach the start handler only once so we don't open duplicate WebSocket
 // connections if the user clicks multiple times.
+  document
+    .getElementById('start')
+    .addEventListener('click', start, { once: true });
 document
-  .getElementById('start')
-  .addEventListener('click', start, { once: true });
+  .getElementById('message-form')
+  .addEventListener('submit', sendMessage);
 </script>
 </body>
 </html>

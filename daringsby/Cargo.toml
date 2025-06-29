@@ -52,6 +52,7 @@ svg-motor = []
 canvas-stream = []
 development-status-sensor = []
 heard-self-sensor = []
+heard-user-sensor = []
 heartbeat-sensor = []
 self-discovery-sensor = []
 source-discovery-sensor = []
@@ -69,5 +70,6 @@ default = [
     "svg-motor",
     "canvas-stream",
     "heard-self-sensor",
+    "heard-user-sensor",
     "heartbeat-sensor",
 ]

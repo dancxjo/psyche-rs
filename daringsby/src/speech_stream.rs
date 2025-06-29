@@ -29,6 +29,7 @@ pub struct SpeechStream {
     text_rx: Arc<Mutex<Receiver<String>>>,
     segment_rx: Arc<Mutex<Receiver<SpeechSegment>>>,
     heard_tx: Sender<String>,
+    user_tx: Sender<String>,
 }
 
 impl SpeechStream {
@@ -39,11 +40,13 @@ impl SpeechStream {
         segment_rx: Receiver<SpeechSegment>,
     ) -> Self {
         let (heard_tx, _) = broadcast::channel(32);
+        let (user_tx, _) = broadcast::channel(32);
         Self {
             tts_rx: Arc::new(Mutex::new(audio_rx)),
             text_rx: Arc::new(Mutex::new(text_rx)),
             segment_rx: Arc::new(Mutex::new(segment_rx)),
             heard_tx,
+            user_tx,
         }
     }
 
@@ -84,6 +87,15 @@ impl SpeechStream {
                     let stream = self.clone();
                     move |ws: WebSocketUpgrade| async move {
                         ws.on_upgrade(move |sock| stream.clone().receive_heard(sock))
+                    }
+                }),
+            )
+            .route(
+                "/speech-text-user-in",
+                get({
+                    let stream = self.clone();
+                    move |ws: WebSocketUpgrade| async move {
+                        ws.on_upgrade(move |sock| stream.clone().receive_user(sock))
                     }
                 }),
             )
@@ -175,9 +187,35 @@ impl SpeechStream {
         }
     }
 
+    async fn receive_user(self: Arc<Self>, mut socket: WebSocket) {
+        while let Some(Ok(msg)) = socket.next().await {
+            match msg {
+                Message::Text(t) => {
+                    if self.user_tx.send(t).is_err() {
+                        warn!("user_tx receiver dropped");
+                    }
+                }
+                Message::Binary(b) => {
+                    if let Ok(t) = String::from_utf8(b) {
+                        if self.user_tx.send(t).is_err() {
+                            warn!("user_tx receiver dropped");
+                        }
+                    }
+                }
+                Message::Close(_) => break,
+                _ => {}
+            }
+        }
+    }
+
     /// Subscribe to heard-back text messages.
     pub fn subscribe_heard(&self) -> Receiver<String> {
         self.heard_tx.subscribe()
+    }
+
+    /// Subscribe to user text messages.
+    pub fn subscribe_user(&self) -> Receiver<String> {
+        self.user_tx.subscribe()
     }
 }
 
@@ -185,7 +223,7 @@ impl SpeechStream {
 mod tests {
     use super::*;
     use axum::{body::Body, http::Request};
-    use futures::StreamExt;
+    use futures::{SinkExt, StreamExt};
     use http_body_util::BodyExt;
     use tokio::sync::broadcast;
     use tokio_tungstenite::{connect_async, tungstenite::Message as WsMessage};
@@ -285,5 +323,21 @@ mod tests {
             }
         }
         assert!(got_z);
+    }
+
+    /// Messages sent by the client are forwarded to subscribers.
+    #[tokio::test]
+    async fn forwards_user_messages() {
+        let (_tx, rx) = broadcast::channel(1);
+        let (_t, txt_rx) = broadcast::channel(1);
+        let (_seg_tx, seg_rx) = broadcast::channel(1);
+        let stream = Arc::new(SpeechStream::new(rx, txt_rx, seg_rx));
+        let addr = start_server(stream.clone()).await;
+        let url = format!("ws://{addr}/speech-text-user-in");
+        let (mut ws, _) = connect_async(url).await.unwrap();
+        let mut rx_user = stream.subscribe_user();
+        ws.send(WsMessage::Text("hi".into())).await.unwrap();
+        let msg = rx_user.recv().await.unwrap();
+        assert_eq!(msg, "hi");
     }
 }

@@ -21,7 +21,7 @@ use daringsby::SelfDiscovery;
 #[cfg(feature = "source-discovery-sensor")]
 use daringsby::SourceDiscovery;
 use daringsby::{
-    CanvasMotor, CanvasStream, HeardSelfSensor, Heartbeat, LoggingMotor, LookMotor, LookStream,
+    CanvasMotor, CanvasStream, HeardSelfSensor, HeardUserSensor, Heartbeat, LoggingMotor, LookMotor, LookStream,
     Mouth, SpeechStream, SvgMotor,
 };
 use std::net::SocketAddr;
@@ -112,6 +112,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut sensors: Vec<Box<dyn Sensor<String> + Send>> = vec![
         Box::new(Heartbeat) as Box<dyn Sensor<String> + Send>,
         Box::new(HeardSelfSensor::new(stream.subscribe_heard())) as Box<dyn Sensor<String> + Send>,
+        Box::new(HeardUserSensor::new(stream.subscribe_user())) as Box<dyn Sensor<String> + Send>,
         Box::new(SensationSensor::new(look_rx)) as Box<dyn Sensor<String> + Send>,
         Box::new(SensationSensor::new(canvas_rx)) as Box<dyn Sensor<String> + Send>,
     ];
