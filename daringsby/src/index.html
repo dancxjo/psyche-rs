@@ -1,7 +1,15 @@
 <!DOCTYPE html>
 <html lang="en">
-<body>
-<button id="start">Start</button>
+<head>
+  <meta charset="UTF-8" />
+  <link
+    rel="stylesheet"
+    href="https://cdn.jsdelivr.net/npm/@picocss/pico@1.5.11/css/pico.min.css"
+  />
+</head>
+<body class="container">
+<button id="start" class="secondary">Start</button>
+<canvas id="drawing-area" class="container" width="640" height="480"></canvas>
 <script>
 const SAMPLE_RATE = 22050;
 const ctx = new (window.AudioContext || window.webkitAudioContext)({ sampleRate: SAMPLE_RATE });
@@ -91,7 +99,7 @@ function start() {
     lookVideo = document.createElement('video');
     lookVideo.srcObject = s;
     lookVideo.play();
-    lookCanvas = document.createElement('canvas');
+    lookCanvas = document.getElementById('drawing-area');
   });
   document.getElementById('start').style.display = 'none';
 }
