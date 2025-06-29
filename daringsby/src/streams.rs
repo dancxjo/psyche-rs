@@ -1,3 +1,4 @@
+#[cfg(feature = "canvas-stream")]
 pub use crate::canvas_stream::CanvasStream;
 /// Stream sources provided by the Daringsby runtime.
 ///

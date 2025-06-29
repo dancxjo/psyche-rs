@@ -48,6 +48,7 @@ mouth = []
 source-read-motor = []
 source-search-motor = []
 source-tree-motor = []
+canvas-stream = []
 development-status-sensor = []
 heard-self-sensor = []
 heartbeat-sensor = []
@@ -64,6 +65,7 @@ default = [
     "source-read-motor",
     "source-search-motor",
     "source-tree-motor",
+    "canvas-stream",
     "heard-self-sensor",
     "heartbeat-sensor",
 ]

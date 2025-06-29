@@ -10,14 +10,14 @@ use tokio::sync::broadcast::{self, Receiver, Sender};
 /// WebSocket streamer for canvas snapshots.
 ///
 /// The server broadcasts `"snap"` commands to connected clients and
-/// receives JPEG image bytes in response.
+/// receives JPEG image bytes in response. Connected clients receive
+/// `"snap"` commands and respond with JPEG bytes.
 ///
-/// This is largely identical to [`LookStream`] but intended for a drawing
-/// canvas rather than a webcam. Connected clients receive `"snap"` commands and
-/// respond with JPEG bytes.
+/// This is largely identical to `LookStream` but intended for a drawing canvas
+/// rather than a webcam.
 pub struct CanvasStream {
-    tx: Sender<Vec<u8>>, // image bytes
-    cmd: Sender<String>, // commands like "snap"
+    tx: Sender<Vec<u8>>,    // Image bytes
+    cmd: Sender<String>,    // Commands like "snap"
 }
 
 impl Default for CanvasStream {
@@ -34,17 +34,17 @@ impl CanvasStream {
         self.tx.subscribe()
     }
 
+    /// Subscribe to outgoing commands (useful for tests or monitoring).
+    pub fn subscribe_cmd(&self) -> Receiver<String> {
+        self.cmd.subscribe()
+    }
+
     /// Request a snapshot from all connected clients.
     pub fn request_snap(&self) {
         let _ = self.cmd.send("snap".into());
     }
 
-    /// Subscribe to outgoing command messages. Primarily used for tests.
-    pub fn subscribe_cmd(&self) -> Receiver<String> {
-        self.cmd.subscribe()
-    }
-
-    /// Build a router exposing the look WebSocket endpoint.
+    /// Build a router exposing the canvas WebSocket endpoint.
     pub fn router(self: Arc<Self>) -> Router {
         Router::new().route(
             "/canvas-jpeg-in",
@@ -85,7 +85,9 @@ mod tests {
         let app = stream.router();
         let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
         let addr = listener.local_addr().unwrap();
-        tokio::spawn(async move { axum::serve(listener, app).await.unwrap() });
+        tokio::spawn(async move {
+            axum::serve(listener, app).await.unwrap();
+        });
         addr
     }
 
@@ -95,10 +97,12 @@ mod tests {
         let addr = start_server(stream.clone()).await;
         let url = format!("ws://{addr}/canvas-jpeg-in");
         let (mut ws, _) = connect_async(url).await.unwrap();
+
         let mut rx = stream.subscribe();
         ws.send(WsMessage::Binary(vec![1, 2, 3])).await.unwrap();
         let img = rx.recv().await.unwrap();
         assert_eq!(img, vec![1, 2, 3]);
+
         stream.request_snap();
         let msg = ws.next().await.unwrap().unwrap();
         assert_eq!(msg, WsMessage::Text("snap".into()));
