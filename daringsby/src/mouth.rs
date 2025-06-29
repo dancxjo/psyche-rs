@@ -12,6 +12,9 @@ use psyche_rs::{Action, ActionResult, Motor, MotorError};
 
 /// Motor that streams text-to-speech audio via HTTP.
 ///
+/// The motor responds to either a `speak` or `say` action name so that
+/// different planners can trigger speech using their preferred verb.
+///
 /// Sentences from the input body are sent to a TTS service and the
 /// resulting audio bytes are broadcast to subscribers.
 ///
@@ -137,7 +140,7 @@ impl Motor for Mouth {
     }
 
     async fn perform(&self, mut action: Action) -> Result<ActionResult, MotorError> {
-        if action.intention.urge.name != "speak" {
+        if action.intention.urge.name != "speak" && action.intention.urge.name != "say" {
             return Err(MotorError::Unrecognized);
         }
         let speaker_id = action
@@ -362,6 +365,27 @@ mod tests {
         let _ = rx.recv().await.unwrap();
 
         // Assert
+        mock.assert();
+    }
+
+    /// The action name `say` is accepted as an alias for `speak`.
+    #[tokio::test]
+    async fn allows_say_alias() {
+        let server = MockServer::start_async().await;
+        let mock = server
+            .mock_async(|when, then| {
+                when.method(GET);
+                then.status(200);
+            })
+            .await;
+        let mouth = Mouth::new(server.url(""), None);
+        let mut rx = mouth.subscribe();
+        let body = stream::once(async { "Hi.".to_string() }).boxed();
+        let mut action = Action::new("say", Map::new().into(), body);
+        action.intention.assigned_motor = "say".into();
+        mouth.perform(action).await.unwrap();
+        let _ = rx.recv().await.unwrap();
+        let _ = rx.recv().await.unwrap();
         mock.assert();
     }
 
