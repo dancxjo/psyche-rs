@@ -56,6 +56,7 @@ default = [
     "logging-motor",
     "look-motor",
     "mouth",
+    "development-status-sensor",
     "source-read-motor",
     "source-search-motor",
     "source-tree-motor",
