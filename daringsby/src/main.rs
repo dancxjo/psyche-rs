@@ -1,5 +1,6 @@
 use clap::Parser;
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
+use tokio::sync::Mutex;
 use tracing::{Level, error};
 
 use futures::{StreamExt, stream};
@@ -9,7 +10,6 @@ use psyche_rs::{
     Action, Combobulator, Impression, ImpressionSensor, LLMClient, LLMPool, Motor, OllamaLLM,
     Sensation, SensationSensor, Sensor, Wit,
 };
-use serde_json::{Map, Value};
 
 use daringsby::{
     DevelopmentStatus, HeardSelfSensor, Heartbeat, LoggingMotor, LookMotor, LookStream, Mouth,
@@ -45,6 +45,9 @@ struct Args {
     /// Optional language identifier for TTS
     #[arg(long)]
     language_id: Option<String>,
+    /// Speaker identifier used for TTS requests
+    #[arg(long, default_value = "p234")]
+    speaker_id: String,
 }
 
 #[tokio::main]
@@ -104,99 +107,105 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let mut quick_stream = quick.observe(sensors).await;
     let sensor = ImpressionSensor::new(rx);
-    let mut combo_stream = combob.observe(vec![sensor]).await;
+    let combo_stream = combob.observe(vec![sensor]).await;
     let logger = Arc::new(LoggingMotor);
     let looker = Arc::new(LookMotor::new(vision.clone(), llm.clone(), look_tx));
+    let speaker_id = args.speaker_id.clone();
 
     let q_instant = INSTANT.clone();
     tokio::spawn(async move {
         while let Some(imps) = quick_stream.next().await {
-            *q_instant.lock().unwrap() = imps.clone();
+            let mut guard = q_instant.lock().await;
+            *guard = imps.clone();
+            drop(guard);
             let _ = tx.send(imps);
         }
     });
 
     #[cfg(feature = "moment-feedback")]
     {
-        let logger_task = logger.clone();
-        let mouth_task = mouth.clone();
-        let looker_task = looker.clone();
-        tokio::spawn(async move {
-            while let Some(imps) = combo_stream.next().await {
-                *MOMENT.lock().unwrap() = imps.clone();
-                let sensed: Vec<Sensation<String>> = imps
-                    .iter()
-                    .map(|imp| Sensation {
-                        kind: "impression".into(),
-                        when: chrono::Local::now(),
-                        what: imp.how.clone(),
-                        source: None,
-                    })
-                    .collect();
-                let _ = sens_tx.send(sensed);
-                for imp in imps {
-                    let text = imp.how.clone();
-                    let log_text = text.clone();
-                    let body = stream::once(async move { log_text }).boxed();
-                    let mut action = Action::new("log", Value::Null, body);
-                    action.intention.assigned_motor = "log".into();
-                    logger_task.perform(action).await.unwrap();
-
-                    if text.contains("<look/>") {
-                        let mut l = Action::new("look", Value::Null, stream::empty().boxed());
-                        l.intention.assigned_motor = "look".into();
-                        looker_task.perform(l).await.unwrap();
-                    }
-
-                    let mut map = Map::new();
-                    map.insert("speaker_id".into(), Value::String("p234".into()));
-                    let speak_text = text;
-                    let speak_body = stream::once(async move { speak_text }).boxed();
-                    let mut speak = Action::new("speak", Value::Object(map), speak_body);
-                    speak.intention.assigned_motor = "speak".into();
-                    if let Err(e) = mouth_task.perform(speak).await {
-                        error!(error=?e, "mouth perform failed");
-                    }
-                }
-            }
-        });
+        let moment = MOMENT.clone();
+        tokio::spawn(drive_combo_stream(
+            combo_stream,
+            logger.clone(),
+            mouth.clone(),
+            looker.clone(),
+            speaker_id,
+            sens_tx,
+            moment,
+        ));
     }
 
     #[cfg(not(feature = "moment-feedback"))]
     {
-        let logger_task = logger.clone();
-        let mouth_task = mouth.clone();
-        let looker_task = looker.clone();
-        tokio::spawn(async move {
-            while let Some(imps) = combo_stream.next().await {
-                for imp in imps {
-                    let text = imp.how.clone();
-                    let log_text = text.clone();
-                    let body = stream::once(async move { log_text }).boxed();
-                    let mut action = Action::new("log", Value::Null, body);
-                    action.intention.assigned_motor = "log".into();
-                    logger_task.perform(action).await.unwrap();
-
-                    if text.contains("<look/>") {
-                        let mut l = Action::new("look", Value::Null, stream::empty().boxed());
-                        l.intention.assigned_motor = "look".into();
-                        looker_task.perform(l).await.unwrap();
-                    }
-
-                    let mut map = Map::new();
-                    map.insert("speaker_id".into(), Value::String("p234".into()));
-                    let speak_text = text;
-                    let speak_body = stream::once(async move { speak_text }).boxed();
-                    let mut speak = Action::new("speak", Value::Object(map), speak_body);
-                    speak.intention.assigned_motor = "speak".into();
-                    if let Err(e) = mouth_task.perform(speak).await {
-                        error!(error=?e, "mouth perform failed");
-                    }
-                }
-            }
-        });
+        tokio::spawn(drive_combo_stream(
+            combo_stream,
+            logger,
+            mouth,
+            looker,
+            speaker_id,
+        ));
     }
 
     tokio::signal::ctrl_c().await?;
     Ok(())
+}
+
+async fn drive_combo_stream(
+    mut combo_stream: impl futures::Stream<Item = Vec<Impression<Impression<String>>>>
+        + Unpin
+        + Send
+        + 'static,
+    logger: Arc<LoggingMotor>,
+    mouth: Arc<Mouth>,
+    looker: Arc<LookMotor>,
+    speaker_id: String,
+    #[cfg(feature = "moment-feedback")] sens_tx: tokio::sync::mpsc::UnboundedSender<Vec<Sensation<String>>>,
+    #[cfg(feature = "moment-feedback")] moment: Arc<Mutex<Vec<Impression<Impression<String>>>>>,
+) {
+    use futures::{StreamExt, stream};
+    use serde_json::{Map, Value};
+
+    while let Some(imps) = combo_stream.next().await {
+        #[cfg(feature = "moment-feedback")]
+        {
+            let mut guard = moment.lock().await;
+            *guard = imps.clone();
+            drop(guard);
+            let sensed: Vec<Sensation<String>> = imps
+                .iter()
+                .map(|imp| Sensation {
+                    kind: "impression".into(),
+                    when: chrono::Local::now(),
+                    what: imp.how.clone(),
+                    source: None,
+                })
+                .collect();
+            let _ = sens_tx.send(sensed);
+        }
+        for imp in imps {
+            let text = imp.how.clone();
+            let log_text = text.clone();
+            let body = stream::once(async move { log_text }).boxed();
+            let mut action = Action::new("log", Value::Null, body);
+            action.intention.assigned_motor = "log".into();
+            logger.perform(action).await.expect("logging motor failed");
+
+            if text.contains("<look/>") {
+                let mut l = Action::new("look", Value::Null, stream::empty().boxed());
+                l.intention.assigned_motor = "look".into();
+                looker.perform(l).await.expect("look motor failed");
+            }
+
+            let mut map = Map::new();
+            map.insert("speaker_id".into(), Value::String(speaker_id.clone()));
+            let speak_text = text;
+            let speak_body = stream::once(async move { speak_text }).boxed();
+            let mut speak = Action::new("speak", Value::Object(map), speak_body);
+            speak.intention.assigned_motor = "speak".into();
+            if let Err(e) = mouth.perform(speak).await {
+                error!(error=?e, "mouth perform failed");
+            }
+        }
+    }
 }
