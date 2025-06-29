@@ -10,6 +10,9 @@ pub mod heard_self_sensor;
 pub mod heard_user_sensor;
 #[cfg(feature = "heartbeat-sensor")]
 pub mod heartbeat;
+pub mod log_file;
+#[cfg(feature = "log-memory-motor")]
+pub mod log_memory_motor;
 #[cfg(feature = "logging-motor")]
 pub mod logging_motor;
 #[cfg(feature = "look-motor")]

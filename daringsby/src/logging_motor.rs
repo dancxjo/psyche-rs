@@ -1,8 +1,11 @@
 use tracing::{debug, info, warn};
 
 use chrono::Local;
+use tokio::{fs::OpenOptions, io::AsyncWriteExt};
 
 use psyche_rs::{ActionResult, Completion, Intention, Motor, MotorError, Sensation};
+
+use crate::log_file::motor_log_path;
 
 /// Simple motor that logs every received command.
 #[derive(Default)]
@@ -28,6 +31,20 @@ impl Motor for LoggingMotor {
             assigned_motor = %intention.assigned_motor,
             "motor log"
         );
+        let line = format!(
+            "{} - {}: {}\n",
+            Local::now().format("%Y-%m-%d %H:%M:%S"),
+            action.name,
+            text
+        );
+        if let Ok(mut file) = OpenOptions::new()
+            .create(true)
+            .append(true)
+            .open(motor_log_path())
+            .await
+        {
+            let _ = file.write_all(line.as_bytes()).await;
+        }
         let completion = Completion::of_action(action);
         debug!(
             completion_name = %completion.name,
