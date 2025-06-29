@@ -5,7 +5,7 @@ use chrono::Local;
 use futures::StreamExt;
 use std::sync::Arc;
 use tokio::sync::mpsc::UnboundedSender;
-use tracing::{trace,debug};
+use tracing::{debug, trace};
 
 use psyche_rs::{Action, ActionResult, LLMClient, Motor, MotorError, Sensation};
 

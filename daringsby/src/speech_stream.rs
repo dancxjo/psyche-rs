@@ -18,8 +18,8 @@ use tracing::{error, warn};
 /// Exposes two routes:
 /// - `/` serves a minimal HTML page that connects to the WebSocket and plays
 ///   PCM data via the Web Audio API.
-/// - `/ws/audio/out` upgrades the connection to a WebSocket and streams the PCM
-///   bytes.
+/// - `/speech-audio-out` upgrades the connection to a WebSocket and streams the
+///   PCM bytes.
 ///
 /// Bytes received from the provided [`Receiver`] are forwarded to connected
 /// clients as binary messages. Silence frames are emitted when idle.
@@ -45,7 +45,7 @@ impl SpeechStream {
         Router::new()
             .route("/", get(Self::index))
             .route(
-                "/ws/audio/out",
+                "/speech-audio-out",
                 get({
                     let stream = self.clone();
                     move |ws: WebSocketUpgrade| async move {
@@ -54,7 +54,7 @@ impl SpeechStream {
                 }),
             )
             .route(
-                "/ws/audio/text/out",
+                "/speech-text-out",
                 get({
                     let stream = self.clone();
                     move |ws: WebSocketUpgrade| async move {
@@ -63,7 +63,7 @@ impl SpeechStream {
                 }),
             )
             .route(
-                "/ws/audio/self/in",
+                "/speech-text-self-in",
                 get({
                     let stream = self.clone();
                     move |ws: WebSocketUpgrade| async move {
@@ -172,7 +172,7 @@ mod tests {
         let (_txt_tx, txt_rx) = broadcast::channel(4);
         let stream = Arc::new(SpeechStream::new(rx, txt_rx));
         let addr = start_server(stream.clone()).await;
-        let url = format!("ws://{addr}/ws/audio/out");
+        let url = format!("ws://{addr}/speech-audio-out");
         let (mut ws, _) = connect_async(url).await.unwrap();
         tx.send(Bytes::from_static(b"A")).unwrap();
         drop(tx);
@@ -193,7 +193,7 @@ mod tests {
         let body = BodyExt::collect(resp.into_body()).await.unwrap().to_bytes();
         let html = std::str::from_utf8(&body).unwrap();
         assert!(html.contains("ws://"));
-        assert!(html.contains("/ws/audio/out"));
+        assert!(html.contains("/speech-audio-out"));
         assert!(html.contains("id=\"start\""));
     }
 
@@ -204,7 +204,7 @@ mod tests {
         let (_t, txt_rx) = broadcast::channel(1);
         let stream = Arc::new(SpeechStream::new(rx, txt_rx));
         let addr = start_server(stream).await;
-        let url = format!("ws://{addr}/ws/audio/out");
+        let url = format!("ws://{addr}/speech-audio-out");
         let (_ws, _) = connect_async(url).await.unwrap();
     }
 
@@ -215,7 +215,7 @@ mod tests {
         let (_t, txt_rx) = broadcast::channel(1);
         let stream = Arc::new(SpeechStream::new(rx, txt_rx));
         let addr = start_server(stream.clone()).await;
-        let url = format!("ws://{addr}/ws/audio/out");
+        let url = format!("ws://{addr}/speech-audio-out");
         let (mut ws, _) = connect_async(url).await.unwrap();
         let recv = tokio::time::timeout(std::time::Duration::from_millis(150), ws.next()).await;
         assert!(recv.is_err(), "stream should be silent when idle");
@@ -229,7 +229,7 @@ mod tests {
         let (_t, txt_rx) = broadcast::channel(4);
         let stream = Arc::new(SpeechStream::new(rx, txt_rx));
         let addr = start_server(stream.clone()).await;
-        let url = format!("ws://{addr}/ws/audio/out");
+        let url = format!("ws://{addr}/speech-audio-out");
         let (mut ws, _) = connect_async(url).await.unwrap();
         // exceed capacity quickly
         for _ in 0..10 {

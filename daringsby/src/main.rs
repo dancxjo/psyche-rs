@@ -14,13 +14,12 @@ use psyche_rs::{
     Sensation, SensationSensor, Sensor, Wit,
 };
 
-#[cfg(feature = "source-discovery-sensor")]
-use daringsby::SourceDiscovery;
 #[cfg(feature = "development-status-sensor")]
 use daringsby::DevelopmentStatus;
+#[cfg(feature = "source-discovery-sensor")]
+use daringsby::SourceDiscovery;
 use daringsby::{
-    HeardSelfSensor, Heartbeat, LoggingMotor, LookMotor, LookStream, Mouth,
-    SpeechStream,
+    HeardSelfSensor, Heartbeat, LoggingMotor, LookMotor, LookStream, Mouth, SpeechStream,
 };
 use std::net::SocketAddr;
 
@@ -107,7 +106,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         Box::new(SensationSensor::new(look_rx)) as Box<dyn Sensor<String> + Send>,
     ];
     #[cfg(feature = "development-status-sensor")]
-    sensors.push(Box::new(DevelopmentStatus) as Box<dyn Sensor<String> + Send>);    
+    sensors.push(Box::new(DevelopmentStatus) as Box<dyn Sensor<String> + Send>);
     #[cfg(feature = "self-discovery-sensor")]
     sensors.push(Box::new(SelfDiscovery) as Box<dyn Sensor<String> + Send>);
     #[cfg(feature = "source-discovery-sensor")]
