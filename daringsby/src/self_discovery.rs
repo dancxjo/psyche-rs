@@ -66,7 +66,7 @@ impl Sensor<String> for SelfDiscovery {
                 debug!(?msg, "self discovery sensed");
                 let s = Sensation {
                     kind: "self_discovery".into(),
-                    when: chrono::Utc::now(),
+                    when: chrono::Local::now(),
                     what: format!("I hear a voice inside my mind say: \"{}\"", msg),
                     source: Some("voice_inside_my_mind".into()),
                 };

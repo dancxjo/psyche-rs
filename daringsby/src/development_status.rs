@@ -39,7 +39,7 @@ impl Sensor<String> for DevelopmentStatus {
                 debug!("development status sensed");
                 let s = Sensation {
                     kind: "development_status".into(),
-                    when: chrono::Utc::now(),
+                    when: chrono::Local::now(),
                     what: DEVELOPMENT_TEXT.trim().to_string(),
                     source: None,
                 };

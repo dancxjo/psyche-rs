@@ -1,4 +1,4 @@
-use chrono::{DateTime, Utc};
+use chrono::{DateTime, Local};
 use serde::{Deserialize, Serialize};
 
 /// A generic Sensation type for the Pete runtime.
@@ -10,12 +10,12 @@ use serde::{Deserialize, Serialize};
 /// Creating a typed sensation:
 ///
 /// ```
-/// use chrono::Utc;
+/// use chrono::Local;
 /// use psyche_rs::Sensation;
 ///
 /// let s: Sensation<String> = Sensation {
 ///     kind: "utterance.text".into(),
-///     when: Utc::now(),
+///     when: Local::now(),
 ///     what: "hello".into(),
 ///     source: Some("interlocutor".into()),
 /// };
@@ -25,8 +25,11 @@ use serde::{Deserialize, Serialize};
 pub struct Sensation<T = serde_json::Value> {
     /// Category of sensation, e.g. `"utterance.text"`.
     pub kind: String,
-    /// Timestamp for when the sensation occurred.
-    pub when: DateTime<Utc>,
+    /// Timestamp for when the sensation occurred in **local time**.
+    ///
+    /// Local timestamps align better with LLM prompts so they
+    /// reflect the agent's perceived clock rather than UTC.
+    pub when: DateTime<Local>,
     /// Payload describing what was sensed.
     pub what: T,
     /// Optional origin identifier.

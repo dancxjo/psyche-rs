@@ -118,7 +118,7 @@ where
                             {
                                 let mut w = window.lock().unwrap();
                                 w.extend(pending.drain(..));
-                                let cutoff = chrono::Utc::now() - chrono::Duration::milliseconds(window_ms as i64);
+                                let cutoff = chrono::Local::now() - chrono::Duration::milliseconds(window_ms as i64);
                                 w.retain(|s| s.when > cutoff);
                             }
                             let snapshot = {
@@ -208,7 +208,7 @@ mod tests {
         fn stream(&mut self) -> BoxStream<'static, Vec<Sensation<String>>> {
             let s = Sensation {
                 kind: "test".into(),
-                when: chrono::Utc::now(),
+                when: chrono::Local::now(),
                 what: "ping".into(),
                 source: None,
             };
@@ -270,14 +270,14 @@ mod tests {
                 let s = stream! {
                     yield vec![Sensation {
                         kind: "test".into(),
-                        when: chrono::Utc::now(),
+                        when: chrono::Local::now(),
                         what: "a".into(),
                         source: None,
                     }];
                     tokio::time::sleep(std::time::Duration::from_millis(40)).await;
                     yield vec![Sensation {
                         kind: "test".into(),
-                        when: chrono::Utc::now(),
+                        when: chrono::Local::now(),
                         what: "b".into(),
                         source: None,
                     }];
@@ -323,14 +323,14 @@ mod tests {
                 let s = stream! {
                     yield vec![Sensation {
                         kind: "test".into(),
-                        when: chrono::Utc::now(),
+                        when: chrono::Local::now(),
                         what: "a".into(),
                         source: None,
                     }];
                     tokio::time::sleep(std::time::Duration::from_millis(20)).await;
                     yield vec![Sensation {
                         kind: "test".into(),
-                        when: chrono::Utc::now(),
+                        when: chrono::Local::now(),
                         what: "b".into(),
                         source: None,
                     }];

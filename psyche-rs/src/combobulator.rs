@@ -99,7 +99,7 @@ mod tests {
             };
             let s = crate::Sensation {
                 kind: "impression".into(),
-                when: chrono::Utc::now(),
+                when: chrono::Local::now(),
                 what: imp,
                 source: None,
             };

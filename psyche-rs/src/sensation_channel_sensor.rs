@@ -18,7 +18,7 @@ use crate::{Sensation, Sensor};
 /// let mut sensor = SensationSensor::new(rx);
 /// tx.send(vec![Sensation::<String> {
 ///     kind: "note".into(),
-///     when: chrono::Utc::now(),
+///     when: chrono::Local::now(),
 ///     what: "ping".into(),
 ///     source: None,
 /// }]).unwrap();
@@ -58,7 +58,7 @@ mod tests {
         let mut sensor = SensationSensor::new(rx);
         let sensation = Sensation {
             kind: "test".into(),
-            when: chrono::Utc::now(),
+            when: chrono::Local::now(),
             what: "hi".to_string(),
             source: None,
         };
