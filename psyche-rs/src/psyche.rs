@@ -112,6 +112,9 @@ where
         }
         let mut will_streams = Vec::new();
         for will in self.wills.iter_mut() {
+            for m in self.motors.iter() {
+                will.register_motor(m.as_ref());
+            }
             let sensors_for_will: Vec<_> = self
                 .sensors
                 .iter()
