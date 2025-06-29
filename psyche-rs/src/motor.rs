@@ -42,6 +42,21 @@ pub trait Motor: Send + Sync {
     fn name(&self) -> &'static str;
 }
 
+/// Motors that can direct sensors implement this trait in addition to [`Motor`].
+///
+/// Implementors are able to activate one or more sensors and should return the
+/// set of known sensor identifiers from [`attached_sensors`]. The
+/// [`direct_sensor`] method requests activation of a specific sensor and returns
+/// an error if the name is not recognized.
+#[async_trait::async_trait]
+pub trait SensorDirectingMotor: Motor {
+    /// Names or identifiers of sensors this motor is able to control.
+    fn attached_sensors(&self) -> Vec<String>;
+
+    /// Instruct the motor to activate the given sensor.
+    async fn direct_sensor(&self, sensor_name: &str) -> Result<(), MotorError>;
+}
+
 /// Errors that may occur while executing a motor action.
 #[derive(Debug, thiserror::Error)]
 pub enum MotorError {
