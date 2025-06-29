@@ -3,7 +3,9 @@ use std::sync::Arc;
 use tokio::sync::Mutex;
 use tracing::{Level, error};
 
+#[cfg(feature = "moment-feedback")]
 use chrono::Local;
+#[allow(unused_imports)]
 use futures::{StreamExt, stream};
 use ollama_rs::Ollama;
 use once_cell::sync::Lazy;

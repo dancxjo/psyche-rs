@@ -1,7 +1,9 @@
 use futures::StreamExt;
-use tracing::info;
+use tracing::{info, warn};
 
-use psyche_rs::{Action, ActionResult, Motor, MotorError};
+use chrono::Local;
+
+use psyche_rs::{Action, ActionResult, Motor, MotorError, Sensation};
 
 /// Simple motor that logs every received command.
 #[derive(Default)]
@@ -20,9 +22,22 @@ impl Motor for LoggingMotor {
         while let Some(chunk) = action.body.next().await {
             text.push_str(&chunk);
         }
-        info!(body = %text, name = %action.intention.urge.name, "motor log");
+        if text.trim().is_empty() {
+            warn!(name = %action.intention.urge.name, "LoggingMotor received empty body");
+        }
+        info!(
+            body = %text,
+            name = %action.intention.urge.name,
+            assigned_motor = %action.intention.assigned_motor,
+            "motor log"
+        );
         Ok(ActionResult {
-            sensations: Vec::new(),
+            sensations: vec![Sensation {
+                kind: "log".into(),
+                when: Local::now(),
+                what: serde_json::Value::String(text),
+                source: None,
+            }],
             completed: true,
         })
     }
