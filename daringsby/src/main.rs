@@ -3,9 +3,7 @@ use std::sync::Arc;
 use tokio::sync::Mutex;
 use tracing::{Level, error};
 
-#[cfg(feature = "moment-feedback")]
-use chrono::Utc;
-use futures::StreamExt;
+use futures::{StreamExt, stream};
 use ollama_rs::Ollama;
 use once_cell::sync::Lazy;
 use psyche_rs::{
@@ -126,15 +124,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     #[cfg(feature = "moment-feedback")]
     {
-        let logger_task = logger.clone();
-        let mouth_task = mouth.clone();
-        let looker_task = looker.clone();
         let moment = MOMENT.clone();
         tokio::spawn(drive_combo_stream(
             combo_stream,
-            logger_task,
-            mouth_task,
-            looker_task,
+            logger.clone(),
+            mouth.clone(),
+            looker.clone(),
             speaker_id,
             sens_tx,
             moment,
@@ -143,14 +138,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     #[cfg(not(feature = "moment-feedback"))]
     {
-        let logger_task = logger.clone();
-        let mouth_task = mouth.clone();
-        let looker_task = looker.clone();
         tokio::spawn(drive_combo_stream(
             combo_stream,
-            logger_task,
-            mouth_task,
-            looker_task,
+            logger,
+            mouth,
+            looker,
             speaker_id,
         ));
     }
@@ -161,20 +153,16 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
 async fn drive_combo_stream(
     mut combo_stream: impl futures::Stream<Item = Vec<Impression<Impression<String>>>>
-    + Unpin
-    + Send
-    + 'static,
+        + Unpin
+        + Send
+        + 'static,
     logger: Arc<LoggingMotor>,
     mouth: Arc<Mouth>,
     looker: Arc<LookMotor>,
     speaker_id: String,
-    #[cfg(feature = "moment-feedback")] sens_tx: tokio::sync::mpsc::UnboundedSender<
-        Vec<Sensation<String>>,
-    >,
+    #[cfg(feature = "moment-feedback")] sens_tx: tokio::sync::mpsc::UnboundedSender<Vec<Sensation<String>>>,
     #[cfg(feature = "moment-feedback")] moment: Arc<Mutex<Vec<Impression<Impression<String>>>>>,
 ) {
-    #[cfg(feature = "moment-feedback")]
-    use chrono::Utc;
     use futures::{StreamExt, stream};
     use serde_json::{Map, Value};
 
@@ -188,7 +176,7 @@ async fn drive_combo_stream(
                 .iter()
                 .map(|imp| Sensation {
                     kind: "impression".into(),
-                    when: Utc::now(),
+                    when: chrono::Local::now(),
                     what: imp.how.clone(),
                     source: None,
                 })

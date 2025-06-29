@@ -35,7 +35,7 @@ pub use wit::Wit;
 mod tests {
     use super::*;
     use async_trait::async_trait;
-    use chrono::Utc;
+    use chrono::Local;
     use futures::stream::BoxStream;
     use futures::{StreamExt, stream};
     use serde_json::Value;
@@ -49,7 +49,7 @@ mod tests {
             fn stream(&mut self) -> BoxStream<'static, Vec<Sensation<String>>> {
                 let s = Sensation {
                     kind: "test".into(),
-                    when: Utc::now(),
+                    when: Local::now(),
                     what: "ping".into(),
                     source: None,
                 };
@@ -92,7 +92,7 @@ mod tests {
             fn stream(&mut self) -> BoxStream<'static, Vec<Sensation<String>>> {
                 let s = Sensation {
                     kind: "utterance.text".into(),
-                    when: Utc::now(),
+                    when: Local::now(),
                     what: "ping".into(),
                     source: None,
                 };

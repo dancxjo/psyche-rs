@@ -159,7 +159,7 @@ mod tests {
         fn stream(&mut self) -> BoxStream<'static, Vec<Sensation<String>>> {
             let s = Sensation {
                 kind: "t".into(),
-                when: chrono::Utc::now(),
+                when: chrono::Local::now(),
                 what: "hi".into(),
                 source: None,
             };
@@ -233,7 +233,7 @@ mod tests {
                             _ => "unknown",
                         }
                         .into(),
-                        when: chrono::Utc::now(),
+                        when: chrono::Local::now(),
                         what: serde_json::Value::Null,
                         source: None,
                     }],

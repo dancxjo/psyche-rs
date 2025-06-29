@@ -132,7 +132,7 @@ impl<T> Will<T> {
                         _ = tokio::time::sleep(std::time::Duration::from_millis(delay)) => {
                             let snapshot = {
                                 let mut w = window.lock().unwrap();
-                                let cutoff = chrono::Utc::now() - chrono::Duration::milliseconds(window_ms as i64);
+                                let cutoff = chrono::Local::now() - chrono::Duration::milliseconds(window_ms as i64);
                                 w.retain(|s| s.when > cutoff);
                                 w.clone()
                             };
@@ -261,7 +261,7 @@ mod tests {
         fn stream(&mut self) -> BoxStream<'static, Vec<Sensation<String>>> {
             let s = Sensation {
                 kind: "test".into(),
-                when: chrono::Utc::now(),
+                when: chrono::Local::now(),
                 what: "foo".into(),
                 source: None,
             };
@@ -308,7 +308,7 @@ mod tests {
             fn stream(&mut self) -> BoxStream<'static, Vec<Sensation<String>>> {
                 let s = Sensation {
                     kind: "instant".into(),
-                    when: chrono::Utc::now(),
+                    when: chrono::Local::now(),
                     what: "flash".into(),
                     source: None,
                 };

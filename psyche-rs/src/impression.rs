@@ -10,12 +10,12 @@ use crate::sensation::Sensation;
 /// # Examples
 ///
 /// ```
-/// use chrono::Utc;
+/// use chrono::Local;
 /// use psyche_rs::{Impression, Sensation};
 ///
 /// let what = vec![Sensation::<String> {
 ///     kind: "utterance.text".into(),
-///     when: Utc::now(),
+///     when: Local::now(),
 ///     what: "salutations".into(),
 ///     source: None,
 /// }];
