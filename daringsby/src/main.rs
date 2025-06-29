@@ -79,7 +79,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mouth = Arc::new(Mouth::new(args.tts_url.clone(), args.language_id));
     let audio_rx = mouth.subscribe();
     let text_rx = mouth.subscribe_text();
-    let stream = Arc::new(SpeechStream::new(audio_rx, text_rx));
+    let segment_rx = mouth.subscribe_segments();
+    let stream = Arc::new(SpeechStream::new(audio_rx, text_rx, segment_rx));
     let vision = Arc::new(LookStream::default());
     let app = stream.clone().router().merge(vision.clone().router());
     let addr: SocketAddr = format!("{}:{}", args.host, args.port).parse()?;

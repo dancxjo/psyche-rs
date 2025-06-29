@@ -5,8 +5,7 @@
 <script>
 const SAMPLE_RATE = 22050;
 const ctx = new (window.AudioContext || window.webkitAudioContext)({ sampleRate: SAMPLE_RATE });
-let ws;
-let textWs;
+let segWs;
 let heardWs;
 let lookWs;
 let lookVideo;
@@ -67,17 +66,18 @@ function play() {
 }
 
 function start() {
-  ws = openSocket(ws, `ws://${location.host}/speech-audio-out`, 'arraybuffer');
-  if (ws.readyState <= WebSocket.OPEN) {
-    ws.onmessage = ev => {
-      queue.push(new Int16Array(ev.data));
+  segWs = openSocket(segWs, `ws://${location.host}/speech-segments-out`);
+  if (segWs.readyState <= WebSocket.OPEN)
+    segWs.onmessage = ev => {
+      const seg = JSON.parse(ev.data);
+      const bin = atob(seg.audio_b64);
+      const buf = new Uint8Array(bin.length);
+      for (let i = 0; i < bin.length; i++) buf[i] = bin.charCodeAt(i);
+      queue.push(new Int16Array(buf.buffer));
+      texts.push(seg.text);
       if (ctx.state === 'suspended') ctx.resume();
       play();
     };
-  }
-  textWs = openSocket(textWs, `ws://${location.host}/speech-text-out`);
-  if (textWs.readyState <= WebSocket.OPEN)
-    textWs.onmessage = ev => texts.push(ev.data);
   heardWs = openSocket(heardWs, `ws://${location.host}/speech-text-self-in`);
   heardWs.onopen = () => console.log("heardWs connected");
   heardWs.onerror = e => console.error("heardWs error", e);

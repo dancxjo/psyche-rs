@@ -666,6 +666,7 @@ dependencies = [
  "rand",
  "reqwest",
  "segtok",
+ "serde",
  "serde_json",
  "tokio",
  "tokio-stream",

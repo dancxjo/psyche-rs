@@ -1,3 +1,4 @@
+use crate::speech_segment::SpeechSegment;
 use axum::{
     Router,
     extract::ws::{Message, WebSocket, WebSocketUpgrade},
@@ -26,16 +27,22 @@ use tracing::{error, warn};
 pub struct SpeechStream {
     tts_rx: Arc<Mutex<Receiver<Bytes>>>,
     text_rx: Arc<Mutex<Receiver<String>>>,
+    segment_rx: Arc<Mutex<Receiver<SpeechSegment>>>,
     heard_tx: Sender<String>,
 }
 
 impl SpeechStream {
     /// Create a new streamer from the given broadcast receivers.
-    pub fn new(audio_rx: Receiver<Bytes>, text_rx: Receiver<String>) -> Self {
+    pub fn new(
+        audio_rx: Receiver<Bytes>,
+        text_rx: Receiver<String>,
+        segment_rx: Receiver<SpeechSegment>,
+    ) -> Self {
         let (heard_tx, _) = broadcast::channel(32);
         Self {
             tts_rx: Arc::new(Mutex::new(audio_rx)),
             text_rx: Arc::new(Mutex::new(text_rx)),
+            segment_rx: Arc::new(Mutex::new(segment_rx)),
             heard_tx,
         }
     }
@@ -59,6 +66,15 @@ impl SpeechStream {
                     let stream = self.clone();
                     move |ws: WebSocketUpgrade| async move {
                         ws.on_upgrade(move |sock| stream.clone().stream_text(sock))
+                    }
+                }),
+            )
+            .route(
+                "/speech-segments-out",
+                get({
+                    let stream = self.clone();
+                    move |ws: WebSocketUpgrade| async move {
+                        ws.on_upgrade(move |sock| stream.clone().stream_segments(sock))
                     }
                 }),
             )
@@ -96,6 +112,24 @@ impl SpeechStream {
                     continue;
                 }
                 Err(broadcast::error::RecvError::Closed) => break,
+            }
+        }
+    }
+
+    async fn stream_segments(self: Arc<Self>, mut socket: WebSocket) {
+        let rx = self.segment_rx.clone();
+        let mut rx = rx.lock().await;
+        while let Ok(seg) = rx.recv().await {
+            match serde_json::to_string(&seg) {
+                Ok(json) => {
+                    if socket.send(Message::Text(json)).await.is_err() {
+                        error!("websocket segment send failed");
+                        break;
+                    }
+                }
+                Err(e) => {
+                    error!(error=?e, "segment serialize failed");
+                }
             }
         }
     }
@@ -170,7 +204,8 @@ mod tests {
     async fn streams_bytes_to_client() {
         let (tx, rx) = broadcast::channel(4);
         let (_txt_tx, txt_rx) = broadcast::channel(4);
-        let stream = Arc::new(SpeechStream::new(rx, txt_rx));
+        let (_seg_tx, seg_rx) = broadcast::channel(4);
+        let stream = Arc::new(SpeechStream::new(rx, txt_rx, seg_rx));
         let addr = start_server(stream.clone()).await;
         let url = format!("ws://{addr}/speech-audio-out");
         let (mut ws, _) = connect_async(url).await.unwrap();
@@ -185,7 +220,8 @@ mod tests {
     async fn serves_index_html() {
         let (_tx, rx) = broadcast::channel(1);
         let (_t, txt_rx) = broadcast::channel(1);
-        let stream = Arc::new(SpeechStream::new(rx, txt_rx));
+        let (_seg_tx, seg_rx) = broadcast::channel(1);
+        let stream = Arc::new(SpeechStream::new(rx, txt_rx, seg_rx));
         let app = stream.router();
         let req = Request::builder().uri("/").body(Body::empty()).unwrap();
         let resp = app.oneshot(req).await.unwrap();
@@ -193,7 +229,7 @@ mod tests {
         let body = BodyExt::collect(resp.into_body()).await.unwrap().to_bytes();
         let html = std::str::from_utf8(&body).unwrap();
         assert!(html.contains("ws://"));
-        assert!(html.contains("/speech-audio-out"));
+        assert!(html.contains("/speech-segments-out"));
         assert!(html.contains("id=\"start\""));
     }
 
@@ -202,7 +238,8 @@ mod tests {
     async fn upgrades_via_router() {
         let (_tx, rx) = broadcast::channel(1);
         let (_t, txt_rx) = broadcast::channel(1);
-        let stream = Arc::new(SpeechStream::new(rx, txt_rx));
+        let (_seg_tx, seg_rx) = broadcast::channel(1);
+        let stream = Arc::new(SpeechStream::new(rx, txt_rx, seg_rx));
         let addr = start_server(stream).await;
         let url = format!("ws://{addr}/speech-audio-out");
         let (_ws, _) = connect_async(url).await.unwrap();
@@ -213,7 +250,8 @@ mod tests {
     async fn does_not_emit_when_idle() {
         let (_tx, rx) = broadcast::channel(1);
         let (_t, txt_rx) = broadcast::channel(1);
-        let stream = Arc::new(SpeechStream::new(rx, txt_rx));
+        let (_seg_tx, seg_rx) = broadcast::channel(4);
+        let stream = Arc::new(SpeechStream::new(rx, txt_rx, seg_rx));
         let addr = start_server(stream.clone()).await;
         let url = format!("ws://{addr}/speech-audio-out");
         let (mut ws, _) = connect_async(url).await.unwrap();
@@ -227,7 +265,8 @@ mod tests {
     async fn continues_after_lagged_message() {
         let (tx, rx) = broadcast::channel(4);
         let (_t, txt_rx) = broadcast::channel(4);
-        let stream = Arc::new(SpeechStream::new(rx, txt_rx));
+        let (_seg_tx, seg_rx) = broadcast::channel(1);
+        let stream = Arc::new(SpeechStream::new(rx, txt_rx, seg_rx));
         let addr = start_server(stream.clone()).await;
         let url = format!("ws://{addr}/speech-audio-out");
         let (mut ws, _) = connect_async(url).await.unwrap();
