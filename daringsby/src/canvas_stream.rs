@@ -56,6 +56,11 @@ impl CanvasStream {
         let _ = self.svg_tx.send(svg);
     }
 
+    /// Inject an image into the stream. Intended for tests.
+    pub fn push_image(&self, img: Vec<u8>) {
+        let _ = self.tx.send(img);
+    }
+
     /// Build a router exposing the canvas WebSocket endpoint.
     pub fn router(self: Arc<Self>) -> Router {
         let jpeg_stream = self.clone();

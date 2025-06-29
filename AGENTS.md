@@ -27,3 +27,5 @@
   `TestSensor` and `TwoBatch`.
 - Avoid panicking when sensors are reused; prefer returning an empty stream or
   clearly documenting single-use behavior.
+- When modifying canvas-related code, run `cargo test --workspace` to verify
+  canvas and SVG motors.
