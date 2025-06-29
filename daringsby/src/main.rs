@@ -1,7 +1,7 @@
 use clap::Parser;
 use std::sync::Arc;
 use tokio::sync::Mutex;
-use tracing::{Level, error};
+use tracing::Level;
 
 #[cfg(feature = "moment-feedback")]
 use chrono::Local;
@@ -121,8 +121,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let sensor = ImpressionSensor::new(rx);
     let combo_stream = combob.observe(vec![sensor]).await;
     let logger = Arc::new(LoggingMotor);
-    let looker = Arc::new(LookMotor::new(vision.clone(), llm.clone(), look_tx));
-    let speaker_id = args.speaker_id.clone();
+    let _looker = Arc::new(LookMotor::new(vision.clone(), llm.clone(), look_tx));
+    let _speaker_id = args.speaker_id.clone();
 
     let q_instant = INSTANT.clone();
     tokio::spawn(async move {
@@ -140,9 +140,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         tokio::spawn(drive_combo_stream(
             combo_stream,
             logger.clone(),
-            mouth.clone(),
-            looker.clone(),
-            speaker_id,
             sens_tx,
             moment,
         ));
@@ -150,13 +147,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     #[cfg(not(feature = "moment-feedback"))]
     {
-        tokio::spawn(drive_combo_stream(
-            combo_stream,
-            logger,
-            mouth,
-            looker,
-            speaker_id,
-        ));
+        tokio::spawn(drive_combo_stream(combo_stream, logger));
     }
 
     tokio::signal::ctrl_c().await?;
@@ -169,16 +160,13 @@ async fn drive_combo_stream(
     + Send
     + 'static,
     logger: Arc<LoggingMotor>,
-    mouth: Arc<Mouth>,
-    looker: Arc<LookMotor>,
-    speaker_id: String,
     #[cfg(feature = "moment-feedback")] sens_tx: tokio::sync::mpsc::UnboundedSender<
         Vec<Sensation<String>>,
     >,
     #[cfg(feature = "moment-feedback")] moment: Arc<Mutex<Vec<Impression<Impression<String>>>>>,
 ) {
     use futures::{StreamExt, stream};
-    use serde_json::{Map, Value};
+    use serde_json::Value;
 
     while let Some(imps) = combo_stream.next().await {
         #[cfg(feature = "moment-feedback")]
@@ -199,27 +187,10 @@ async fn drive_combo_stream(
         }
         for imp in imps {
             let text = imp.how.clone();
-            let log_text = text.clone();
-            let body = stream::once(async move { log_text }).boxed();
+            let body = stream::once(async move { text }).boxed();
             let mut action = Action::new("log", Value::Null, body);
             action.intention.assigned_motor = "log".into();
             logger.perform(action).await.expect("logging motor failed");
-
-            if text.contains("<look/>") {
-                let mut l = Action::new("look", Value::Null, stream::empty().boxed());
-                l.intention.assigned_motor = "look".into();
-                looker.perform(l).await.expect("look motor failed");
-            }
-
-            let mut map = Map::new();
-            map.insert("speaker_id".into(), Value::String(speaker_id.clone()));
-            let speak_text = text;
-            let speak_body = stream::once(async move { speak_text }).boxed();
-            let mut speak = Action::new("say", Value::Object(map), speak_body);
-            speak.intention.assigned_motor = "say".into();
-            if let Err(e) = mouth.perform(speak).await {
-                error!(error=?e, "mouth perform failed");
-            }
         }
     }
 }
