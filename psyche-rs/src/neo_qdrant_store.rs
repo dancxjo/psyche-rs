@@ -68,7 +68,7 @@ impl MemoryStore for NeoQdrantMemoryStore {
     fn store_impression(&self, impression: &StoredImpression) -> anyhow::Result<()> {
         let query = r#"
 MERGE (i:Impression {uuid:$id})
-SET i.kind=$kind, i.when=datetime($when), i.how=$how
+SET i.kind=$kind, i.when=datetime($when), i.how=$how, i.summary_of=$imps
 WITH i
 UNWIND $sids AS sid
 MATCH (s:Sensation {uuid:sid})
@@ -80,6 +80,7 @@ MERGE (i)-[:HAS_SENSATION]->(s)
             "when": impression.when.to_rfc3339(),
             "how": impression.how,
             "sids": impression.sensation_ids,
+            "imps": impression.impression_ids,
         });
         self.post_neo(query, params)?;
 
@@ -289,6 +290,7 @@ mod tests {
             when: Utc::now(),
             how: "hi".into(),
             sensation_ids: vec!["s1".into()],
+            impression_ids: Vec::new(),
         };
         store.store_impression(&imp).unwrap();
 
