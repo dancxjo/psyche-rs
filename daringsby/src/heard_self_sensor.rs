@@ -15,7 +15,7 @@ pub struct HeardSelfSensor {
 impl HeardSelfSensor {
     /// Create a new sensor from the given broadcast receiver.
     pub fn new(rx: Receiver<String>) -> Self {
-        Self::with_template(rx, "I just heard myself say out loud: '{text}'")
+        Self::with_template(rx, "I heard myself say out loud: \"{text}\"")
     }
 
     /// Create a sensor with a custom phrase template. `{text}` will be replaced
@@ -65,7 +65,7 @@ mod tests {
         let start = Local::now();
         let mut stream = sensor.stream();
         let batch = stream.next().await.unwrap();
-        assert_eq!(batch[0].what, "I just heard myself say out loud: 'Hello'");
+        assert_eq!(batch[0].what, "I heard myself say out loud: \"Hello\"");
         assert_eq!(batch[0].kind, "self_audio");
         assert!(batch[0].when >= start && batch[0].when <= Local::now());
     }
