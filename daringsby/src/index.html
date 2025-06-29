@@ -24,11 +24,21 @@ function openSocket(existing, url, binaryType) {
 
 function segmentDone() {
   const text = texts.shift();
-  if (heardWs && text) heardWs.send(text);
+  if (heardWs && heardWs.readyState === WebSocket.OPEN && text) {
+    heardWs.send(text);
+  } else {
+    console.warn(
+      "heardWs not ready or no text to send",
+      heardWs?.readyState,
+      text
+    );
+  }
+  console.log("Queue length", queue.length, "Texts length", texts.length);
 }
 
 function play() {
   if (playing || !queue.length) return;
+  console.log("Queue length", queue.length, "Texts length", texts.length);
   playing = true;
   const pcm = queue.shift();
   if (pcm.length === 0) {
@@ -60,6 +70,9 @@ function start() {
   if (textWs.readyState <= WebSocket.OPEN)
     textWs.onmessage = ev => texts.push(ev.data);
   heardWs = openSocket(heardWs, `ws://${location.host}/speech-text-self-in`);
+  heardWs.onopen = () => console.log("heardWs connected");
+  heardWs.onerror = e => console.error("heardWs error", e);
+  heardWs.onclose = () => console.warn("heardWs closed");
   lookWs = openSocket(lookWs, `ws://${location.host}/vision-jpeg-in`, 'arraybuffer');
   if (lookWs.readyState <= WebSocket.OPEN)
     lookWs.onmessage = ev => {
