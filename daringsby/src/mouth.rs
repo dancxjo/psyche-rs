@@ -151,24 +151,22 @@ impl Motor for Mouth {
     }
 
     async fn perform(&self, mut action: Action) -> Result<ActionResult, MotorError> {
-        if action.intention.urge.name != "say" {
+        if action.intention.name != "say" {
             return Err(MotorError::Unrecognized);
         }
         let speaker_id = action
             .intention
-            .urge
-            .args
+            .params
             .get("speaker_id")
-            .map(|v| v.as_str())
+            .and_then(|v| v.as_str())
             .map(|s| s.to_string())
             .or_else(|| Some("p234".into()))
             .unwrap_or_default();
         let lang = action
             .intention
-            .urge
-            .args
+            .params
             .get("language_id")
-            .map(|v| v.as_str())
+            .and_then(|v| v.as_str())
             .map(|s| s.to_string())
             .or_else(|| self.language_id.clone())
             .unwrap_or_default();

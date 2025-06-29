@@ -112,7 +112,7 @@ impl<T> Will<T> {
     /// Observe sensors and yield action batches.
     pub async fn observe<S>(&mut self, sensors: Vec<S>) -> BoxStream<'static, Vec<Action>>
     where
-        T: Clone + Send + 'static + serde::Serialize,
+        T: Clone + Default + Send + 'static + serde::Serialize + for<'de> serde::Deserialize<'de>,
         S: Sensor<T> + Send + 'static,
     {
         let (tx, rx) = unbounded_channel();
@@ -211,10 +211,18 @@ impl<T> Will<T> {
                                                     let closing = format!("</{}>", tag);
                                                     let _ = buf.drain(..caps.get(0).unwrap().end());
                                                     let (btx, brx) = unbounded_channel();
-                                                    let mut action = Action::new(tag.clone(), Value::Object(map), UnboundedReceiverStream::new(brx).boxed());
+                                                    let mut action = Action::new(tag.clone(), Value::Object(map.clone()), UnboundedReceiverStream::new(brx).boxed());
                                                     action.intention.assigned_motor = tag.clone();
                                                     debug!(motor_name = %tag, "Will assigned motor on action");
                                                     debug!(?action, "Will built action");
+                                                    let val = serde_json::to_value(&action.intention).unwrap();
+                                                    let what = serde_json::from_value(val).unwrap_or_default();
+                                                    window.lock().unwrap().push(Sensation {
+                                                        kind: "intention".into(),
+                                                        when: chrono::Local::now(),
+                                                        what,
+                                                        source: None,
+                                                    });
                                                     let _ = tx.send(vec![action]);
                                                     state = Some((tag, closing, btx));
                                                 } else {
@@ -296,7 +304,7 @@ mod tests {
         let mut stream = will.observe(vec![sensor]).await;
         let mut actions = stream.next().await.unwrap();
         let action = actions.pop().unwrap();
-        assert_eq!(action.intention.urge.name, "say");
+        assert_eq!(action.intention.name, "say");
         let chunks: Vec<String> = action.body.collect().await;
         let body: String = chunks.concat();
         assert_eq!(body, "Hello world");

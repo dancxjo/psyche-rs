@@ -68,14 +68,14 @@ impl Motor for SourceSearchMotor {
     }
 
     async fn perform(&self, action: Action) -> Result<ActionResult, MotorError> {
-        if action.intention.urge.name != "search_source" {
+        if action.intention.name != "search_source" {
             return Err(MotorError::Unrecognized);
         }
         let query = action
             .intention
-            .urge
-            .args
+            .params
             .get("query")
+            .and_then(|v| v.as_str())
             .ok_or_else(|| MotorError::Failed("missing query".into()))?;
         let results = Self::search(query);
         Ok(ActionResult {

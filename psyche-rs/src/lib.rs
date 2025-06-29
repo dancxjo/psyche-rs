@@ -25,7 +25,7 @@ pub use impression_sensor::ImpressionSensor;
 pub use llm_pool::LLMPool;
 pub use motor::{
     Action, ActionResult, Completion, Intention, Interruption, Motor, MotorError,
-    SensorDirectingMotor, Urge,
+    SensorDirectingMotor,
 };
 pub use psyche::Psyche;
 pub use sensation::Sensation;

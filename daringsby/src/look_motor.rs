@@ -40,7 +40,7 @@ impl Motor for LookMotor {
     }
 
     async fn perform(&self, action: Action) -> Result<ActionResult, MotorError> {
-        if action.intention.urge.name != "look" {
+        if action.intention.name != "look" {
             return Err(MotorError::Unrecognized);
         }
         self.stream.request_snap();

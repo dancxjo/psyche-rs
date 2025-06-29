@@ -56,29 +56,28 @@ impl Motor for SourceReadMotor {
     }
 
     async fn perform(&self, action: Action) -> Result<ActionResult, MotorError> {
-        if action.intention.urge.name != "read_source" {
+        if action.intention.name != "read_source" {
             return Err(MotorError::Unrecognized);
         }
         let path = action
             .intention
-            .urge
-            .args
+            .params
             .get("file_path")
+            .and_then(|v| v.as_str())
             .ok_or_else(|| MotorError::Failed("missing file_path".into()))?;
         let index = action
             .intention
-            .urge
-            .args
+            .params
             .get("block_index")
-            .and_then(|s| s.parse().ok())
-            .unwrap_or(0);
+            .and_then(|v| v.as_u64())
+            .unwrap_or(0) as usize;
         let block = Self::read_block(path, index)?;
         Ok(ActionResult {
             sensations: vec![Sensation {
                 kind: "source.block".into(),
                 when: Local::now(),
                 what: serde_json::Value::String(block),
-                source: Some(path.clone()),
+                source: Some(path.to_string()),
             }],
             completed: true,
             completion: None,

@@ -23,11 +23,11 @@ impl Motor for LoggingMotor {
             text.push_str(&chunk);
         }
         if text.trim().is_empty() {
-            warn!(name = %action.intention.urge.name, "LoggingMotor received empty body");
+            warn!(name = %action.intention.name, "LoggingMotor received empty body");
         }
         info!(
             body = %text,
-            name = %action.intention.urge.name,
+            name = %action.intention.name,
             assigned_motor = %action.intention.assigned_motor,
             "motor log"
         );

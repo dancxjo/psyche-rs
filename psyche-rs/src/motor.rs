@@ -1,7 +1,6 @@
 use futures::stream::BoxStream;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
-use std::collections::HashMap;
 
 use crate::sensation::Sensation;
 
@@ -30,7 +29,7 @@ impl Action {
     ///
     /// let body = stream::empty().boxed();
     /// let action = Action::new("log", serde_json::Value::Null, body);
-    /// assert_eq!(action.intention.urge.name, "log");
+    /// assert_eq!(action.intention.name, "log");
     /// ```
     pub fn new(name: impl Into<String>, args: Value, body: BoxStream<'static, String>) -> Self {
         Self {
@@ -78,34 +77,14 @@ pub enum MotorError {
     Failed(String),
 }
 
-/// Metadata describing an intended action.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct Urge {
-    /// Action name.
-    pub name: String,
-    /// Named arguments for the action.
-    pub args: HashMap<String, String>,
-    /// Optional body text included with the urge.
-    pub body: Option<String>,
-}
-
-impl Urge {
-    /// Convenience constructor.
-    pub fn new(name: impl Into<String>) -> Self {
-        Self {
-            name: name.into(),
-            args: HashMap::new(),
-            body: None,
-        }
-    }
-}
-
-/// Metadata stating the intent to perform an action.
+/// Metadata stating the intent to perform a motor action.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Intention {
-    /// Original urge that led to this intention.
-    pub urge: Urge,
-    /// Name of the motor assigned to satisfy the urge.
+    /// Name of the desired motor action.
+    pub name: String,
+    /// Parameters for the action in JSON form.
+    pub params: Value,
+    /// Name of the motor assigned to handle the action.
     pub assigned_motor: String,
 }
 
@@ -115,28 +94,17 @@ impl Intention {
     /// Note: The `assigned_motor` field is left empty and must be set by the
     /// caller using [`Intention::assign`].
     pub fn to(name: impl Into<String>, params: Value) -> Self {
-        let mut urge = Urge::new(name);
-        // back-compat with legacy params when converting from actions
-        for (k, v) in params.as_object().cloned().unwrap_or_default() {
-            let val = if let Some(s) = v.as_str() {
-                s.to_string()
-            } else {
-                v.to_string()
-            };
-            urge.args.insert(k, val);
-        }
         Self {
-            urge,
+            name: name.into(),
+            params,
             assigned_motor: String::new(),
         }
     }
 
-    /// Create a new intention from an urge and motor name.
-    pub fn assign(urge: Urge, motor: impl Into<String>) -> Self {
-        Self {
-            urge,
-            assigned_motor: motor.into(),
-        }
+    /// Assign the intention to a specific motor.
+    pub fn assign(mut self, motor: impl Into<String>) -> Self {
+        self.assigned_motor = motor.into();
+        self
     }
 }
 
@@ -217,7 +185,7 @@ mod tests {
     fn action_new_sets_fields() {
         let body = stream::empty().boxed();
         let mut action = Action::new("test", Value::Null, body);
-        assert_eq!(action.intention.urge.name, "test");
+        assert_eq!(action.intention.name, "test");
         let none = futures::executor::block_on(async { action.body.next().await });
         assert!(none.is_none());
     }

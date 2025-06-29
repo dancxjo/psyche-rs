@@ -75,7 +75,7 @@ impl Motor for SourceTreeMotor {
     }
 
     async fn perform(&self, action: Action) -> Result<ActionResult, MotorError> {
-        if action.intention.urge.name != "source_tree" {
+        if action.intention.name != "source_tree" {
             return Err(MotorError::Unrecognized);
         }
         let tree = Self::tree();
