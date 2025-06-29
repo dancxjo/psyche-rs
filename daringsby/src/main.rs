@@ -3,7 +3,9 @@ use std::sync::Arc;
 use tokio::sync::Mutex;
 use tracing::{Level, error};
 
+#[cfg(feature = "moment-feedback")]
 use chrono::Local;
+#[allow(unused_imports)]
 use futures::{StreamExt, stream};
 use ollama_rs::Ollama;
 use once_cell::sync::Lazy;
@@ -154,14 +156,16 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
 async fn drive_combo_stream(
     mut combo_stream: impl futures::Stream<Item = Vec<Impression<Impression<String>>>>
-        + Unpin
-        + Send
-        + 'static,
+    + Unpin
+    + Send
+    + 'static,
     logger: Arc<LoggingMotor>,
     mouth: Arc<Mouth>,
     looker: Arc<LookMotor>,
     speaker_id: String,
-    #[cfg(feature = "moment-feedback")] sens_tx: tokio::sync::mpsc::UnboundedSender<Vec<Sensation<String>>>,
+    #[cfg(feature = "moment-feedback")] sens_tx: tokio::sync::mpsc::UnboundedSender<
+        Vec<Sensation<String>>,
+    >,
     #[cfg(feature = "moment-feedback")] moment: Arc<Mutex<Vec<Impression<Impression<String>>>>>,
 ) {
     use futures::{StreamExt, stream};
