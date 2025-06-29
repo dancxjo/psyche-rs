@@ -18,7 +18,7 @@ use psyche_rs::{
 use daringsby::SourceDiscovery;
 use daringsby::{
     DevelopmentStatus, HeardSelfSensor, Heartbeat, LoggingMotor, LookMotor, LookStream, Mouth,
-    SelfDiscovery, SpeechStream,
+    SpeechStream,
 };
 use std::net::SocketAddr;
 
@@ -101,11 +101,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     #[cfg_attr(not(feature = "moment-feedback"), allow(unused_mut))]
     let mut sensors: Vec<Box<dyn Sensor<String> + Send>> = vec![
         Box::new(Heartbeat) as Box<dyn Sensor<String> + Send>,
-        Box::new(SelfDiscovery) as Box<dyn Sensor<String> + Send>,
         Box::new(DevelopmentStatus) as Box<dyn Sensor<String> + Send>,
         Box::new(HeardSelfSensor::new(stream.subscribe_heard())) as Box<dyn Sensor<String> + Send>,
         Box::new(SensationSensor::new(look_rx)) as Box<dyn Sensor<String> + Send>,
     ];
+    #[cfg(feature = "self-discovery-sensor")]
+    sensors.push(Box::new(SelfDiscovery) as Box<dyn Sensor<String> + Send>);
     #[cfg(feature = "source-discovery-sensor")]
     sensors.push(Box::new(SourceDiscovery) as Box<dyn Sensor<String> + Send>);
     #[cfg(feature = "moment-feedback")]

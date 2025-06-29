@@ -62,5 +62,4 @@ default = [
     "development-status-sensor",
     "heard-self-sensor",
     "heartbeat-sensor",
-    "self-discovery-sensor",
 ]
