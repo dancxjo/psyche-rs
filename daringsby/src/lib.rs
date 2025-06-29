@@ -7,6 +7,9 @@ pub mod look_stream;
 pub mod mouth;
 pub mod self_discovery;
 pub mod source_discovery;
+pub mod source_read_motor;
+pub mod source_search_motor;
+pub mod source_tree_motor;
 pub mod speech_stream;
 
 pub mod motors;
