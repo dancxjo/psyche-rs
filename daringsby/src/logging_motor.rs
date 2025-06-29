@@ -1,4 +1,3 @@
-use futures::StreamExt;
 use tracing::{debug, info, warn};
 
 use chrono::Local;
@@ -19,10 +18,7 @@ impl Motor for LoggingMotor {
     }
     async fn perform(&self, intention: Intention) -> Result<ActionResult, MotorError> {
         let mut action = intention.action;
-        let mut text = String::new();
-        while let Some(chunk) = action.body.next().await {
-            text.push_str(&chunk);
-        }
+        let text = action.collect_text().await;
         if text.trim().is_empty() {
             warn!(name = %action.name, "LoggingMotor received empty body");
         }

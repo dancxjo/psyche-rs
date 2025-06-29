@@ -181,7 +181,8 @@ impl Motor for Mouth {
         {
             let _guard = queue.lock().await;
             let mut buf = String::new();
-            while let Some(chunk) = action.body.next().await {
+            let mut chunks = action.logged_chunks();
+            while let Some(chunk) = chunks.next().await {
                 buf.push_str(&chunk);
                 let mut sents = split_single(&buf, SegmentConfig::default());
                 if let Some(last) = sents.last() {
