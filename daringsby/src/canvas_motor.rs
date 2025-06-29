@@ -12,6 +12,33 @@ use psyche_rs::{ActionResult, Completion, Intention, LLMClient, Motor, MotorErro
 use crate::canvas_stream::CanvasStream;
 
 /// Motor that captures a canvas snapshot and describes it using an LLM.
+///
+/// # Example
+/// ```no_run
+/// use daringsby::{canvas_motor::CanvasMotor, canvas_stream::CanvasStream};
+/// use psyche_rs::LLMClient;
+/// use std::sync::Arc;
+/// use tokio::sync::mpsc::unbounded_channel;
+///
+/// #[tokio::main]
+/// async fn main() {
+///     let stream = Arc::new(CanvasStream::default());
+///     struct DummyLLM;
+///     #[async_trait::async_trait]
+///     impl LLMClient for DummyLLM {
+///         async fn chat_stream(
+///             &self,
+///             _msgs: &[ollama_rs::generation::chat::ChatMessage],
+///         ) -> Result<psyche_rs::LLMTokenStream, Box<dyn std::error::Error + Send + Sync>> {
+///             let stream = async_stream::stream! { yield Ok(String::new()) };
+///             Ok(Box::pin(stream))
+///         }
+///     }
+///     let llm = Arc::new(DummyLLM);
+///     let (tx, _rx) = unbounded_channel();
+///     let _motor = CanvasMotor::new(stream, llm, tx);
+/// }
+/// ```
 pub struct CanvasMotor {
     stream: Arc<CanvasStream>,
     llm: Arc<dyn LLMClient>,

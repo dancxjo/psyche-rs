@@ -5,6 +5,25 @@ use tokio::sync::mpsc::UnboundedSender;
 use psyche_rs::{ActionResult, Completion, Intention, Motor, MotorError, Sensation};
 
 /// Motor that broadcasts SVG drawings to connected clients.
+///
+/// # Example
+/// ```
+/// use daringsby::svg_motor::SvgMotor;
+/// use futures::stream::{self, StreamExt};
+/// use psyche_rs::{Action, Intention, Motor};
+/// use tokio::sync::mpsc::unbounded_channel;
+///
+/// #[tokio::main]
+/// async fn main() {
+///     let (tx, mut rx) = unbounded_channel();
+///     let motor = SvgMotor::new(tx);
+///     let body = stream::iter(vec!["<svg/>".to_string()]).boxed();
+///     let action = Action::new("draw", serde_json::Value::Null, body);
+///     let intention = Intention::to(action).assign("draw");
+///     motor.perform(intention).await.unwrap();
+///     assert_eq!(rx.try_recv().unwrap(), "<svg/>");
+/// }
+/// ```
 pub struct SvgMotor {
     tx: UnboundedSender<String>,
 }
