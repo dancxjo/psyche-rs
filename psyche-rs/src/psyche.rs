@@ -38,6 +38,34 @@ impl<T> Sensor<T> for SharedSensor<T> {
 }
 
 /// Core orchestrator coordinating sensors, wits and motors.
+///
+/// ```no_run
+/// use psyche_rs::{Psyche, Wit, Sensor, LLMClient, TokenStream, Sensation};
+/// use async_trait::async_trait;
+/// use futures::{stream, StreamExt};
+/// use std::sync::Arc;
+///
+/// #[derive(Clone)]
+/// struct DummyLLM;
+/// #[async_trait]
+/// impl LLMClient for DummyLLM {
+///     async fn chat_stream(
+///         &self,
+///         _msgs: &[ollama_rs::generation::chat::ChatMessage],
+///     ) -> Result<TokenStream, Box<dyn std::error::Error + Send + Sync>> {
+///         Ok(Box::pin(stream::empty()))
+///     }
+/// }
+/// struct DummySensor;
+/// impl Sensor<String> for DummySensor {
+///     fn stream(&mut self) -> futures::stream::BoxStream<'static, Vec<Sensation<String>>> {
+///         stream::empty().boxed()
+///     }
+/// }
+/// let llm = Arc::new(DummyLLM);
+/// let wit = Wit::new(llm);
+/// let _psyche = Psyche::new().sensor(DummySensor).wit(wit);
+/// ```
 pub struct Psyche<T = serde_json::Value> {
     sensors: Vec<Arc<Mutex<dyn Sensor<T> + Send>>>,
     motors: Vec<Box<dyn Motor + Send>>,
