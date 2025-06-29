@@ -36,7 +36,11 @@ impl LogMemoryMotor {
 #[async_trait]
 impl Motor for LogMemoryMotor {
     fn description(&self) -> &'static str {
-        "Read Pete's motor log memory"
+        "Call `read_log_memory` to retrieve the persisted motor log.\n\
+Parameters: none.\n\
+Associated sensor: `LogMemorySensor` which can be directed\n\
+to emit the log as sensations.\n\
+Returns a single `log.memory` sensation with the full log text."
     }
 
     fn name(&self) -> &'static str {

@@ -70,7 +70,11 @@ impl SourceTreeMotor {
 #[async_trait]
 impl Motor for SourceTreeMotor {
     fn description(&self) -> &'static str {
-        "Display the source code directory tree"
+        "Use `source_tree` to list the project source tree.\n\
+Parameters: none.\n\
+Associated sensor: `SourceTreeSensor` which emits one\n\
+`source.tree` sensation containing the tree text.\n\
+The motor returns the same sensation when called."
     }
 
     fn name(&self) -> &'static str {
