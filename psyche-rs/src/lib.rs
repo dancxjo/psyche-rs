@@ -4,6 +4,7 @@
 //! [`Wit`] building blocks for constructing artificial agents.
 
 mod combobulator;
+mod fair_llm;
 mod impression;
 mod impression_sensor;
 mod llm_client;
@@ -18,6 +19,7 @@ mod wit;
 
 pub use crate::llm_client::{LLMClient, OllamaLLM, TokenStream};
 pub use combobulator::Combobulator;
+pub use fair_llm::FairLLM;
 pub use impression::Impression;
 pub use impression_sensor::ImpressionSensor;
 pub use llm_pool::LLMPool;
