@@ -6,9 +6,9 @@ use futures::{
 };
 use tracing::{debug, info, warn};
 
-use crate::{
-    Action, ActionResult, Intention, Motor, MotorError, Sensation, Sensor, Urge, Will, Wit,
-};
+#[cfg(test)]
+use crate::{ActionResult, MotorError};
+use crate::{Motor, Sensation, Sensor, Will, Wit};
 
 /// Sensor wrapper enabling shared ownership.
 struct SharedSensor<T> {
@@ -74,7 +74,7 @@ pub struct Psyche<T = serde_json::Value> {
 
 impl<T> Psyche<T>
 where
-    T: Clone + Default + Send + 'static + serde::Serialize,
+    T: Clone + Default + Send + 'static + serde::Serialize + for<'de> serde::Deserialize<'de>,
 {
     /// Create an empty [`Psyche`].
     pub fn new() -> Self {
@@ -113,7 +113,7 @@ where
 
 impl<T> Default for Psyche<T>
 where
-    T: Clone + Default + Send + 'static + serde::Serialize,
+    T: Clone + Default + Send + 'static + serde::Serialize + for<'de> serde::Deserialize<'de>,
 {
     fn default() -> Self {
         Self::new()
@@ -122,7 +122,7 @@ where
 
 impl<T> Psyche<T>
 where
-    T: Clone + Default + Send + 'static + serde::Serialize,
+    T: Clone + Default + Send + 'static + serde::Serialize + for<'de> serde::Deserialize<'de>,
 {
     /// Run the psyche until interrupted.
     pub async fn run(mut self) {
@@ -163,49 +163,30 @@ where
                     // Impressions are currently ignored by the psyche. Motors
                     // are only activated by actions produced through the Will.
                 }
-                Some(actions) = merged_wills.next() => {
-                    for action in actions {
-                        debug!(?action, "Psyche received action");
-                        let target = action.intention.assigned_motor.clone();
+                Some(intentions) = merged_wills.next() => {
+                    for intention in intentions {
+                        debug!(?intention, "Psyche received intention");
+                        let target = intention.assigned_motor.clone();
                         if let Some(motor) = self.motors.iter().find(|m| m.name() == target) {
-                            debug!(target_motor = %motor.name(), "Psyche matched action to motor");
-                            if let Err(e) = motor.perform(action).await {
+                            debug!(target_motor = %motor.name(), "Psyche matched intention to motor");
+                            if let Err(e) = motor.perform(intention).await {
                                 debug!(?e, "motor action failed");
                             }
                         } else {
-                            warn!(?action, "Psyche could not match motor for action");
+                            warn!(?intention, "Psyche could not match motor for intention");
                         }
                     }
                 }
             }
         }
     }
-
-    /// Process a single urge by dispatching it to the appropriate motor.
-    pub async fn process_urge(&self, urge: Urge) -> Result<ActionResult, MotorError> {
-        for motor in &self.motors {
-            if motor.name() == urge.name {
-                let body = if let Some(b) = &urge.body {
-                    let text = b.clone();
-                    futures::stream::once(async move { text }).boxed()
-                } else {
-                    futures::stream::empty().boxed()
-                };
-                let intention = Intention::assign(urge.clone(), motor.name().to_string());
-                let action = Action { intention, body };
-                return motor.perform(action).await;
-            }
-        }
-        Err(MotorError::Unrecognized)
-    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{LLMClient, TokenStream};
+    use crate::{Intention, LLMClient, TokenStream};
     use futures::{StreamExt, stream};
-    use std::collections::HashMap;
     use std::sync::atomic::{AtomicUsize, Ordering};
 
     struct TestSensor;
@@ -230,7 +211,7 @@ mod tests {
         fn name(&self) -> &'static str {
             "log"
         }
-        async fn perform(&self, _action: Action) -> Result<ActionResult, MotorError> {
+        async fn perform(&self, _intention: Intention) -> Result<ActionResult, MotorError> {
             self.0.fetch_add(1, Ordering::SeqCst);
             Ok(ActionResult {
                 sensations: Vec::new(),
@@ -300,76 +281,6 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn process_urge_routes_to_motor() {
-        struct SenseMotor(&'static str);
-
-        #[async_trait::async_trait]
-        impl Motor for SenseMotor {
-            fn description(&self) -> &'static str {
-                "test motor"
-            }
-            fn name(&self) -> &'static str {
-                self.0
-            }
-            async fn perform(&self, _action: Action) -> Result<ActionResult, MotorError> {
-                Ok(ActionResult {
-                    sensations: vec![Sensation {
-                        kind: match self.0 {
-                            "look" => "image/jpeg",
-                            "listen" => "audio/mpeg",
-                            "sniff" => "chemical/smell",
-                            _ => "unknown",
-                        }
-                        .into(),
-                        when: chrono::Local::now(),
-                        what: serde_json::Value::Null,
-                        source: None,
-                    }],
-                    completed: true,
-                    completion: None,
-                    interruption: None,
-                })
-            }
-        }
-
-        let psyche: Psyche = Psyche::new()
-            .motor(SenseMotor("look"))
-            .motor(SenseMotor("listen"))
-            .motor(SenseMotor("sniff"));
-
-        for (urge, kind) in [
-            (
-                Urge {
-                    name: "look".into(),
-                    args: HashMap::new(),
-                    body: None,
-                },
-                "image/jpeg",
-            ),
-            (
-                Urge {
-                    name: "listen".into(),
-                    args: HashMap::new(),
-                    body: None,
-                },
-                "audio/mpeg",
-            ),
-            (
-                Urge {
-                    name: "sniff".into(),
-                    args: HashMap::new(),
-                    body: None,
-                },
-                "chemical/smell",
-            ),
-        ] {
-            let res = psyche.process_urge(urge).await.unwrap();
-            assert!(res.completed);
-            assert_eq!(res.sensations[0].kind, kind);
-        }
-    }
-
-    #[tokio::test]
     async fn will_actions_dispatched_to_motors() {
         use std::sync::atomic::{AtomicUsize, Ordering};
 
@@ -417,7 +328,7 @@ mod tests {
             fn name(&self) -> &'static str {
                 self.1
             }
-            async fn perform(&self, _action: Action) -> Result<ActionResult, MotorError> {
+            async fn perform(&self, _intention: Intention) -> Result<ActionResult, MotorError> {
                 self.0.fetch_add(1, Ordering::SeqCst);
                 Ok(ActionResult::default())
             }
@@ -487,7 +398,7 @@ mod tests {
             fn name(&self) -> &'static str {
                 self.1
             }
-            async fn perform(&self, _action: Action) -> Result<ActionResult, MotorError> {
+            async fn perform(&self, _intention: Intention) -> Result<ActionResult, MotorError> {
                 self.0.fetch_add(1, Ordering::SeqCst);
                 Ok(ActionResult::default())
             }

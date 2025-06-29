@@ -6,10 +6,12 @@ use std::io::Cursor;
 use std::sync::Arc;
 use tokio::sync::Mutex as TokioMutex;
 use tokio::sync::broadcast::{self, Receiver, Sender};
-use tracing::{error, trace};
+use tracing::{debug, error, trace};
 
 use crate::speech_segment::SpeechSegment;
-use psyche_rs::{Action, ActionResult, Motor, MotorError};
+#[cfg(test)]
+use psyche_rs::Action;
+use psyche_rs::{ActionResult, Completion, Intention, Motor, MotorError};
 
 /// Motor that streams text-to-speech audio via HTTP.
 ///
@@ -150,36 +152,33 @@ impl Motor for Mouth {
         "say"
     }
 
-    async fn perform(&self, mut action: Action) -> Result<ActionResult, MotorError> {
-        if action.intention.urge.name != "say" {
+    async fn perform(&self, intention: Intention) -> Result<ActionResult, MotorError> {
+        if intention.action.name != "say" {
             return Err(MotorError::Unrecognized);
         }
+        let mut action = intention.action;
         let speaker_id = action
-            .intention
-            .urge
-            .args
+            .params
             .get("speaker_id")
-            .map(|v| v.as_str())
+            .and_then(|v| v.as_str())
             .map(|s| s.to_string())
             .or_else(|| Some("p234".into()))
             .unwrap_or_default();
         let lang = action
-            .intention
-            .urge
-            .args
+            .params
             .get("language_id")
-            .map(|v| v.as_str())
+            .and_then(|v| v.as_str())
             .map(|s| s.to_string())
             .or_else(|| self.language_id.clone())
             .unwrap_or_default();
         let client = self.client.clone();
-        let lang = lang.clone();
         let base = self.base_url.clone();
         let tx = self.tx.clone();
         let text_tx = self.text_tx.clone();
         let segment_tx = self.segment_tx.clone();
         let queue = self.queue.clone();
-        tokio::spawn(async move {
+        let lang = lang;
+        {
             let _guard = queue.lock().await;
             let mut buf = String::new();
             while let Some(chunk) = action.body.next().await {
@@ -233,44 +232,49 @@ impl Motor for Mouth {
             if !buf.trim().is_empty() {
                 trace!(sentence = %buf, "tts final sentence");
                 let _ = text_tx.send(buf.clone());
-                let url = match Mouth::tts_url(&base, &buf, &speaker_id, &lang) {
-                    Ok(u) => u,
-                    Err(e) => {
-                        error!(error=?e, "tts url error");
-                        return;
-                    }
-                };
-                match client.get(url).send().await {
-                    Ok(resp) => {
-                        let mut body = Vec::new();
-                        let mut stream = resp.bytes_stream();
-                        while let Some(chunk) = stream.next().await {
-                            match chunk {
-                                Ok(b) => body.extend_from_slice(&b),
-                                Err(e) => {
-                                    error!(error=?e, "tts stream error");
-                                    break;
+                if let Ok(url) = Mouth::tts_url(&base, &buf, &speaker_id, &lang) {
+                    match client.get(url).send().await {
+                        Ok(resp) => {
+                            let mut body = Vec::new();
+                            let mut stream = resp.bytes_stream();
+                            while let Some(chunk) = stream.next().await {
+                                match chunk {
+                                    Ok(b) => body.extend_from_slice(&b),
+                                    Err(e) => {
+                                        error!(error=?e, "tts stream error");
+                                        break;
+                                    }
                                 }
                             }
-                        }
-                        match Mouth::wav_to_pcm(&body) {
-                            Ok(pcm) => {
-                                let seg = SpeechSegment::new(&buf, &pcm);
-                                let _ = segment_tx.send(seg);
-                                let _ = tx.send(pcm);
+                            match Mouth::wav_to_pcm(&body) {
+                                Ok(pcm) => {
+                                    let seg = SpeechSegment::new(&buf, &pcm);
+                                    let _ = segment_tx.send(seg);
+                                    let _ = tx.send(pcm);
+                                }
+                                Err(e) => error!(error=?e, "wav decode failed"),
                             }
-                            Err(e) => error!(error=?e, "wav decode failed"),
                         }
+                        Err(e) => error!(error=?e, "tts request failed"),
                     }
-                    Err(e) => error!(error=?e, "tts request failed"),
+                } else {
+                    // invalid URL, skip final sentence
                 }
             }
             let _ = tx.send(Bytes::new());
-        });
+        }
+        let completion = Completion::of_action(action);
+        debug!(
+            completion_name = %completion.name,
+            completion_params = ?completion.params,
+            completion_result = ?completion.result,
+            ?completion,
+            "action completed"
+        );
         Ok(ActionResult {
             sensations: Vec::new(),
             completed: true,
-            completion: None,
+            completion: Some(completion),
             interruption: None,
         })
     }
@@ -334,11 +338,11 @@ mod tests {
         let body = stream::once(async { "Hello world. How are you?".to_string() }).boxed();
         let mut map = Map::new();
         map.insert("speaker_id".into(), Value::String("p234".into()));
-        let mut action = Action::new("say", Value::Object(map), body);
-        action.intention.assigned_motor = "say".into();
+        let action = Action::new("say", Value::Object(map), body);
+        let intention = Intention::to(action).assign("say");
 
         // Act
-        mouth.perform(action).await.unwrap();
+        mouth.perform(intention).await.unwrap();
         let a = rx.recv().await.unwrap();
         let delim = rx.recv().await.unwrap();
         let b = rx.recv().await.unwrap();
@@ -372,11 +376,11 @@ mod tests {
         let body = stream::once(async { "Hi.".to_string() }).boxed();
         let mut map = Map::new();
         map.insert("speaker_id".into(), Value::String("p234".into()));
-        let mut action = Action::new("say", Value::Object(map), body);
-        action.intention.assigned_motor = "say".into();
+        let action = Action::new("say", Value::Object(map), body);
+        let intention = Intention::to(action).assign("say");
 
         // Act
-        mouth.perform(action).await.unwrap();
+        mouth.perform(intention).await.unwrap();
         let _ = rx.recv().await.unwrap();
         let _ = rx.recv().await.unwrap();
 
@@ -411,11 +415,11 @@ mod tests {
         let mouth = Mouth::new(server.url(""), None);
         let mut rx = mouth.subscribe();
         let body = stream::once(async { "Hi.".to_string() }).boxed();
-        let mut action = Action::new("say", Map::new().into(), body);
-        action.intention.assigned_motor = "say".into();
+        let action = Action::new("say", Map::new().into(), body);
+        let intention = Intention::to(action).assign("say");
 
         // Act
-        mouth.perform(action).await.unwrap();
+        mouth.perform(intention).await.unwrap();
         let mut pcm = rx.recv().await.unwrap();
         while pcm.iter().all(|b| *b == 0) {
             pcm = rx.recv().await.unwrap();
@@ -453,12 +457,32 @@ mod tests {
         let mouth = Mouth::new(server.url(""), None);
         let mut seg_rx = mouth.subscribe_segments();
         let body = stream::once(async { "Hi.".to_string() }).boxed();
-        let mut action = Action::new("say", Map::new().into(), body);
-        action.intention.assigned_motor = "say".into();
-        mouth.perform(action).await.unwrap();
+        let action = Action::new("say", Map::new().into(), body);
+        let intention = Intention::to(action).assign("say");
+        mouth.perform(intention).await.unwrap();
         let seg = seg_rx.recv().await.unwrap();
         assert_eq!(seg.text, "Hi.");
         let decoded = seg.decode_audio().unwrap();
         assert!(!decoded.is_empty());
+    }
+
+    #[tokio::test]
+    async fn perform_returns_completion() {
+        let server = MockServer::start_async().await;
+        let _mock = server
+            .mock_async(|when, then| {
+                when.method(GET);
+                then.status(200).body(Vec::new());
+            })
+            .await;
+        let mouth = Mouth::new(server.url(""), None);
+        let body = stream::once(async { "Hi.".to_string() }).boxed();
+        let action = Action::new("say", Map::new().into(), body);
+        let intention = Intention::to(action).assign("say");
+        let result = mouth.perform(intention).await.unwrap();
+        assert!(result.completed);
+        let completion = result.completion.unwrap();
+        assert_eq!(completion.name, "say");
+        assert!(completion.params.as_object().unwrap().is_empty());
     }
 }

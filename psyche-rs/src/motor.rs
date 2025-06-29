@@ -1,14 +1,15 @@
 use futures::stream::BoxStream;
-use serde::{Deserialize, Serialize};
+use serde::{Deserialize, Serialize, Serializer, ser::SerializeStruct};
 use serde_json::Value;
-use std::collections::HashMap;
 
 use crate::sensation::Sensation;
 
-/// Represents an action request with streaming body content.
+/// Represents a motor command with streaming body content.
 pub struct Action {
-    /// Desired intention to be fulfilled by the motor.
-    pub intention: Intention,
+    /// Action name such as `say` or `look`.
+    pub name: String,
+    /// Parsed parameters from the action tag.
+    pub params: Value,
     /// Live body stream associated with the action.
     pub body: BoxStream<'static, String>,
 }
@@ -16,7 +17,7 @@ pub struct Action {
 impl std::fmt::Debug for Action {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("Action")
-            .field("intention", &self.intention)
+            .field("name", &self.name)
             .finish_non_exhaustive()
     }
 }
@@ -30,11 +31,12 @@ impl Action {
     ///
     /// let body = stream::empty().boxed();
     /// let action = Action::new("log", serde_json::Value::Null, body);
-    /// assert_eq!(action.intention.urge.name, "log");
+    /// assert_eq!(action.name, "log");
     /// ```
     pub fn new(name: impl Into<String>, args: Value, body: BoxStream<'static, String>) -> Self {
         Self {
-            intention: Intention::to(name, args),
+            name: name.into(),
+            params: args,
             body,
         }
     }
@@ -46,7 +48,7 @@ pub trait Motor: Send + Sync {
     /// Returns a brief description of the motor's purpose.
     fn description(&self) -> &'static str;
     /// Attempt to perform the provided action.
-    async fn perform(&self, action: Action) -> Result<ActionResult, MotorError>;
+    async fn perform(&self, intention: Intention) -> Result<ActionResult, MotorError>;
     /// Name of the motor action handled.
     fn name(&self) -> &'static str;
 }
@@ -78,65 +80,44 @@ pub enum MotorError {
     Failed(String),
 }
 
-/// Metadata describing an intended action.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct Urge {
-    /// Action name.
-    pub name: String,
-    /// Named arguments for the action.
-    pub args: HashMap<String, String>,
-    /// Optional body text included with the urge.
-    pub body: Option<String>,
-}
-
-impl Urge {
-    /// Convenience constructor.
-    pub fn new(name: impl Into<String>) -> Self {
-        Self {
-            name: name.into(),
-            args: HashMap::new(),
-            body: None,
-        }
-    }
-}
-
-/// Metadata stating the intent to perform an action.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+/// Metadata stating the decision to perform a motor action.
+#[derive(Debug)]
 pub struct Intention {
-    /// Original urge that led to this intention.
-    pub urge: Urge,
-    /// Name of the motor assigned to satisfy the urge.
+    /// Action details to be executed by a motor.
+    pub action: Action,
+    /// Name of the motor assigned to handle the action.
     pub assigned_motor: String,
 }
 
 impl Intention {
-    /// Creates a new `Intention` from an action name and parameters.
+    /// Creates a new [`Intention`] wrapping the provided [`Action`].
     ///
-    /// Note: The `assigned_motor` field is left empty and must be set by the
-    /// caller using [`Intention::assign`].
-    pub fn to(name: impl Into<String>, params: Value) -> Self {
-        let mut urge = Urge::new(name);
-        // back-compat with legacy params when converting from actions
-        for (k, v) in params.as_object().cloned().unwrap_or_default() {
-            let val = if let Some(s) = v.as_str() {
-                s.to_string()
-            } else {
-                v.to_string()
-            };
-            urge.args.insert(k, val);
-        }
+    /// The returned intention is not yet assigned to a motor. Use
+    /// [`Intention::assign`] to direct it.
+    pub fn to(action: Action) -> Self {
         Self {
-            urge,
+            action,
             assigned_motor: String::new(),
         }
     }
 
-    /// Create a new intention from an urge and motor name.
-    pub fn assign(urge: Urge, motor: impl Into<String>) -> Self {
-        Self {
-            urge,
-            assigned_motor: motor.into(),
-        }
+    /// Assign the intention to a specific motor.
+    pub fn assign(mut self, motor: impl Into<String>) -> Self {
+        self.assigned_motor = motor.into();
+        self
+    }
+}
+
+impl Serialize for Intention {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        let mut s = serializer.serialize_struct("Intention", 3)?;
+        s.serialize_field("name", &self.action.name)?;
+        s.serialize_field("params", &self.action.params)?;
+        s.serialize_field("assigned_motor", &self.assigned_motor)?;
+        s.end()
     }
 }
 
@@ -182,6 +163,25 @@ impl Completion {
             result: None,
         }
     }
+
+    /// Build a [`Completion`] from an [`Action`]. Consumes the action and
+    /// drops its body stream.
+    ///
+    /// ```
+    /// use psyche_rs::{Action, Completion};
+    /// use futures::stream::{self, StreamExt};
+    /// let body = stream::empty().boxed();
+    /// let action = Action::new("say", serde_json::Value::Null, body);
+    /// let c = Completion::of_action(action);
+    /// assert_eq!(c.name, "say");
+    /// ```
+    pub fn of_action(action: Action) -> Self {
+        Self {
+            name: action.name,
+            params: action.params,
+            result: None,
+        }
+    }
 }
 
 /// Outcome from executing a motor action.
@@ -217,7 +217,7 @@ mod tests {
     fn action_new_sets_fields() {
         let body = stream::empty().boxed();
         let mut action = Action::new("test", Value::Null, body);
-        assert_eq!(action.intention.urge.name, "test");
+        assert_eq!(action.name, "test");
         let none = futures::executor::block_on(async { action.body.next().await });
         assert!(none.is_none());
     }

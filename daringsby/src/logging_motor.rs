@@ -1,9 +1,9 @@
 use futures::StreamExt;
-use tracing::{info, warn};
+use tracing::{debug, info, warn};
 
 use chrono::Local;
 
-use psyche_rs::{Action, ActionResult, Motor, MotorError, Sensation};
+use psyche_rs::{ActionResult, Completion, Intention, Motor, MotorError, Sensation};
 
 /// Simple motor that logs every received command.
 #[derive(Default)]
@@ -17,19 +17,28 @@ impl Motor for LoggingMotor {
     fn name(&self) -> &'static str {
         "log"
     }
-    async fn perform(&self, mut action: Action) -> Result<ActionResult, MotorError> {
+    async fn perform(&self, intention: Intention) -> Result<ActionResult, MotorError> {
+        let mut action = intention.action;
         let mut text = String::new();
         while let Some(chunk) = action.body.next().await {
             text.push_str(&chunk);
         }
         if text.trim().is_empty() {
-            warn!(name = %action.intention.urge.name, "LoggingMotor received empty body");
+            warn!(name = %action.name, "LoggingMotor received empty body");
         }
         info!(
             body = %text,
-            name = %action.intention.urge.name,
-            assigned_motor = %action.intention.assigned_motor,
+            name = %action.name,
+            assigned_motor = %intention.assigned_motor,
             "motor log"
+        );
+        let completion = Completion::of_action(action);
+        debug!(
+            completion_name = %completion.name,
+            completion_params = ?completion.params,
+            completion_result = ?completion.result,
+            ?completion,
+            "action completed"
         );
         Ok(ActionResult {
             sensations: vec![Sensation {
@@ -39,7 +48,7 @@ impl Motor for LoggingMotor {
                 source: None,
             }],
             completed: true,
-            completion: None,
+            completion: Some(completion),
             interruption: None,
         })
     }

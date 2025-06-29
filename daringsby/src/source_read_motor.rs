@@ -2,8 +2,11 @@ use async_trait::async_trait;
 use chrono::Local;
 use include_dir::{Dir, include_dir};
 use tokio::sync::mpsc::UnboundedSender;
+use tracing::debug;
 
-use psyche_rs::{Action, ActionResult, Motor, MotorError, Sensation, SensorDirectingMotor};
+use psyche_rs::{
+    ActionResult, Completion, Intention, Motor, MotorError, Sensation, SensorDirectingMotor,
+};
 
 static DARINGSBY_SRC_DIR: Dir = include_dir!("$CARGO_MANIFEST_DIR/src");
 static PSYCHE_SRC_DIR: Dir = include_dir!("$CARGO_MANIFEST_DIR/../psyche-rs/src");
@@ -55,24 +58,31 @@ impl Motor for SourceReadMotor {
         "read_source"
     }
 
-    async fn perform(&self, action: Action) -> Result<ActionResult, MotorError> {
-        if action.intention.urge.name != "read_source" {
+    async fn perform(&self, intention: Intention) -> Result<ActionResult, MotorError> {
+        if intention.action.name != "read_source" {
             return Err(MotorError::Unrecognized);
         }
+        let action = intention.action;
         let path = action
-            .intention
-            .urge
-            .args
+            .params
             .get("file_path")
+            .and_then(|v| v.as_str())
+            .map(|s| s.to_string())
             .ok_or_else(|| MotorError::Failed("missing file_path".into()))?;
         let index = action
-            .intention
-            .urge
-            .args
+            .params
             .get("block_index")
-            .and_then(|s| s.parse().ok())
-            .unwrap_or(0);
-        let block = Self::read_block(path, index)?;
+            .and_then(|v| v.as_u64())
+            .unwrap_or(0) as usize;
+        let block = Self::read_block(&path, index)?;
+        let completion = Completion::of_action(action);
+        debug!(
+            completion_name = %completion.name,
+            completion_params = ?completion.params,
+            completion_result = ?completion.result,
+            ?completion,
+            "action completed"
+        );
         Ok(ActionResult {
             sensations: vec![Sensation {
                 kind: "source.block".into(),
@@ -81,7 +91,7 @@ impl Motor for SourceReadMotor {
                 source: Some(path.clone()),
             }],
             completed: true,
-            completion: None,
+            completion: Some(completion),
             interruption: None,
         })
     }

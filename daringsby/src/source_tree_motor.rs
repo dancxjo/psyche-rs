@@ -3,7 +3,10 @@ use chrono::Local;
 use include_dir::{Dir, include_dir};
 use tokio::sync::mpsc::UnboundedSender;
 
-use psyche_rs::{Action, ActionResult, Motor, MotorError, Sensation, SensorDirectingMotor};
+use psyche_rs::{
+    ActionResult, Completion, Intention, Motor, MotorError, Sensation, SensorDirectingMotor,
+};
+use tracing::debug;
 
 /// Embedded daringsby source directory.
 static DARINGSBY_SRC_DIR: Dir = include_dir!("$CARGO_MANIFEST_DIR/src");
@@ -74,11 +77,19 @@ impl Motor for SourceTreeMotor {
         "source_tree"
     }
 
-    async fn perform(&self, action: Action) -> Result<ActionResult, MotorError> {
-        if action.intention.urge.name != "source_tree" {
+    async fn perform(&self, intention: Intention) -> Result<ActionResult, MotorError> {
+        if intention.action.name != "source_tree" {
             return Err(MotorError::Unrecognized);
         }
         let tree = Self::tree();
+        let completion = Completion::of_action(intention.action);
+        debug!(
+            completion_name = %completion.name,
+            completion_params = ?completion.params,
+            completion_result = ?completion.result,
+            ?completion,
+            "action completed"
+        );
         Ok(ActionResult {
             sensations: vec![Sensation {
                 kind: "source.tree".into(),
@@ -87,7 +98,7 @@ impl Motor for SourceTreeMotor {
                 source: None,
             }],
             completed: true,
-            completion: None,
+            completion: Some(completion),
             interruption: None,
         })
     }

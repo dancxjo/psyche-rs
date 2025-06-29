@@ -10,8 +10,8 @@ use futures::{StreamExt, stream};
 use ollama_rs::Ollama;
 use once_cell::sync::Lazy;
 use psyche_rs::{
-    Action, Combobulator, Impression, ImpressionSensor, LLMClient, LLMPool, Motor, OllamaLLM,
-    Sensation, SensationSensor, Sensor, Wit,
+    Action, Combobulator, Impression, ImpressionSensor, Intention, LLMClient, LLMPool, Motor,
+    OllamaLLM, Sensation, SensationSensor, Sensor, Wit,
 };
 
 #[cfg(feature = "development-status-sensor")]
@@ -188,9 +188,12 @@ async fn drive_combo_stream(
         for imp in imps {
             let text = imp.how.clone();
             let body = stream::once(async move { text }).boxed();
-            let mut action = Action::new("log", Value::Null, body);
-            action.intention.assigned_motor = "log".into();
-            logger.perform(action).await.expect("logging motor failed");
+            let action = Action::new("log", Value::Null, body);
+            let intention = Intention::to(action).assign("log");
+            logger
+                .perform(intention)
+                .await
+                .expect("logging motor failed");
         }
     }
 }
