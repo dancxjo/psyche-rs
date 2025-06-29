@@ -27,6 +27,8 @@ pub mod source_search_motor;
 pub mod source_tree_motor;
 pub mod speech_segment;
 pub mod speech_stream;
+#[cfg(feature = "svg-motor")]
+pub mod svg_motor;
 
 pub mod logger;
 pub mod motors;

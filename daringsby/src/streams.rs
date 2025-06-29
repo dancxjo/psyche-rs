@@ -8,3 +8,5 @@ pub use crate::canvas_stream::CanvasStream;
 /// ```
 pub use crate::look_stream::LookStream;
 pub use crate::speech_stream::SpeechStream;
+#[cfg(feature = "svg-motor")]
+pub use crate::svg_motor::SvgMotor;

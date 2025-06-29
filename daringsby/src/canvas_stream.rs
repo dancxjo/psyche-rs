@@ -17,14 +17,16 @@ use tokio::sync::broadcast::{self, Receiver, Sender};
 /// rather than a webcam.
 pub struct CanvasStream {
     tx: Sender<Vec<u8>>,    // Image bytes
+    svg_tx: Sender<String>, // SVG data
     cmd: Sender<String>,    // Commands like "snap"
 }
 
 impl Default for CanvasStream {
     fn default() -> Self {
         let (tx, _) = broadcast::channel(8);
+        let (svg_tx, _) = broadcast::channel(8);
         let (cmd, _) = broadcast::channel(8);
-        Self { tx, cmd }
+        Self { tx, svg_tx, cmd }
     }
 }
 
@@ -32,6 +34,11 @@ impl CanvasStream {
     /// Subscribe to incoming images.
     pub fn subscribe(&self) -> Receiver<Vec<u8>> {
         self.tx.subscribe()
+    }
+
+    /// Subscribe to outgoing SVG drawings.
+    pub fn subscribe_svg(&self) -> Receiver<String> {
+        self.svg_tx.subscribe()
     }
 
     /// Subscribe to outgoing commands (useful for tests or monitoring).
@@ -44,15 +51,30 @@ impl CanvasStream {
         let _ = self.cmd.send("snap".into());
     }
 
+    /// Broadcast an SVG drawing to all connected clients.
+    pub fn broadcast_svg(&self, svg: String) {
+        let _ = self.svg_tx.send(svg);
+    }
+
     /// Build a router exposing the canvas WebSocket endpoint.
     pub fn router(self: Arc<Self>) -> Router {
-        Router::new().route(
-            "/canvas-jpeg-in",
-            get(move |ws: WebSocketUpgrade| {
-                let stream = self.clone();
-                async move { ws.on_upgrade(move |sock| stream.clone().session(sock)) }
-            }),
-        )
+        let jpeg_stream = self.clone();
+        let svg_stream = self.clone();
+        Router::new()
+            .route(
+                "/canvas-jpeg-in",
+                get(move |ws: WebSocketUpgrade| {
+                    let stream = jpeg_stream.clone();
+                    async move { ws.on_upgrade(move |sock| stream.clone().session(sock)) }
+                }),
+            )
+            .route(
+                "/drawing-svg-out",
+                get(move |ws: WebSocketUpgrade| {
+                    let stream = svg_stream.clone();
+                    async move { ws.on_upgrade(move |sock| stream.clone().stream_svg(sock)) }
+                }),
+            )
     }
 
     async fn session(self: Arc<Self>, mut socket: WebSocket) {
@@ -70,6 +92,15 @@ impl CanvasStream {
                     }
                 }
                 else => break,
+            }
+        }
+    }
+
+    async fn stream_svg(self: Arc<Self>, mut socket: WebSocket) {
+        let mut rx = self.svg_tx.subscribe();
+        while let Ok(svg) = rx.recv().await {
+            if socket.send(Message::Text(svg)).await.is_err() {
+                break;
             }
         }
     }
@@ -106,5 +137,17 @@ mod tests {
         stream.request_snap();
         let msg = ws.next().await.unwrap().unwrap();
         assert_eq!(msg, WsMessage::Text("snap".into()));
+    }
+
+    #[tokio::test]
+    async fn broadcasts_svg_to_clients() {
+        let stream = Arc::new(CanvasStream::default());
+        let addr = start_server(stream.clone()).await;
+        let url = format!("ws://{addr}/drawing-svg-out");
+        let (mut ws, _) = connect_async(url).await.unwrap();
+
+        stream.broadcast_svg("<svg/>".into());
+        let msg = ws.next().await.unwrap().unwrap();
+        assert_eq!(msg, WsMessage::Text("<svg/>".into()));
     }
 }

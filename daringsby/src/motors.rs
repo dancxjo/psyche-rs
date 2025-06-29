@@ -18,3 +18,5 @@ pub use crate::source_read_motor::SourceReadMotor;
 pub use crate::source_search_motor::SourceSearchMotor;
 #[cfg(feature = "source-tree-motor")]
 pub use crate::source_tree_motor::SourceTreeMotor;
+#[cfg(feature = "svg-motor")]
+pub use crate::svg_motor::SvgMotor;
