@@ -41,7 +41,23 @@ impl Action {
         }
     }
 
-    /// Consume the entire body as a [`String`], logging each chunk.
+    /// Consume the entire body as a [`String`] with tracing.
+    ///
+    /// Motors that need the complete body before acting should call this
+    /// method. Each chunk is logged at `TRACE` level and the final body is
+    /// logged at `DEBUG` level.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use futures::{stream, StreamExt};
+    /// use psyche_rs::Action;
+    ///
+    /// let body = stream::iter(vec!["foo".to_string(), "bar".to_string()]).boxed();
+    /// let mut action = Action::new("log", serde_json::Value::Null, body);
+    /// let text = futures::executor::block_on(async { action.collect_text().await });
+    /// assert_eq!(text, "foobar");
+    /// ```
     pub async fn collect_text(&mut self) -> String {
         use futures::StreamExt;
         use tracing::{debug, trace};
@@ -55,7 +71,24 @@ impl Action {
         out
     }
 
-    /// Iterate over body chunks, yielding them as they arrive with trace logs.
+    /// Stream the body chunk by chunk with tracing.
+    ///
+    /// Motors that operate on streaming data can consume the returned stream to
+    /// handle each chunk as it arrives. Every chunk is logged at `TRACE` level.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use futures::{stream, StreamExt};
+    /// use psyche_rs::Action;
+    ///
+    /// let body = stream::iter(vec!["a".to_string(), "b".to_string()]).boxed();
+    /// let mut action = Action::new("say", serde_json::Value::Null, body);
+    /// let chunks: Vec<String> = futures::executor::block_on(async {
+    ///     action.logged_chunks().collect().await
+    /// });
+    /// assert_eq!(chunks, vec!["a", "b"]);
+    /// ```
     pub fn logged_chunks(&mut self) -> impl futures::Stream<Item = String> + '_ {
         use futures::StreamExt;
         use tracing::trace;
@@ -247,7 +280,7 @@ mod tests {
     }
 
     #[test]
-    fn streaming_body_collects_values() {
+    fn logged_chunks_yields_each_chunk() {
         let body = stream::iter(vec!["one".to_string(), "two".to_string()]).boxed();
         let mut action = Action::new("test", Value::Null, body);
         let collected = futures::executor::block_on(async {
@@ -259,6 +292,14 @@ mod tests {
             out
         });
         assert_eq!(collected, vec!["one", "two"]);
+    }
+
+    #[test]
+    fn collect_text_returns_full_body() {
+        let body = stream::iter(vec!["foo".to_string(), "bar".to_string()]).boxed();
+        let mut action = Action::new("log", Value::Null, body);
+        let text = futures::executor::block_on(async { action.collect_text().await });
+        assert_eq!(text, "foobar");
     }
 
     #[test]

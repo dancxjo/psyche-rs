@@ -303,10 +303,9 @@ mod tests {
         let sensor = DummySensor;
         let mut stream = will.observe(vec![sensor]).await;
         let mut intentions = stream.next().await.unwrap();
-        let intention = intentions.pop().unwrap();
+        let mut intention = intentions.pop().unwrap();
         assert_eq!(intention.action.name, "say");
-        let chunks: Vec<String> = intention.action.body.collect().await;
-        let body: String = chunks.concat();
+        let body = intention.action.collect_text().await;
         assert_eq!(body, "Hello world");
     }
 
