@@ -9,7 +9,6 @@ use tracing::{debug, info, warn};
 use crate::{
     Action, ActionResult, Intention, Motor, MotorError, Sensation, Sensor, Urge, Will, Wit,
 };
-use serde_json::Value;
 
 /// Sensor wrapper enabling shared ownership.
 struct SharedSensor<T> {
@@ -70,7 +69,7 @@ pub struct Psyche<T = serde_json::Value> {
     sensors: Vec<Arc<Mutex<dyn Sensor<T> + Send>>>,
     motors: Vec<Box<dyn Motor + Send>>,
     wits: Vec<Wit<T>>,
-    wills: Vec<Will<T>>,
+    will: Option<Will<T>>,
 }
 
 impl<T> Psyche<T>
@@ -83,7 +82,7 @@ where
             sensors: Vec::new(),
             motors: Vec::new(),
             wits: Vec::new(),
-            wills: Vec::new(),
+            will: None,
         }
     }
 
@@ -107,7 +106,7 @@ where
 
     /// Add a will to the psyche.
     pub fn will(mut self, will: Will<T>) -> Self {
-        self.wills.push(will);
+        self.will = Some(will);
         self
     }
 }
@@ -138,42 +137,31 @@ where
             let stream = wit.observe(sensors_for_wit).await;
             wit_streams.push(stream);
         }
-        let mut will_streams = Vec::new();
-        for will in self.wills.iter_mut() {
-            for m in self.motors.iter() {
-                will.register_motor(m.as_ref());
-            }
-            let sensors_for_will: Vec<_> = self
-                .sensors
-                .iter()
-                .map(|s| SharedSensor::new(s.clone()))
-                .collect();
-            let stream = will.observe(sensors_for_will).await;
-            will_streams.push(stream);
-        }
         let mut merged_wits = stream::select_all(wit_streams);
-        let mut merged_wills = stream::select_all(will_streams);
+
+        let will = self
+            .will
+            .as_mut()
+            .expect("Psyche requires exactly one Will");
+        for m in self.motors.iter() {
+            will.register_motor(m.as_ref());
+        }
+        let sensors_for_will: Vec<_> = self
+            .sensors
+            .iter()
+            .map(|s| SharedSensor::new(s.clone()))
+            .collect();
+        let stream = will.observe(sensors_for_will).await;
+        let mut merged_wills = stream::select_all(vec![stream]);
         loop {
             tokio::select! {
                 _ = tokio::signal::ctrl_c() => {
                     info!("psyche shutting down");
                     break;
                 }
-                Some(batch) = merged_wits.next() => {
-                    for impression in batch {
-                        debug!(?impression.how, "impression received");
-                        let text = impression.how.clone();
-                        for motor in self.motors.iter() {
-                            use futures::stream;
-                            let t = text.clone();
-                            let body = stream::once(async move { t }).boxed();
-                            let mut action = Action::new("log", Value::Null, body);
-                            action.intention.assigned_motor = motor.name().to_string();
-                            if let Err(e) = motor.perform(action).await {
-                                debug!(?e, "motor action failed");
-                            }
-                        }
-                    }
+                Some(_batch) = merged_wits.next() => {
+                    // Impressions are currently ignored by the psyche. Motors
+                    // are only activated by actions produced through the Will.
                 }
                 Some(actions) = merged_wills.next() => {
                     for action in actions {
@@ -233,19 +221,6 @@ mod tests {
         }
     }
 
-    #[derive(Clone)]
-    struct StaticLLM;
-
-    #[async_trait::async_trait]
-    impl LLMClient for StaticLLM {
-        async fn chat_stream(
-            &self,
-            _msgs: &[ollama_rs::generation::chat::ChatMessage],
-        ) -> Result<TokenStream, Box<dyn std::error::Error + Send + Sync>> {
-            Ok(Box::pin(stream::once(async { Ok("hi".to_string()) })))
-        }
-    }
-
     struct CountMotor(Arc<AtomicUsize>);
     #[async_trait::async_trait]
     impl Motor for CountMotor {
@@ -268,14 +243,29 @@ mod tests {
 
     #[tokio::test]
     async fn psyche_runs() {
+        #[derive(Clone)]
+        struct TagLLM;
+
+        #[async_trait::async_trait]
+        impl LLMClient for TagLLM {
+            async fn chat_stream(
+                &self,
+                _msgs: &[ollama_rs::generation::chat::ChatMessage],
+            ) -> Result<TokenStream, Box<dyn std::error::Error + Send + Sync>> {
+                use futures::stream;
+                let tokens = vec!["<log>".to_string(), "hi".to_string(), "</log>".to_string()];
+                Ok(Box::pin(stream::iter(tokens.into_iter().map(Ok))))
+            }
+        }
+
         let count = Arc::new(AtomicUsize::new(0));
-        let llm = Arc::new(StaticLLM);
-        let wit = Wit::new(llm).delay_ms(10);
+        let llm = Arc::new(TagLLM);
+        let will = Will::new(llm.clone()).delay_ms(10).motor("log", "count");
         let psyche = Psyche::new()
             .sensor(TestSensor)
-            .wit(wit)
+            .will(will)
             .motor(CountMotor(count.clone()));
-        let _ = tokio::time::timeout(std::time::Duration::from_millis(50), psyche.run()).await;
+        let _ = tokio::time::timeout(std::time::Duration::from_millis(200), psyche.run()).await;
         assert!(count.load(Ordering::SeqCst) > 0);
     }
 
@@ -305,7 +295,7 @@ mod tests {
             .wit(wit)
             .will(will)
             .motor(CountMotor(count.clone()));
-        let _ = tokio::time::timeout(std::time::Duration::from_millis(50), psyche.run()).await;
+        let _ = tokio::time::timeout(std::time::Duration::from_millis(200), psyche.run()).await;
         assert!(count.load(Ordering::SeqCst) > 0);
     }
 
@@ -445,7 +435,79 @@ mod tests {
             .motor(CountingMotor(count.clone(), "say"))
             .motor(CountingMotor(count.clone(), "log"));
 
-        let _ = tokio::time::timeout(std::time::Duration::from_millis(50), psyche.run()).await;
+        let _ = tokio::time::timeout(std::time::Duration::from_millis(200), psyche.run()).await;
         assert!(count.load(Ordering::SeqCst) >= 2);
+    }
+
+    #[tokio::test]
+    #[should_panic(expected = "Will")]
+    async fn run_requires_will() {
+        let psyche: Psyche = Psyche::new();
+        let _ = psyche.run().await;
+    }
+
+    #[tokio::test]
+    async fn later_will_overrides_previous() {
+        #[derive(Clone)]
+        struct FirstLLM;
+
+        #[async_trait::async_trait]
+        impl LLMClient for FirstLLM {
+            async fn chat_stream(
+                &self,
+                _msgs: &[ollama_rs::generation::chat::ChatMessage],
+            ) -> Result<TokenStream, Box<dyn std::error::Error + Send + Sync>> {
+                use futures::stream;
+                let toks = vec!["<a>".to_string(), "hi".to_string(), "</a>".to_string()];
+                Ok(Box::pin(stream::iter(toks.into_iter().map(Ok))))
+            }
+        }
+
+        #[derive(Clone)]
+        struct SecondLLM;
+
+        #[async_trait::async_trait]
+        impl LLMClient for SecondLLM {
+            async fn chat_stream(
+                &self,
+                _msgs: &[ollama_rs::generation::chat::ChatMessage],
+            ) -> Result<TokenStream, Box<dyn std::error::Error + Send + Sync>> {
+                use futures::stream;
+                let toks = vec!["<b>".to_string(), "bye".to_string(), "</b>".to_string()];
+                Ok(Box::pin(stream::iter(toks.into_iter().map(Ok))))
+            }
+        }
+
+        struct CountMotor(Arc<AtomicUsize>, &'static str);
+        #[async_trait::async_trait]
+        impl Motor for CountMotor {
+            fn description(&self) -> &'static str {
+                "count"
+            }
+            fn name(&self) -> &'static str {
+                self.1
+            }
+            async fn perform(&self, _action: Action) -> Result<ActionResult, MotorError> {
+                self.0.fetch_add(1, Ordering::SeqCst);
+                Ok(ActionResult::default())
+            }
+        }
+
+        let first = Will::<serde_json::Value>::new(Arc::new(FirstLLM))
+            .delay_ms(10)
+            .motor("a", "count");
+        let second = Will::<serde_json::Value>::new(Arc::new(SecondLLM))
+            .delay_ms(10)
+            .motor("b", "count");
+        let count_a = Arc::new(AtomicUsize::new(0));
+        let count_b = Arc::new(AtomicUsize::new(0));
+        let psyche = Psyche::new()
+            .will(first)
+            .will(second)
+            .motor(CountMotor(count_a.clone(), "a"))
+            .motor(CountMotor(count_b.clone(), "b"));
+        let _ = tokio::time::timeout(std::time::Duration::from_millis(200), psyche.run()).await;
+        assert_eq!(count_a.load(Ordering::SeqCst), 0);
+        assert!(count_b.load(Ordering::SeqCst) > 0);
     }
 }
