@@ -84,3 +84,24 @@ impl Motor for LookMotor {
         })
     }
 }
+
+#[async_trait::async_trait]
+impl psyche_rs::SensorDirectingMotor for LookMotor {
+    /// Return the name of the single sensor controlled by this motor.
+    fn attached_sensors(&self) -> Vec<String> {
+        vec!["LookStream".to_string()]
+    }
+
+    /// Trigger a snapshot on the internal [`LookStream`].
+    async fn direct_sensor(&self, sensor_name: &str) -> Result<(), MotorError> {
+        if sensor_name == "LookStream" {
+            self.stream.request_snap();
+            Ok(())
+        } else {
+            Err(MotorError::Failed(format!(
+                "Unknown sensor: {}",
+                sensor_name
+            )))
+        }
+    }
+}
