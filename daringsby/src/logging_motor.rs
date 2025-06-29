@@ -15,10 +15,13 @@ pub struct LoggingMotor;
 impl Motor for LoggingMotor {
     fn description(&self) -> &'static str {
         "Log text by calling the `log` motor.\n\
-Parameters: none. The body is written to a file and stdout.\n\
-Associated sensor: `LogMemorySensor` via the `read_log_memory` motor\
-to recall past entries.\n\
-Emits a `log` sensation containing the text."
+Parameters: none.\n\
+Example:\n\
+<log>System initialized successfully.</log>\n\
+Explanation:\n\
+The Will writes the body text to a persistent log file and stdout.\n\
+The same text is emitted as a `log` sensation and can later be\
+recalled via `read_log_memory`."
     }
     fn name(&self) -> &'static str {
         "log"

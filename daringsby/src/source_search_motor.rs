@@ -64,10 +64,12 @@ impl SourceSearchMotor {
 impl Motor for SourceSearchMotor {
     fn description(&self) -> &'static str {
         "Use `search_source` with parameter `query`.\n\
-Example: `{\"query\":\"Motor\"}`.\n\
-Associated sensor: `SourceSearchSensor:<query>` which emits one\n\
-`source.search` sensation per matching line.\n\
-The motor itself returns those sensations as its result."
+Example:\n\
+<search_source query=\"Motor\"></search_source>\n\
+Explanation:\n\
+The Will scans the embedded source for lines containing the query.\n\
+Each match is returned as a `source.search` sensation, and\n\
+`SourceSearchSensor:<query>` can be directed to emit the same data."
     }
 
     fn name(&self) -> &'static str {

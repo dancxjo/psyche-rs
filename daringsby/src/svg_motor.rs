@@ -40,8 +40,11 @@ impl Motor for SvgMotor {
     fn description(&self) -> &'static str {
         "Use the `draw` motor with SVG markup in the body.\n\
 Parameters: none.\n\
-SVG is broadcast to connected canvas clients via `CanvasStream::subscribe_svg`.\n\
-Emits a `drawing.svg` sensation containing the same SVG string."
+Example:\n\
+<draw><circle cx=\"5\" cy=\"5\" r=\"5\" fill=\"red\"/></draw>\n\
+Explanation:\n\
+The Will forwards the SVG markup to connected canvas clients for rendering.\n\
+The same markup is emitted as a `drawing.svg` sensation for later reference."
     }
 
     fn name(&self) -> &'static str {
