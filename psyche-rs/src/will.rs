@@ -158,7 +158,7 @@ impl<T> Will<T> {
                                 .replace("{motors}", &motor_text)
                                 .replace("{latest_instant}", &last_instant)
                                 .replace("{latest_moment}", &last_moment);
-                            trace!(?prompt, "sending will prompt");
+                            debug!(?prompt, "sending will prompt");
                             let msgs = vec![ChatMessage::user(prompt)];
                             match llm.chat_stream(&msgs).await {
                                 Ok(mut stream) => {

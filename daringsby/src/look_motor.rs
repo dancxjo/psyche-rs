@@ -5,7 +5,7 @@ use chrono::Local;
 use futures::StreamExt;
 use std::sync::Arc;
 use tokio::sync::mpsc::UnboundedSender;
-use tracing::trace;
+use tracing::{trace,debug};
 
 use psyche_rs::{Action, ActionResult, LLMClient, Motor, MotorError, Sensation};
 
@@ -53,7 +53,7 @@ impl Motor for LookMotor {
         let prompt = format!(
             "This is what you are seeing. If this is your first person perspective, what do you see?\n{b64}"
         );
-        trace!(?prompt, "look prompt");
+        debug!(?prompt, "look prompt");
         let msgs = vec![ollama_rs::generation::chat::ChatMessage::user(prompt)];
         let mut stream = self
             .llm

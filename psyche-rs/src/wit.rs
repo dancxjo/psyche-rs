@@ -158,7 +158,7 @@ where
                             let prompt = template
                                 .replace("{last_frame}", &lf)
                                 .replace("{template}", &timeline);
-                            trace!(?prompt, "sending LLM prompt");
+                            debug!(?prompt, "sending LLM prompt");
                             let msgs = vec![ChatMessage::user(prompt)];
                             match llm.chat_stream(&msgs).await {
                                 Ok(mut stream) => {
