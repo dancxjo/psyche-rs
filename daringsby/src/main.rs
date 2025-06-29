@@ -11,7 +11,7 @@ use ollama_rs::Ollama;
 use once_cell::sync::Lazy;
 use psyche_rs::{
     Action, Combobulator, Impression, ImpressionStreamSensor, Intention, LLMClient, Motor,
-    OllamaLLM, RoundRobinLLM, Sensation, SensationSensor, Sensor, Wit,
+    OllamaLLM, RoundRobinLLM, Sensation, SensationSensor, Sensor, Will, Wit,
 };
 
 #[cfg(feature = "development-status-sensor")]
@@ -27,7 +27,7 @@ use std::net::SocketAddr;
 
 const QUICK_PROMPT: &str = include_str!("quick_prompt.txt");
 const COMBO_PROMPT: &str = include_str!("combobulator_prompt.txt");
-const _WILL_PROMPT: &str = include_str!("will_prompt.txt");
+const WILL_PROMPT: &str = include_str!("will_prompt.txt");
 
 static INSTANT: Lazy<Arc<Mutex<Vec<Impression<String>>>>> =
     Lazy::new(|| Arc::new(Mutex::new(Vec::new())));
@@ -119,8 +119,16 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let sensor = ImpressionStreamSensor::new(rx);
     let combo_stream = combob.observe(vec![sensor]).await;
     let logger = Arc::new(LoggingMotor);
-    let _looker = Arc::new(LookMotor::new(vision.clone(), llm.clone(), look_tx));
+    let looker = Arc::new(LookMotor::new(vision.clone(), llm.clone(), look_tx));
     let _speaker_id = args.speaker_id.clone();
+
+    let (will_tx, will_rx) = unbounded_channel::<Vec<Impression<String>>>();
+    let will_sensor = ImpressionStreamSensor::new(will_rx);
+    let mut will = Will::new(llm.clone()).prompt(WILL_PROMPT).delay_ms(1000);
+    will.register_motor(logger.as_ref());
+    will.register_motor(looker.as_ref());
+    will.register_motor(mouth.as_ref());
+    let will_stream = will.observe(vec![will_sensor]).await;
 
     let q_instant = INSTANT.clone();
     tokio::spawn(async move {
@@ -128,7 +136,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             let mut guard = q_instant.lock().await;
             *guard = imps.clone();
             drop(guard);
-            let _ = tx.send(imps);
+            let _ = tx.send(imps.clone());
+            let _ = will_tx.send(imps);
         }
     });
 
@@ -145,8 +154,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     #[cfg(not(feature = "moment-feedback"))]
     {
-        tokio::spawn(drive_combo_stream(combo_stream, logger));
+        tokio::spawn(drive_combo_stream(combo_stream, logger.clone()));
     }
+
+    tokio::spawn(drive_will_stream(will_stream, logger, looker, mouth));
 
     tokio::signal::ctrl_c().await?;
     Ok(())
@@ -192,6 +203,34 @@ async fn drive_combo_stream(
                 .perform(intention)
                 .await
                 .expect("logging motor failed");
+        }
+    }
+}
+
+async fn drive_will_stream(
+    mut will_stream: impl futures::Stream<Item = Vec<Intention>> + Unpin + Send + 'static,
+    logger: Arc<LoggingMotor>,
+    looker: Arc<LookMotor>,
+    mouth: Arc<Mouth>,
+) {
+    use futures::StreamExt;
+
+    while let Some(ints) = will_stream.next().await {
+        for intent in ints {
+            match intent.assigned_motor.as_str() {
+                "log" => {
+                    logger.perform(intent).await.expect("logging motor failed");
+                }
+                "look" => {
+                    looker.perform(intent).await.expect("look motor failed");
+                }
+                "say" => {
+                    mouth.perform(intent).await.expect("mouth motor failed");
+                }
+                _ => {
+                    tracing::warn!(motor = %intent.assigned_motor, "unknown motor");
+                }
+            }
         }
     }
 }
