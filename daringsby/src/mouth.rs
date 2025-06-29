@@ -6,7 +6,7 @@ use std::io::Cursor;
 use std::sync::Arc;
 use tokio::sync::Mutex as TokioMutex;
 use tokio::sync::broadcast::{self, Receiver, Sender};
-use tracing::{trace, warn};
+use tracing::{error, trace};
 
 use psyche_rs::{Action, ActionResult, Motor, MotorError};
 
@@ -184,7 +184,7 @@ impl Motor for Mouth {
                     let url = match Mouth::tts_url(&base, &sent, &speaker_id, &lang) {
                         Ok(u) => u,
                         Err(e) => {
-                            warn!(error=?e, "tts url error");
+                            error!(error=?e, "tts url error");
                             continue;
                         }
                     };
@@ -194,11 +194,11 @@ impl Motor for Mouth {
                                 Ok(pcm) => {
                                     let _ = tx.send(pcm);
                                 }
-                                Err(e) => warn!(error = ?e, "wav decode failed"),
+                                Err(e) => error!(error = ?e, "wav decode failed"),
                             },
-                            Err(e) => warn!(error = ?e, "tts body error"),
+                            Err(e) => error!(error = ?e, "tts body error"),
                         },
-                        Err(e) => warn!(error = ?e, "tts request failed"),
+                        Err(e) => error!(error = ?e, "tts request failed"),
                     }
                     let _ = tx.send(Bytes::new());
                 }
@@ -209,7 +209,7 @@ impl Motor for Mouth {
                 let url = match Mouth::tts_url(&base, &buf, &speaker_id, &lang) {
                     Ok(u) => u,
                     Err(e) => {
-                        warn!(error=?e, "tts url error");
+                        error!(error=?e, "tts url error");
                         return;
                     }
                 };
@@ -219,11 +219,11 @@ impl Motor for Mouth {
                             Ok(pcm) => {
                                 let _ = tx.send(pcm);
                             }
-                            Err(e) => warn!(error = ?e, "wav decode failed"),
+                            Err(e) => error!(error = ?e, "wav decode failed"),
                         },
-                        Err(e) => warn!(error = ?e, "tts body error"),
+                        Err(e) => error!(error = ?e, "tts body error"),
                     },
-                    Err(e) => warn!(error = ?e, "tts request failed"),
+                    Err(e) => error!(error = ?e, "tts request failed"),
                 }
             }
             let _ = tx.send(Bytes::new());
