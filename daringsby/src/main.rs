@@ -1,6 +1,6 @@
 use clap::Parser;
 use std::sync::{Arc, Mutex};
-use tracing::Level;
+use tracing::{Level, error};
 
 #[cfg(feature = "moment-feedback")]
 use chrono::Utc;
@@ -154,7 +154,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     let speak_body = stream::once(async move { speak_text }).boxed();
                     let mut speak = Action::new("speak", Value::Object(map), speak_body);
                     speak.intention.assigned_motor = "speak".into();
-                    mouth_task.perform(speak).await.unwrap();
+                    if let Err(e) = mouth_task.perform(speak).await {
+                        error!(error=?e, "mouth perform failed");
+                    }
                 }
             }
         });
@@ -187,7 +189,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     let speak_body = stream::once(async move { speak_text }).boxed();
                     let mut speak = Action::new("speak", Value::Object(map), speak_body);
                     speak.intention.assigned_motor = "speak".into();
-                    mouth_task.perform(speak).await.unwrap();
+                    if let Err(e) = mouth_task.perform(speak).await {
+                        error!(error=?e, "mouth perform failed");
+                    }
                 }
             }
         });

@@ -11,6 +11,7 @@ use tokio::sync::{
     Mutex,
     broadcast::{self, Receiver, Sender},
 };
+use tracing::{error, warn};
 
 /// WebSocket streamer for mouth audio.
 ///
@@ -83,13 +84,17 @@ impl SpeechStream {
         loop {
             match rx.recv().await {
                 Ok(bytes) => {
-                    if !bytes.is_empty()
-                        && socket.send(Message::Binary(bytes.to_vec())).await.is_err()
-                    {
-                        break;
+                    if !bytes.is_empty() {
+                        if socket.send(Message::Binary(bytes.to_vec())).await.is_err() {
+                            error!("websocket audio send failed");
+                            break;
+                        }
                     }
                 }
-                Err(broadcast::error::RecvError::Lagged(_)) => continue,
+                Err(broadcast::error::RecvError::Lagged(count)) => {
+                    warn!(%count, "audio channel lagged");
+                    continue;
+                }
                 Err(broadcast::error::RecvError::Closed) => break,
             }
         }
@@ -98,9 +103,19 @@ impl SpeechStream {
     async fn stream_text(self: Arc<Self>, mut socket: WebSocket) {
         let rx = self.text_rx.clone();
         let mut rx = rx.lock().await;
-        while let Ok(text) = rx.recv().await {
-            if socket.send(Message::Text(text)).await.is_err() {
-                break;
+        loop {
+            match rx.recv().await {
+                Ok(text) => {
+                    if socket.send(Message::Text(text)).await.is_err() {
+                        error!("websocket text send failed");
+                        break;
+                    }
+                }
+                Err(broadcast::error::RecvError::Lagged(count)) => {
+                    warn!(%count, "text channel lagged");
+                    continue;
+                }
+                Err(broadcast::error::RecvError::Closed) => break,
             }
         }
     }
@@ -109,11 +124,15 @@ impl SpeechStream {
         while let Some(Ok(msg)) = socket.next().await {
             match msg {
                 Message::Text(t) => {
-                    let _ = self.heard_tx.send(t);
+                    if self.heard_tx.send(t).is_err() {
+                        warn!("heard_tx receiver dropped");
+                    }
                 }
                 Message::Binary(b) => {
                     if let Ok(t) = String::from_utf8(b) {
-                        let _ = self.heard_tx.send(t);
+                        if self.heard_tx.send(t).is_err() {
+                            warn!("heard_tx receiver dropped");
+                        }
                     }
                 }
                 Message::Close(_) => break,
