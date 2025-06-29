@@ -22,4 +22,6 @@
 - Use the `LLMClient` trait for streaming LLM interactions.
 - Avoid streaming silence frames when audio is not playing.
 - Stream HTTP responses using `bytes_stream` to avoid blocking when servers
-  stream data chunked.
+    stream data chunked.
+- Use `src/test_helpers.rs` for shared test utilities like `StaticLLM`,
+  `TestSensor` and `TwoBatch`.

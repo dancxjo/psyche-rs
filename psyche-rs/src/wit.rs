@@ -17,9 +17,10 @@ use crate::llm_client::LLMClient;
 use ollama_rs::generation::chat::ChatMessage;
 
 /// Default prompt text for [`Wit`].
-const DEFAULT_PROMPT: &str = include_str!("wit_prompt.txt");
+const DEFAULT_PROMPT: &str = include_str!("prompts/wit_prompt.txt");
 
 /// A looping prompt witness that summarizes sensed experiences using an LLM.
+#[derive(Clone)]
 pub struct Wit<T = serde_json::Value> {
     llm: Arc<dyn LLMClient>,
     prompt: String,

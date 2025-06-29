@@ -16,7 +16,7 @@ use crate::{Action, Intention, Motor, Sensation, Sensor};
 use ollama_rs::generation::chat::ChatMessage;
 use serde_json::{Map, Value};
 
-const DEFAULT_PROMPT: &str = include_str!("will_prompt.txt");
+const DEFAULT_PROMPT: &str = include_str!("prompts/will_prompt.txt");
 
 /// Description of an available motor.
 #[derive(Clone)]
