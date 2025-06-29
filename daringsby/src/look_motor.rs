@@ -81,6 +81,8 @@ impl Motor for LookMotor {
                 source: None,
             }],
             completed: true,
+            completion: None,
+            interruption: None,
         })
     }
 }

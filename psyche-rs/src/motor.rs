@@ -101,7 +101,10 @@ pub struct Intention {
 }
 
 impl Intention {
-    /// Convenience constructor.
+    /// Creates a new `Intention` from an action name and parameters.
+    ///
+    /// Note: The `assigned_motor` field is left empty and must be set by the
+    /// caller using [`Intention::assign`].
     pub fn to(name: impl Into<String>, params: Value) -> Self {
         let mut urge = Urge::new(name);
         // back-compat with legacy params when converting from actions
@@ -179,6 +182,21 @@ pub struct ActionResult<T = serde_json::Value> {
     pub sensations: Vec<Sensation<T>>,
     /// Whether the action fully completed.
     pub completed: bool,
+    /// Optional completion metadata.
+    pub completion: Option<Completion>,
+    /// Optional interruption metadata.
+    pub interruption: Option<Interruption>,
+}
+
+impl<T> Default for ActionResult<T> {
+    fn default() -> Self {
+        Self {
+            sensations: Vec::new(),
+            completed: false,
+            completion: None,
+            interruption: None,
+        }
+    }
 }
 
 #[cfg(test)]
@@ -193,5 +211,33 @@ mod tests {
         assert_eq!(action.intention.urge.name, "test");
         let none = futures::executor::block_on(async { action.body.next().await });
         assert!(none.is_none());
+    }
+
+    #[test]
+    fn streaming_body_collects_values() {
+        let body = stream::iter(vec!["one".to_string(), "two".to_string()]).boxed();
+        let mut action = Action::new("test", Value::Null, body);
+        let collected = futures::executor::block_on(async {
+            let mut chunks = Vec::new();
+            while let Some(chunk) = action.body.next().await {
+                chunks.push(chunk);
+            }
+            chunks
+        });
+        assert_eq!(collected, vec!["one", "two"]);
+    }
+
+    #[test]
+    fn action_result_with_completion_and_interruption() {
+        let completion = Completion::of("look", Value::Null);
+        let interruption = Interruption::of("look", Value::Null);
+        let result = ActionResult::<Value> {
+            sensations: Vec::new(),
+            completed: false,
+            completion: Some(completion.clone()),
+            interruption: Some(interruption.clone()),
+        };
+        assert_eq!(result.completion.unwrap().name, "look");
+        assert_eq!(result.interruption.unwrap().name, "look");
     }
 }

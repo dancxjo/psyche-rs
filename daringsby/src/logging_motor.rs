@@ -39,6 +39,8 @@ impl Motor for LoggingMotor {
                 source: None,
             }],
             completed: true,
+            completion: None,
+            interruption: None,
         })
     }
 }

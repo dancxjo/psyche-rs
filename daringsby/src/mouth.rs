@@ -251,6 +251,8 @@ impl Motor for Mouth {
         Ok(ActionResult {
             sensations: Vec::new(),
             completed: true,
+            completion: None,
+            interruption: None,
         })
     }
 }

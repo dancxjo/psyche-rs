@@ -10,6 +10,8 @@ async fn perform_accepts_body_and_succeeds() {
     let action = Action { intention, body };
     let result = motor.perform(action).await.expect("perform should succeed");
     assert!(result.completed);
+    assert!(result.completion.is_none());
+    assert!(result.interruption.is_none());
     assert_eq!(result.sensations.len(), 1);
     assert_eq!(result.sensations[0].what, "hello world");
 }

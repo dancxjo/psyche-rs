@@ -194,6 +194,8 @@ mod tests {
             Ok(ActionResult {
                 sensations: Vec::new(),
                 completed: true,
+                completion: None,
+                interruption: None,
             })
         }
     }
@@ -238,6 +240,8 @@ mod tests {
                         source: None,
                     }],
                     completed: true,
+                    completion: None,
+                    interruption: None,
                 })
             }
         }
