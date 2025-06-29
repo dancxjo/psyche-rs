@@ -83,7 +83,11 @@ function capture() {
   lookCanvas.toBlob(b => b && b.arrayBuffer().then(buf => lookWs.send(buf)), 'image/jpeg', 0.8);
 }
 
-document.getElementById('start').addEventListener('click', start);
+// Attach the start handler only once so we don't open duplicate WebSocket
+// connections if the user clicks multiple times.
+document
+  .getElementById('start')
+  .addEventListener('click', start, { once: true });
 </script>
 </body>
 </html>
