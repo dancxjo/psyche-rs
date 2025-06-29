@@ -6,6 +6,17 @@ use tokio_stream::wrappers::UnboundedReceiverStream;
 use crate::{Impression, Sensation, Sensor};
 
 /// Sensor that converts impression batches into sensations.
+///
+/// ```no_run
+/// use psyche_rs::{ImpressionSensor, Impression, Sensation};
+/// use tokio::sync::mpsc::unbounded_channel;
+///
+/// let (tx, rx) = unbounded_channel();
+/// let mut sensor = ImpressionSensor::new(rx);
+/// tx.send(vec![Impression { how: "hi".into(), what: Vec::<Sensation<String>>::new() }]).unwrap();
+/// drop(tx);
+/// // async context: sensor.stream().next().await
+/// ```
 pub struct ImpressionSensor<T> {
     rx: Option<UnboundedReceiver<Vec<Impression<T>>>>,
 }

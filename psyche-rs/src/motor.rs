@@ -23,6 +23,15 @@ impl std::fmt::Debug for Action {
 
 impl Action {
     /// Helper to create an [`Action`] from parts.
+    ///
+    /// ```
+    /// use futures::stream::{self, StreamExt};
+    /// use psyche_rs::Action;
+    ///
+    /// let body = stream::empty().boxed();
+    /// let action = Action::new("log", serde_json::Value::Null, body);
+    /// assert_eq!(action.intention.urge.name, "log");
+    /// ```
     pub fn new(name: impl Into<String>, args: Value, body: BoxStream<'static, String>) -> Self {
         Self {
             intention: Intention::to(name, args),
