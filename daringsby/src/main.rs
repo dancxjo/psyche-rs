@@ -61,7 +61,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .base_url
         .iter()
         .map(|url| {
-            let cli = Ollama::try_new(url).expect("ollama client");
+            let cli = Ollama::try_new(url).expect("failed to create Ollama client");
             Arc::new(OllamaLLM::new(cli, args.model.clone())) as Arc<dyn LLMClient>
         })
         .collect();
@@ -76,8 +76,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let addr: SocketAddr = format!("{}:{}", args.host, args.port).parse()?;
     tokio::spawn(async move {
         tracing::info!(%addr, "serving speech stream");
-        let listener = tokio::net::TcpListener::bind(addr).await.unwrap();
-        axum::serve(listener, app).await.unwrap();
+        let listener = tokio::net::TcpListener::bind(addr)
+            .await
+            .expect("failed to bind TcpListener");
+        axum::serve(listener, app).await.expect("axum serve failed");
     });
 
     let mut quick = Wit::new(llm.clone()).prompt(QUICK_PROMPT).delay_ms(1000);
