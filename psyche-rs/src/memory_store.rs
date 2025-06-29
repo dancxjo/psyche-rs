@@ -265,4 +265,19 @@ mod integration_tests {
             .unwrap();
         assert_eq!(related.len(), 3);
     }
+
+    #[test]
+    fn consolidates_duplicate_sensations() {
+        let store = InMemoryStore::new();
+        let mut s = make_sensation("dup");
+        store.store_sensation(&s).unwrap();
+        s.data = "changed".into();
+        store.store_sensation(&s).unwrap();
+
+        let imp = make_impression("i_dup", vec!["dup".into()]);
+        store.store_impression(&imp).unwrap();
+        let (_, sens, _) = store.load_full_impression("i_dup").unwrap();
+        assert_eq!(sens.len(), 1);
+        assert_eq!(sens[0].data, r#"{"face_id":"abc123"}"#);
+    }
 }

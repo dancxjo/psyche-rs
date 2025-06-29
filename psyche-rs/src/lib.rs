@@ -12,6 +12,7 @@ mod llm_pool;
 mod memory_sensor;
 mod memory_store;
 mod motor;
+mod neo_qdrant_store;
 mod psyche;
 mod sensation;
 mod sensation_channel_sensor;
@@ -31,6 +32,7 @@ pub use motor::{
     Action, ActionResult, Completion, Intention, Interruption, Motor, MotorError,
     SensorDirectingMotor,
 };
+pub use neo_qdrant_store::NeoQdrantMemoryStore;
 pub use psyche::Psyche;
 pub use sensation::Sensation;
 pub use sensation_channel_sensor::SensationSensor;
