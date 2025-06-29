@@ -13,7 +13,8 @@ async fn perform_accepts_body_and_succeeds() {
         .await
         .expect("perform should succeed");
     assert!(result.completed);
-    assert!(result.completion.is_none());
+    let completion = result.completion.expect("completion");
+    assert_eq!(completion.name, "log");
     assert!(result.interruption.is_none());
     assert_eq!(result.sensations.len(), 1);
     assert_eq!(result.sensations[0].what, "hello world");

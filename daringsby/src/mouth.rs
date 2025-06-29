@@ -6,12 +6,12 @@ use std::io::Cursor;
 use std::sync::Arc;
 use tokio::sync::Mutex as TokioMutex;
 use tokio::sync::broadcast::{self, Receiver, Sender};
-use tracing::{error, trace};
+use tracing::{debug, error, trace};
 
 use crate::speech_segment::SpeechSegment;
 #[cfg(test)]
 use psyche_rs::Action;
-use psyche_rs::{ActionResult, Intention, Motor, MotorError};
+use psyche_rs::{ActionResult, Completion, Intention, Motor, MotorError};
 
 /// Motor that streams text-to-speech audio via HTTP.
 ///
@@ -178,6 +178,7 @@ impl Motor for Mouth {
         let text_tx = self.text_tx.clone();
         let segment_tx = self.segment_tx.clone();
         let queue = self.queue.clone();
+        let completion = Completion::of(action.name.clone(), action.params.clone());
         tokio::spawn(async move {
             let _guard = queue.lock().await;
             let mut buf = String::new();
@@ -266,10 +267,11 @@ impl Motor for Mouth {
             }
             let _ = tx.send(Bytes::new());
         });
+        debug!(?completion, "action completed");
         Ok(ActionResult {
             sensations: Vec::new(),
             completed: true,
-            completion: None,
+            completion: Some(completion),
             interruption: None,
         })
     }
@@ -459,5 +461,23 @@ mod tests {
         assert_eq!(seg.text, "Hi.");
         let decoded = seg.decode_audio().unwrap();
         assert!(!decoded.is_empty());
+    }
+
+    #[tokio::test]
+    async fn perform_returns_completion() {
+        let server = MockServer::start_async().await;
+        let _mock = server
+            .mock_async(|when, then| {
+                when.method(GET);
+                then.status(200).body(Vec::new());
+            })
+            .await;
+        let mouth = Mouth::new(server.url(""), None);
+        let body = stream::once(async { "Hi.".to_string() }).boxed();
+        let action = Action::new("say", Map::new().into(), body);
+        let intention = Intention::to(action).assign("say");
+        let result = mouth.perform(intention).await.unwrap();
+        assert!(result.completed);
+        assert_eq!(result.completion.unwrap().name, "say");
     }
 }

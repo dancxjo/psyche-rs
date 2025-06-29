@@ -2,8 +2,11 @@ use async_trait::async_trait;
 use chrono::Local;
 use include_dir::{Dir, include_dir};
 use tokio::sync::mpsc::UnboundedSender;
+use tracing::debug;
 
-use psyche_rs::{ActionResult, Intention, Motor, MotorError, Sensation, SensorDirectingMotor};
+use psyche_rs::{
+    ActionResult, Completion, Intention, Motor, MotorError, Sensation, SensorDirectingMotor,
+};
 
 static DARINGSBY_SRC_DIR: Dir = include_dir!("$CARGO_MANIFEST_DIR/src");
 static PSYCHE_SRC_DIR: Dir = include_dir!("$CARGO_MANIFEST_DIR/../psyche-rs/src");
@@ -64,22 +67,25 @@ impl Motor for SourceReadMotor {
             .params
             .get("file_path")
             .and_then(|v| v.as_str())
+            .map(|s| s.to_string())
             .ok_or_else(|| MotorError::Failed("missing file_path".into()))?;
         let index = action
             .params
             .get("block_index")
             .and_then(|v| v.as_u64())
             .unwrap_or(0) as usize;
-        let block = Self::read_block(path, index)?;
+        let block = Self::read_block(&path, index)?;
+        let completion = Completion::of_action(action);
+        debug!(?completion, "action completed");
         Ok(ActionResult {
             sensations: vec![Sensation {
                 kind: "source.block".into(),
                 when: Local::now(),
                 what: serde_json::Value::String(block),
-                source: Some(path.to_string()),
+                source: Some(path.clone()),
             }],
             completed: true,
-            completion: None,
+            completion: Some(completion),
             interruption: None,
         })
     }

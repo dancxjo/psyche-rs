@@ -1,4 +1,5 @@
 use daringsby::source_read_motor::SourceReadMotor;
+use futures::stream::{self, StreamExt};
 use psyche_rs::{MotorError, SensorDirectingMotor};
 use tokio::sync::mpsc::unbounded_channel;
 
@@ -28,4 +29,18 @@ async fn direct_sensor_unknown() {
     let motor = SourceReadMotor::new(tx);
     let err = SensorDirectingMotor::direct_sensor(&motor, "Unknown").await;
     assert!(matches!(err, Err(MotorError::Failed(_))));
+}
+
+#[tokio::test]
+async fn perform_returns_completion() {
+    let (tx, _rx) = unbounded_channel();
+    let motor = SourceReadMotor::new(tx);
+    use psyche_rs::{Action, Intention, Motor};
+    use serde_json::json;
+    let params = json!({"file_path": "lib.rs", "block_index": 0});
+    let action = Action::new("read_source", params, stream::empty().boxed());
+    let intention = Intention::to(action).assign("read_source");
+    let result = motor.perform(intention).await.expect("perform");
+    assert!(result.completed);
+    assert_eq!(result.completion.unwrap().name, "read_source");
 }

@@ -3,7 +3,10 @@ use chrono::Local;
 use include_dir::{Dir, include_dir};
 use tokio::sync::mpsc::UnboundedSender;
 
-use psyche_rs::{ActionResult, Intention, Motor, MotorError, Sensation, SensorDirectingMotor};
+use psyche_rs::{
+    ActionResult, Completion, Intention, Motor, MotorError, Sensation, SensorDirectingMotor,
+};
+use tracing::debug;
 
 static DARINGSBY_SRC_DIR: Dir = include_dir!("$CARGO_MANIFEST_DIR/src");
 static PSYCHE_SRC_DIR: Dir = include_dir!("$CARGO_MANIFEST_DIR/../psyche-rs/src");
@@ -78,6 +81,8 @@ impl Motor for SourceSearchMotor {
             .and_then(|v| v.as_str())
             .ok_or_else(|| MotorError::Failed("missing query".into()))?;
         let results = Self::search(query);
+        let completion = Completion::of_action(action);
+        debug!(?completion, "action completed");
         Ok(ActionResult {
             sensations: results
                 .into_iter()
@@ -89,7 +94,7 @@ impl Motor for SourceSearchMotor {
                 })
                 .collect(),
             completed: true,
-            completion: None,
+            completion: Some(completion),
             interruption: None,
         })
     }

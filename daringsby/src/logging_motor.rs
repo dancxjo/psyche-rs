@@ -1,9 +1,9 @@
 use futures::StreamExt;
-use tracing::{info, warn};
+use tracing::{debug, info, warn};
 
 use chrono::Local;
 
-use psyche_rs::{ActionResult, Intention, Motor, MotorError, Sensation};
+use psyche_rs::{ActionResult, Completion, Intention, Motor, MotorError, Sensation};
 
 /// Simple motor that logs every received command.
 #[derive(Default)]
@@ -32,6 +32,8 @@ impl Motor for LoggingMotor {
             assigned_motor = %intention.assigned_motor,
             "motor log"
         );
+        let completion = Completion::of_action(action);
+        debug!(?completion, "action completed");
         Ok(ActionResult {
             sensations: vec![Sensation {
                 kind: "log".into(),
@@ -40,7 +42,7 @@ impl Motor for LoggingMotor {
                 source: None,
             }],
             completed: true,
-            completion: None,
+            completion: Some(completion),
             interruption: None,
         })
     }

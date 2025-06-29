@@ -1,4 +1,5 @@
 use daringsby::source_tree_motor::SourceTreeMotor;
+use futures::stream::{self, StreamExt};
 use psyche_rs::{MotorError, SensorDirectingMotor};
 use tokio::sync::mpsc::unbounded_channel;
 
@@ -27,4 +28,20 @@ async fn direct_sensor_unknown_name() {
     let motor = SourceTreeMotor::new(tx);
     let err = SensorDirectingMotor::direct_sensor(&motor, "Unknown").await;
     assert!(matches!(err, Err(MotorError::Failed(_))));
+}
+
+#[tokio::test]
+async fn perform_returns_completion() {
+    let (tx, _rx) = unbounded_channel();
+    let motor = SourceTreeMotor::new(tx);
+    use psyche_rs::{Action, Intention, Motor};
+    let action = Action::new(
+        "source_tree",
+        serde_json::Value::Null,
+        stream::empty().boxed(),
+    );
+    let intention = Intention::to(action).assign("source_tree");
+    let result = motor.perform(intention).await.unwrap();
+    assert!(result.completed);
+    assert_eq!(result.completion.unwrap().name, "source_tree");
 }
