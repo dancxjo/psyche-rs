@@ -21,8 +21,8 @@ use daringsby::SelfDiscovery;
 #[cfg(feature = "source-discovery-sensor")]
 use daringsby::SourceDiscovery;
 use daringsby::{
-    HeardSelfSensor, HeardUserSensor, Heartbeat, LoggingMotor, LookMotor, LookStream, Mouth,
-    SpeechStream,
+    CanvasMotor, CanvasStream, HeardSelfSensor, HeardUserSensor, Heartbeat, LoggingMotor, LookMotor, LookStream,
+    Mouth, SpeechStream, SvgMotor,
 };
 use std::net::SocketAddr;
 
@@ -81,7 +81,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let segment_rx = mouth.subscribe_segments();
     let stream = Arc::new(SpeechStream::new(audio_rx, text_rx, segment_rx));
     let vision = Arc::new(LookStream::default());
-    let app = stream.clone().router().merge(vision.clone().router());
+    let canvas = Arc::new(CanvasStream::default());
+    let app = stream
+        .clone()
+        .router()
+        .merge(vision.clone().router())
+        .merge(canvas.clone().router());
     let addr: SocketAddr = format!("{}:{}", args.host, args.port).parse()?;
     tokio::spawn(async move {
         tracing::info!(%addr, "serving speech stream");
@@ -98,6 +103,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let (tx, rx) = unbounded_channel::<Vec<Impression<String>>>();
     let (look_tx, look_rx) = unbounded_channel::<Vec<Sensation<String>>>();
+    let (canvas_tx, canvas_rx) = unbounded_channel::<Vec<Sensation<String>>>();
+    let (svg_tx, svg_rx) = unbounded_channel::<String>();
     #[cfg(feature = "moment-feedback")]
     let (sens_tx, sens_rx) = unbounded_channel::<Vec<Sensation<String>>>();
 
@@ -107,6 +114,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         Box::new(HeardSelfSensor::new(stream.subscribe_heard())) as Box<dyn Sensor<String> + Send>,
         Box::new(HeardUserSensor::new(stream.subscribe_user())) as Box<dyn Sensor<String> + Send>,
         Box::new(SensationSensor::new(look_rx)) as Box<dyn Sensor<String> + Send>,
+        Box::new(SensationSensor::new(canvas_rx)) as Box<dyn Sensor<String> + Send>,
     ];
     #[cfg(feature = "development-status-sensor")]
     sensors.push(Box::new(DevelopmentStatus) as Box<dyn Sensor<String> + Send>);
@@ -122,6 +130,17 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let combo_stream = combob.observe(vec![sensor]).await;
     let logger = Arc::new(LoggingMotor);
     let looker = Arc::new(LookMotor::new(vision.clone(), llm.clone(), look_tx));
+    let canvas_motor = Arc::new(CanvasMotor::new(canvas.clone(), llm.clone(), canvas_tx));
+    let svg_motor = Arc::new(SvgMotor::new(svg_tx));
+    {
+        let canvas = canvas.clone();
+        tokio::spawn(async move {
+            let mut rx = svg_rx;
+            while let Some(svg) = rx.recv().await {
+                canvas.broadcast_svg(svg);
+            }
+        });
+    }
     let _speaker_id = args.speaker_id.clone();
 
     let (will_tx, will_rx) = unbounded_channel::<Vec<Impression<String>>>();
@@ -130,6 +149,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     will.register_motor(logger.as_ref());
     will.register_motor(looker.as_ref());
     will.register_motor(mouth.as_ref());
+    will.register_motor(canvas_motor.as_ref());
+    will.register_motor(svg_motor.as_ref());
     let will_stream = will.observe(vec![will_sensor]).await;
 
     let q_instant = INSTANT.clone();
@@ -159,7 +180,14 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         tokio::spawn(drive_combo_stream(combo_stream, logger.clone()));
     }
 
-    tokio::spawn(drive_will_stream(will_stream, logger, looker, mouth));
+    tokio::spawn(drive_will_stream(
+        will_stream,
+        logger,
+        looker,
+        mouth,
+        canvas_motor,
+        svg_motor,
+    ));
 
     tokio::signal::ctrl_c().await?;
     Ok(())
@@ -214,6 +242,8 @@ async fn drive_will_stream(
     logger: Arc<LoggingMotor>,
     looker: Arc<LookMotor>,
     mouth: Arc<Mouth>,
+    canvas: Arc<CanvasMotor>,
+    drawer: Arc<SvgMotor>,
 ) {
     use futures::StreamExt;
 
@@ -228,6 +258,12 @@ async fn drive_will_stream(
                 }
                 "say" => {
                     mouth.perform(intent).await.expect("mouth motor failed");
+                }
+                "canvas" => {
+                    canvas.perform(intent).await.expect("canvas motor failed");
+                }
+                "draw" => {
+                    drawer.perform(intent).await.expect("svg motor failed");
                 }
                 _ => {
                     tracing::warn!(motor = %intent.assigned_motor, "unknown motor");
