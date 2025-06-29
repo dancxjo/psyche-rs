@@ -8,6 +8,7 @@ use tokio::sync::Mutex as TokioMutex;
 use tokio::sync::broadcast::{self, Receiver, Sender};
 use tracing::{error, trace};
 
+use crate::speech_segment::SpeechSegment;
 use psyche_rs::{Action, ActionResult, Motor, MotorError};
 
 /// Motor that streams text-to-speech audio via HTTP.
@@ -30,6 +31,7 @@ pub struct Mouth {
     language_id: Option<String>,
     tx: Sender<Bytes>,
     text_tx: Sender<String>,
+    segment_tx: Sender<SpeechSegment>,
     queue: Arc<TokioMutex<()>>,
 }
 
@@ -37,6 +39,7 @@ impl Default for Mouth {
     fn default() -> Self {
         let (tx, _) = broadcast::channel(64);
         let (text_tx, _) = broadcast::channel(64);
+        let (segment_tx, _) = broadcast::channel(64);
         let queue = Arc::new(TokioMutex::new(()));
         Self {
             client: reqwest::Client::new(),
@@ -44,6 +47,7 @@ impl Default for Mouth {
             language_id: None,
             tx,
             text_tx,
+            segment_tx,
             queue,
         }
     }
@@ -54,6 +58,7 @@ impl Mouth {
     pub fn new(base_url: impl Into<String>, language_id: Option<String>) -> Self {
         let (tx, _) = broadcast::channel(64);
         let (text_tx, _) = broadcast::channel(64);
+        let (segment_tx, _) = broadcast::channel(64);
         let queue = Arc::new(TokioMutex::new(()));
         Self {
             client: reqwest::Client::new(),
@@ -61,6 +66,7 @@ impl Mouth {
             language_id,
             tx,
             text_tx,
+            segment_tx,
             queue,
         }
     }
@@ -73,6 +79,11 @@ impl Mouth {
     /// Subscribes to the text stream for spoken sentences.
     pub fn subscribe_text(&self) -> Receiver<String> {
         self.text_tx.subscribe()
+    }
+
+    /// Subscribe to combined speech segments of text and audio.
+    pub fn subscribe_segments(&self) -> Receiver<SpeechSegment> {
+        self.segment_tx.subscribe()
     }
 
     /// Convert a WAV byte buffer to 16-bit PCM bytes.
@@ -166,6 +177,7 @@ impl Motor for Mouth {
         let base = self.base_url.clone();
         let tx = self.tx.clone();
         let text_tx = self.text_tx.clone();
+        let segment_tx = self.segment_tx.clone();
         let queue = self.queue.clone();
         tokio::spawn(async move {
             let _guard = queue.lock().await;
@@ -206,6 +218,8 @@ impl Motor for Mouth {
                             }
                             match Mouth::wav_to_pcm(&body) {
                                 Ok(pcm) => {
+                                    let seg = SpeechSegment::new(&sent, &pcm);
+                                    let _ = segment_tx.send(seg);
                                     let _ = tx.send(pcm);
                                 }
                                 Err(e) => error!(error=?e, "wav decode failed"),
@@ -241,6 +255,8 @@ impl Motor for Mouth {
                         }
                         match Mouth::wav_to_pcm(&body) {
                             Ok(pcm) => {
+                                let seg = SpeechSegment::new(&buf, &pcm);
+                                let _ = segment_tx.send(seg);
                                 let _ = tx.send(pcm);
                             }
                             Err(e) => error!(error=?e, "wav decode failed"),
@@ -429,5 +445,41 @@ mod tests {
         // Assert
         assert_eq!(pcm.len(), 2);
         assert_eq!(pcm.as_ref(), &[1, 0]);
+    }
+
+    /// Segments include text with base64 audio.
+    #[tokio::test]
+    async fn emits_segments() {
+        let server = MockServer::start_async().await;
+        let mut wav_bytes = Vec::new();
+        let spec = hound::WavSpec {
+            channels: 1,
+            sample_rate: 22_050,
+            bits_per_sample: 16,
+            sample_format: hound::SampleFormat::Int,
+        };
+        {
+            let mut writer =
+                hound::WavWriter::new(std::io::Cursor::new(&mut wav_bytes), spec).unwrap();
+            writer.write_sample(1i16).unwrap();
+            writer.finalize().unwrap();
+        }
+        let _mock = server
+            .mock_async(|when, then| {
+                when.method(GET);
+                then.status(200).body(wav_bytes.clone());
+            })
+            .await;
+
+        let mouth = Mouth::new(server.url(""), None);
+        let mut seg_rx = mouth.subscribe_segments();
+        let body = stream::once(async { "Hi.".to_string() }).boxed();
+        let mut action = Action::new("speak", Map::new().into(), body);
+        action.intention.assigned_motor = "speak".into();
+        mouth.perform(action).await.unwrap();
+        let seg = seg_rx.recv().await.unwrap();
+        assert_eq!(seg.text, "Hi.");
+        let decoded = seg.decode_audio().unwrap();
+        assert!(!decoded.is_empty());
     }
 }

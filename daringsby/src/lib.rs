@@ -21,6 +21,7 @@ pub mod source_read_motor;
 pub mod source_search_motor;
 #[cfg(feature = "source-tree-motor")]
 pub mod source_tree_motor;
+pub mod speech_segment;
 pub mod speech_stream;
 
 pub mod motors;
