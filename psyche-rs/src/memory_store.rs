@@ -185,3 +185,84 @@ mod tests {
         assert_eq!(stages.get("Intention"), Some(&"test".to_string()));
     }
 }
+
+#[cfg(test)]
+mod integration_tests {
+    use super::*;
+    use chrono::Utc;
+
+    fn make_sensation(id: &str) -> StoredSensation {
+        StoredSensation {
+            id: id.into(),
+            kind: "visual.face".into(),
+            when: Utc::now(),
+            data: r#"{"face_id":"abc123"}"#.into(),
+        }
+    }
+
+    fn make_impression(id: &str, sensation_ids: Vec<String>) -> StoredImpression {
+        StoredImpression {
+            id: id.into(),
+            kind: "Situation".into(),
+            when: Utc::now(),
+            how: "Saw a familiar face.".into(),
+            sensation_ids,
+        }
+    }
+
+    #[test]
+    fn store_sensation_once_and_link_to_multiple_impressions() {
+        let store = InMemoryStore::new();
+        let sensation = make_sensation("s1");
+        store.store_sensation(&sensation).unwrap();
+
+        let imp1 = make_impression("i1", vec![sensation.id.clone()]);
+        let imp2 = make_impression("i2", vec![sensation.id.clone()]);
+        store.store_impression(&imp1).unwrap();
+        store.store_impression(&imp2).unwrap();
+
+        let (imp1_loaded, sens1, _) = store.load_full_impression("i1").unwrap();
+        let (imp2_loaded, sens2, _) = store.load_full_impression("i2").unwrap();
+
+        assert_eq!(imp1_loaded.id, "i1");
+        assert_eq!(imp2_loaded.id, "i2");
+        assert_eq!(sens1, vec![sensation.clone()]);
+        assert_eq!(sens2, vec![sensation.clone()]);
+    }
+
+    #[test]
+    fn lifecycle_stage_linking_and_retrieval() {
+        let store = InMemoryStore::new();
+        let sensation = make_sensation("s2");
+        store.store_sensation(&sensation).unwrap();
+        let imp = make_impression("i3", vec![sensation.id.clone()]);
+        store.store_impression(&imp).unwrap();
+
+        store
+            .add_lifecycle_stage("i3", "Intention", "wanted to greet")
+            .unwrap();
+        store
+            .add_lifecycle_stage("i3", "Action", "waved hand")
+            .unwrap();
+
+        let (_, _, stages) = store.load_full_impression("i3").unwrap();
+        assert_eq!(stages.get("Intention"), Some(&"wanted to greet".into()));
+        assert_eq!(stages.get("Action"), Some(&"waved hand".into()));
+    }
+
+    #[test]
+    fn related_impressions_via_retrieve_related_impressions_mock() {
+        let store = InMemoryStore::new();
+        for i in 0..10 {
+            let s = make_sensation(&format!("s{}", i));
+            store.store_sensation(&s).unwrap();
+            let imp = make_impression(&format!("i{}", i), vec![s.id.clone()]);
+            store.store_impression(&imp).unwrap();
+        }
+
+        let related = store
+            .retrieve_related_impressions("Saw a familiar face.", 3)
+            .unwrap();
+        assert_eq!(related.len(), 3);
+    }
+}
