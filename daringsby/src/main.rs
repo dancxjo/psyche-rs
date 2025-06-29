@@ -154,14 +154,16 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
 async fn drive_combo_stream(
     mut combo_stream: impl futures::Stream<Item = Vec<Impression<Impression<String>>>>
-        + Unpin
-        + Send
-        + 'static,
+    + Unpin
+    + Send
+    + 'static,
     logger: Arc<LoggingMotor>,
     mouth: Arc<Mouth>,
     looker: Arc<LookMotor>,
     speaker_id: String,
-    #[cfg(feature = "moment-feedback")] sens_tx: tokio::sync::mpsc::UnboundedSender<Vec<Sensation<String>>>,
+    #[cfg(feature = "moment-feedback")] sens_tx: tokio::sync::mpsc::UnboundedSender<
+        Vec<Sensation<String>>,
+    >,
     #[cfg(feature = "moment-feedback")] moment: Arc<Mutex<Vec<Impression<Impression<String>>>>>,
 ) {
     use futures::{StreamExt, stream};

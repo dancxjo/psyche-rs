@@ -40,16 +40,35 @@ static CHUNKS: Lazy<Vec<String>> = Lazy::new(|| {
             }
         }
     }
+    if pieces.is_empty() {
+        panic!("CHUNKS is empty: no source code was included at compile time");
+    }
     pieces
 });
 
+#[doc(hidden)]
+pub fn set_fast_test_env() {
+    // SAFETY: tests run single-threaded so modifying environment variables is
+    // safe in this context.
+    unsafe { std::env::set_var("FAST_TEST", "1") };
+}
+
 /// Sensor that emits large chunks of the crate's source code.
+///
+/// The entire `daringsby` and `psyche-rs` source trees are embedded in the
+/// compiled binary via `include_dir!`. This means binaries produced with this
+/// sensor contain all project source code, which can noticeably increase their
+/// size.
 ///
 /// Each batch contains a single sensation with the text
 /// `"I know that this is from my own source code: {chunk}"` where `{chunk}`
 /// is the contents of a Rust source file. The sensor cycles through all
 /// `.rs` files in the crate, sleeping for one or two seconds (with jitter)
 /// between emissions.
+///
+/// Set `SOURCE_DISCOVERY_ABORT=1` to abort the stream early or
+/// `SOURCE_DISCOVERY_CYCLES=N` to stop after `N` full iterations over all
+/// chunks.
 ///
 /// # Examples
 /// ```
@@ -60,7 +79,7 @@ static CHUNKS: Lazy<Vec<String>> = Lazy::new(|| {
 ///
 /// let rt = Runtime::new().unwrap();
 /// rt.block_on(async {
-///     unsafe { std::env::set_var("FAST_TEST", "1") };
+///     daringsby::source_discovery::set_fast_test_env();
 ///     let mut sensor = SourceDiscovery::default();
 ///     let mut stream = sensor.stream();
 ///     if let Some(batch) = stream.next().await {
@@ -76,7 +95,14 @@ impl Sensor<String> for SourceDiscovery {
         let chunks = CHUNKS.clone();
         let stream = stream! {
             let mut index = 0usize;
+            let mut cycles = 0usize;
+            let max_cycles = std::env::var("SOURCE_DISCOVERY_CYCLES")
+                .ok()
+                .and_then(|v| v.parse::<usize>().ok());
             loop {
+                if std::env::var("SOURCE_DISCOVERY_ABORT").is_ok() {
+                    break;
+                }
                 let jitter = {
                     let mut rng = rand::thread_rng();
                     rng.gen_range(0..2)
@@ -84,6 +110,14 @@ impl Sensor<String> for SourceDiscovery {
                 tokio::time::sleep(std::time::Duration::from_secs(interval_secs() + jitter)).await;
                 let chunk = &chunks[index];
                 index = (index + 1) % chunks.len();
+                if index == 0 {
+                    cycles += 1;
+                    if let Some(max) = max_cycles {
+                        if cycles >= max {
+                            break;
+                        }
+                    }
+                }
                 debug!(?index, "self source sensed");
                 let msg = format!("I know that this is from my own source code:\n{}", chunk);
                 let s = Sensation {
@@ -106,7 +140,7 @@ mod tests {
 
     #[tokio::test]
     async fn emits_first_chunk() {
-        unsafe { std::env::set_var("FAST_TEST", "1") };
+        super::set_fast_test_env();
         let mut sensor = SourceDiscovery::default();
         let mut stream = sensor.stream();
         if let Some(batch) = stream.next().await {
