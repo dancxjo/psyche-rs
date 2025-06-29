@@ -1,3 +1,5 @@
+#[cfg(feature = "canvas-motor")]
+pub mod canvas_motor;
 #[cfg(feature = "canvas-stream")]
 pub mod canvas_stream;
 #[cfg(feature = "development-status-sensor")]
