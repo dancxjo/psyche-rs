@@ -1,6 +1,6 @@
 #![cfg(test)]
 
-use crate::{Impression, LLMClient, Sensation, Sensor, TokenStream};
+use crate::{Impression, LLMClient, LLMTokenStream, Sensation, Sensor};
 use async_trait::async_trait;
 use futures::stream::{self, BoxStream};
 
@@ -23,7 +23,7 @@ impl LLMClient for StaticLLM {
     async fn chat_stream(
         &self,
         _msgs: &[ollama_rs::generation::chat::ChatMessage],
-    ) -> Result<TokenStream, Box<dyn std::error::Error + Send + Sync>> {
+    ) -> Result<LLMTokenStream, Box<dyn std::error::Error + Send + Sync>> {
         let words: Vec<String> = self
             .reply
             .split_whitespace()

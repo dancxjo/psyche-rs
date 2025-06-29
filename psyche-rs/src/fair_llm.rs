@@ -3,7 +3,7 @@ use std::sync::Arc;
 use async_trait::async_trait;
 use tokio::sync::Semaphore;
 
-use crate::llm_client::{LLMClient, TokenStream};
+use crate::llm_client::{LLMClient, LLMTokenStream};
 use crate::stream_util::ReleasingStream;
 use ollama_rs::generation::chat::ChatMessage;
 
@@ -34,7 +34,7 @@ where
     async fn chat_stream(
         &self,
         messages: &[ChatMessage],
-    ) -> Result<TokenStream, Box<dyn std::error::Error + Send + Sync>> {
+    ) -> Result<LLMTokenStream, Box<dyn std::error::Error + Send + Sync>> {
         tracing::trace!("waiting for llm permit");
         let permit = self
             .semaphore

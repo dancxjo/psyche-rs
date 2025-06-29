@@ -10,7 +10,7 @@ impl LLMClient for DummyLLM {
     async fn chat_stream(
         &self,
         _messages: &[ollama_rs::generation::chat::ChatMessage],
-    ) -> Result<psyche_rs::TokenStream, Box<dyn std::error::Error + Send + Sync>> {
+    ) -> Result<psyche_rs::LLMTokenStream, Box<dyn std::error::Error + Send + Sync>> {
         let stream = async_stream::stream! {
             yield Ok(String::new());
         };
