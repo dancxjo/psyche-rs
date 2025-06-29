@@ -1,3 +1,6 @@
+#[cfg(feature = "canvas-motor")]
+pub mod canvas_motor;
+pub mod canvas_stream;
 #[cfg(feature = "development-status-sensor")]
 pub mod development_status;
 #[cfg(feature = "heard-self-sensor")]

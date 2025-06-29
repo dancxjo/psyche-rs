@@ -43,6 +43,7 @@ tokio-tungstenite = "0.21"
 [features]
 logging-motor = []
 look-motor = []
+canvas-motor = []
 mouth = []
 source-read-motor = []
 source-search-motor = []
@@ -56,6 +57,7 @@ moment-feedback = []
 default = [
     "logging-motor",
     "look-motor",
+    "canvas-motor",
     "mouth",
     "development-status-sensor",
     "self-discovery-sensor",

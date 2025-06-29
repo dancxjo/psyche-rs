@@ -1,3 +1,5 @@
+#[cfg(feature = "canvas-motor")]
+pub use crate::canvas_motor::CanvasMotor;
 /// Motor implementations used by the Daringsby binary.
 ///
 /// # Examples
