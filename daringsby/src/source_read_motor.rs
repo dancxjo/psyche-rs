@@ -52,10 +52,13 @@ impl SourceReadMotor {
 impl Motor for SourceReadMotor {
     fn description(&self) -> &'static str {
         "Read a block of source with `read_source`.\n\
-Params: `file_path` and optional `block_index` (0 based).\n\
-Example body: none, parameters only.\n\
-Associated sensor: `SourceBlockSensor:<path>:<index>` which emits one\n\
-`source.block` sensation containing that portion of the file."
+Params: `file_path` (required) and optional `block_index` (0 based).\n\
+Example:\n\
+<read_source file_path=\"src/main.rs\" block_index=\"0\"></read_source>\n\
+Explanation:\n\
+The Will extracts the specified 20-line chunk of code and returns it as a\n\
+`source.block` sensation. Directing `SourceBlockSensor:<path>:<index>` yields\n\
+the same text."
     }
 
     fn name(&self) -> &'static str {

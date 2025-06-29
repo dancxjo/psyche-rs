@@ -72,9 +72,12 @@ impl Motor for SourceTreeMotor {
     fn description(&self) -> &'static str {
         "Use `source_tree` to list the project source tree.\n\
 Parameters: none.\n\
-Associated sensor: `SourceTreeSensor` which emits one\n\
-`source.tree` sensation containing the tree text.\n\
-The motor returns the same sensation when called."
+Example:\n\
+<source_tree></source_tree>\n\
+Explanation:\n\
+The Will gathers a directory listing of all embedded source files and returns\n\
+it as a `source.tree` sensation. Directing `SourceTreeSensor` emits the same\n\
+information."
     }
 
     fn name(&self) -> &'static str {

@@ -38,9 +38,11 @@ impl Motor for LogMemoryMotor {
     fn description(&self) -> &'static str {
         "Call `read_log_memory` to retrieve the persisted motor log.\n\
 Parameters: none.\n\
-Associated sensor: `LogMemorySensor` which can be directed\n\
-to emit the log as sensations.\n\
-Returns a single `log.memory` sensation with the full log text."
+Example:\n\
+<read_log_memory></read_log_memory>\n\
+Explanation:\n\
+The Will loads the log file and emits one `log.memory` sensation\n\
+containing its contents. Directing `LogMemorySensor` yields the same text."
     }
 
     fn name(&self) -> &'static str {
