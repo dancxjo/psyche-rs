@@ -19,6 +19,8 @@ mod sensation;
 mod sensation_channel_sensor;
 mod sensor;
 mod stream_util;
+#[cfg(test)]
+pub mod test_helpers;
 mod will;
 mod wit;
 
