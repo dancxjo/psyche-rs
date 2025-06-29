@@ -76,7 +76,13 @@ impl Motor for SourceReadMotor {
             .unwrap_or(0) as usize;
         let block = Self::read_block(&path, index)?;
         let completion = Completion::of_action(action);
-        debug!(?completion, "action completed");
+        debug!(
+            completion_name = %completion.name,
+            completion_params = ?completion.params,
+            completion_result = ?completion.result,
+            ?completion,
+            "action completed"
+        );
         Ok(ActionResult {
             sensations: vec![Sensation {
                 kind: "source.block".into(),

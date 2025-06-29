@@ -82,7 +82,13 @@ impl Motor for SourceSearchMotor {
             .ok_or_else(|| MotorError::Failed("missing query".into()))?;
         let results = Self::search(query);
         let completion = Completion::of_action(action);
-        debug!(?completion, "action completed");
+        debug!(
+            completion_name = %completion.name,
+            completion_params = ?completion.params,
+            completion_result = ?completion.result,
+            ?completion,
+            "action completed"
+        );
         Ok(ActionResult {
             sensations: results
                 .into_iter()

@@ -43,5 +43,7 @@ async fn perform_returns_completion() {
     let intention = Intention::to(action).assign("source_tree");
     let result = motor.perform(intention).await.unwrap();
     assert!(result.completed);
-    assert_eq!(result.completion.unwrap().name, "source_tree");
+    let completion = result.completion.unwrap();
+    assert_eq!(completion.name, "source_tree");
+    assert_eq!(completion.params, serde_json::Value::Null);
 }

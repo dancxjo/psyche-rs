@@ -15,6 +15,7 @@ async fn perform_accepts_body_and_succeeds() {
     assert!(result.completed);
     let completion = result.completion.expect("completion");
     assert_eq!(completion.name, "log");
+    assert_eq!(completion.params, serde_json::Value::Null);
     assert!(result.interruption.is_none());
     assert_eq!(result.sensations.len(), 1);
     assert_eq!(result.sensations[0].what, "hello world");

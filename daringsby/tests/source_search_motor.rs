@@ -41,5 +41,7 @@ async fn perform_returns_completion() {
     let intention = Intention::to(action).assign("search_source");
     let result = motor.perform(intention).await.unwrap();
     assert!(result.completed);
-    assert_eq!(result.completion.unwrap().name, "search_source");
+    let completion = result.completion.unwrap();
+    assert_eq!(completion.name, "search_source");
+    assert_eq!(completion.params["query"], "Motor");
 }

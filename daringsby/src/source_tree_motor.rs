@@ -83,7 +83,13 @@ impl Motor for SourceTreeMotor {
         }
         let tree = Self::tree();
         let completion = Completion::of_action(intention.action);
-        debug!(?completion, "action completed");
+        debug!(
+            completion_name = %completion.name,
+            completion_params = ?completion.params,
+            completion_result = ?completion.result,
+            ?completion,
+            "action completed"
+        );
         Ok(ActionResult {
             sensations: vec![Sensation {
                 kind: "source.tree".into(),

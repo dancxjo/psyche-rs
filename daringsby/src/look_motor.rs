@@ -75,7 +75,13 @@ impl Motor for LookMotor {
         };
         let _ = self.tx.send(vec![sensation.clone()]);
         let completion = Completion::of_action(action);
-        debug!(?completion, "action completed");
+        debug!(
+            completion_name = %completion.name,
+            completion_params = ?completion.params,
+            completion_result = ?completion.result,
+            ?completion,
+            "action completed"
+        );
         Ok(ActionResult {
             sensations: vec![Sensation {
                 kind: "vision.description".into(),

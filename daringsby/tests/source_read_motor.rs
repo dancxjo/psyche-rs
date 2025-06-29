@@ -42,5 +42,7 @@ async fn perform_returns_completion() {
     let intention = Intention::to(action).assign("read_source");
     let result = motor.perform(intention).await.expect("perform");
     assert!(result.completed);
-    assert_eq!(result.completion.unwrap().name, "read_source");
+    let completion = result.completion.unwrap();
+    assert_eq!(completion.name, "read_source");
+    assert_eq!(completion.params["file_path"], "lib.rs");
 }

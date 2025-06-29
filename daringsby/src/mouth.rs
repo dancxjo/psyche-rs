@@ -172,14 +172,13 @@ impl Motor for Mouth {
             .or_else(|| self.language_id.clone())
             .unwrap_or_default();
         let client = self.client.clone();
-        let lang = lang.clone();
         let base = self.base_url.clone();
         let tx = self.tx.clone();
         let text_tx = self.text_tx.clone();
         let segment_tx = self.segment_tx.clone();
         let queue = self.queue.clone();
-        let completion = Completion::of(action.name.clone(), action.params.clone());
-        tokio::spawn(async move {
+        let lang = lang;
+        {
             let _guard = queue.lock().await;
             let mut buf = String::new();
             while let Some(chunk) = action.body.next().await {
@@ -233,41 +232,45 @@ impl Motor for Mouth {
             if !buf.trim().is_empty() {
                 trace!(sentence = %buf, "tts final sentence");
                 let _ = text_tx.send(buf.clone());
-                let url = match Mouth::tts_url(&base, &buf, &speaker_id, &lang) {
-                    Ok(u) => u,
-                    Err(e) => {
-                        error!(error=?e, "tts url error");
-                        return;
-                    }
-                };
-                match client.get(url).send().await {
-                    Ok(resp) => {
-                        let mut body = Vec::new();
-                        let mut stream = resp.bytes_stream();
-                        while let Some(chunk) = stream.next().await {
-                            match chunk {
-                                Ok(b) => body.extend_from_slice(&b),
-                                Err(e) => {
-                                    error!(error=?e, "tts stream error");
-                                    break;
+                if let Ok(url) = Mouth::tts_url(&base, &buf, &speaker_id, &lang) {
+                    match client.get(url).send().await {
+                        Ok(resp) => {
+                            let mut body = Vec::new();
+                            let mut stream = resp.bytes_stream();
+                            while let Some(chunk) = stream.next().await {
+                                match chunk {
+                                    Ok(b) => body.extend_from_slice(&b),
+                                    Err(e) => {
+                                        error!(error=?e, "tts stream error");
+                                        break;
+                                    }
                                 }
                             }
-                        }
-                        match Mouth::wav_to_pcm(&body) {
-                            Ok(pcm) => {
-                                let seg = SpeechSegment::new(&buf, &pcm);
-                                let _ = segment_tx.send(seg);
-                                let _ = tx.send(pcm);
+                            match Mouth::wav_to_pcm(&body) {
+                                Ok(pcm) => {
+                                    let seg = SpeechSegment::new(&buf, &pcm);
+                                    let _ = segment_tx.send(seg);
+                                    let _ = tx.send(pcm);
+                                }
+                                Err(e) => error!(error=?e, "wav decode failed"),
                             }
-                            Err(e) => error!(error=?e, "wav decode failed"),
                         }
+                        Err(e) => error!(error=?e, "tts request failed"),
                     }
-                    Err(e) => error!(error=?e, "tts request failed"),
+                } else {
+                    // invalid URL, skip final sentence
                 }
             }
             let _ = tx.send(Bytes::new());
-        });
-        debug!(?completion, "action completed");
+        }
+        let completion = Completion::of_action(action);
+        debug!(
+            completion_name = %completion.name,
+            completion_params = ?completion.params,
+            completion_result = ?completion.result,
+            ?completion,
+            "action completed"
+        );
         Ok(ActionResult {
             sensations: Vec::new(),
             completed: true,
@@ -478,6 +481,8 @@ mod tests {
         let intention = Intention::to(action).assign("say");
         let result = mouth.perform(intention).await.unwrap();
         assert!(result.completed);
-        assert_eq!(result.completion.unwrap().name, "say");
+        let completion = result.completion.unwrap();
+        assert_eq!(completion.name, "say");
+        assert!(completion.params.as_object().unwrap().is_empty());
     }
 }

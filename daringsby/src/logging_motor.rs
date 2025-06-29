@@ -33,7 +33,13 @@ impl Motor for LoggingMotor {
             "motor log"
         );
         let completion = Completion::of_action(action);
-        debug!(?completion, "action completed");
+        debug!(
+            completion_name = %completion.name,
+            completion_params = ?completion.params,
+            completion_result = ?completion.result,
+            ?completion,
+            "action completed"
+        );
         Ok(ActionResult {
             sensations: vec![Sensation {
                 kind: "log".into(),
