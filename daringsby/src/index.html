@@ -14,6 +14,7 @@ let lookCanvas;
 let queue = [];
 let texts = [];
 let playing = false;
+let pendingText = null;
 
 function openSocket(existing, url, binaryType) {
   if (existing && existing.readyState <= WebSocket.OPEN) return existing;
@@ -23,16 +24,20 @@ function openSocket(existing, url, binaryType) {
 }
 
 function segmentDone() {
-  const text = texts.shift();
-  if (heardWs && heardWs.readyState === WebSocket.OPEN && text) {
-    heardWs.send(text);
-  } else {
+  pendingText = texts.shift() || null;
+}
+
+function sendHeard() {
+  if (pendingText && heardWs && heardWs.readyState === WebSocket.OPEN) {
+    heardWs.send(pendingText);
+  } else if (pendingText) {
     console.warn(
       "heardWs not ready or no text to send",
       heardWs?.readyState,
-      text
+      pendingText
     );
   }
+  pendingText = null;
   console.log("Queue length", queue.length, "Texts length", texts.length);
 }
 
@@ -53,7 +58,11 @@ function play() {
   const src = ctx.createBufferSource();
   src.buffer = buf;
   src.connect(ctx.destination);
-  src.onended = () => { playing = false; play(); };
+  src.onended = () => {
+    playing = false;
+    sendHeard();
+    play();
+  };
   src.start();
 }
 
