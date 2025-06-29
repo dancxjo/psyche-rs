@@ -8,6 +8,8 @@
 pub use crate::development_status::DevelopmentStatus;
 #[cfg(feature = "heard-self-sensor")]
 pub use crate::heard_self_sensor::HeardSelfSensor;
+#[cfg(feature = "heard-user-sensor")]
+pub use crate::heard_user_sensor::HeardUserSensor;
 #[cfg(feature = "heartbeat-sensor")]
 pub use crate::heartbeat::{Heartbeat, heartbeat_message};
 #[cfg(feature = "self-discovery-sensor")]

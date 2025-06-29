@@ -6,6 +6,8 @@ pub mod canvas_stream;
 pub mod development_status;
 #[cfg(feature = "heard-self-sensor")]
 pub mod heard_self_sensor;
+#[cfg(feature = "heard-user-sensor")]
+pub mod heard_user_sensor;
 #[cfg(feature = "heartbeat-sensor")]
 pub mod heartbeat;
 #[cfg(feature = "logging-motor")]
