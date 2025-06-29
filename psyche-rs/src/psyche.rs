@@ -6,7 +6,9 @@ use futures::{
 };
 use tracing::{debug, info};
 
-use crate::{Action, ActionResult, Intention, Motor, MotorError, Sensation, Sensor, Urge, Wit};
+use crate::{
+    Action, ActionResult, Intention, Motor, MotorError, Sensation, Sensor, Urge, Will, Wit,
+};
 use serde_json::Value;
 
 /// Sensor wrapper enabling shared ownership.
@@ -40,6 +42,7 @@ pub struct Psyche<T = serde_json::Value> {
     sensors: Vec<Arc<Mutex<dyn Sensor<T> + Send>>>,
     motors: Vec<Box<dyn Motor + Send>>,
     wits: Vec<Wit<T>>,
+    wills: Vec<Will<T>>,
 }
 
 impl<T> Psyche<T>
@@ -52,6 +55,7 @@ where
             sensors: Vec::new(),
             motors: Vec::new(),
             wits: Vec::new(),
+            wills: Vec::new(),
         }
     }
 
@@ -72,6 +76,12 @@ where
         self.wits.push(wit);
         self
     }
+
+    /// Add a will to the psyche.
+    pub fn will(mut self, will: Will<T>) -> Self {
+        self.wills.push(will);
+        self
+    }
 }
 
 impl<T> Default for Psyche<T>
@@ -90,7 +100,7 @@ where
     /// Run the psyche until interrupted.
     pub async fn run(mut self) {
         debug!("starting psyche");
-        let mut streams = Vec::new();
+        let mut wit_streams = Vec::new();
         for wit in self.wits.iter_mut() {
             let sensors_for_wit: Vec<_> = self
                 .sensors
@@ -98,16 +108,27 @@ where
                 .map(|s| SharedSensor::new(s.clone()))
                 .collect();
             let stream = wit.observe(sensors_for_wit).await;
-            streams.push(stream);
+            wit_streams.push(stream);
         }
-        let mut merged = stream::select_all(streams);
+        let mut will_streams = Vec::new();
+        for will in self.wills.iter_mut() {
+            let sensors_for_will: Vec<_> = self
+                .sensors
+                .iter()
+                .map(|s| SharedSensor::new(s.clone()))
+                .collect();
+            let stream = will.observe(sensors_for_will).await;
+            will_streams.push(stream);
+        }
+        let mut merged_wits = stream::select_all(wit_streams);
+        let mut merged_wills = stream::select_all(will_streams);
         loop {
             tokio::select! {
                 _ = tokio::signal::ctrl_c() => {
                     info!("psyche shutting down");
                     break;
                 }
-                Some(batch) = merged.next() => {
+                Some(batch) = merged_wits.next() => {
                     for impression in batch {
                         debug!(?impression.how, "impression received");
                         let text = impression.how.clone();
@@ -120,6 +141,18 @@ where
                             if let Err(e) = motor.perform(action).await {
                                 debug!(?e, "motor action failed");
                             }
+                        }
+                    }
+                }
+                Some(actions) = merged_wills.next() => {
+                    for action in actions {
+                        let target = action.intention.assigned_motor.clone();
+                        if let Some(motor) = self.motors.iter().find(|m| m.name() == target) {
+                            if let Err(e) = motor.perform(action).await {
+                                debug!(?e, "motor action failed");
+                            }
+                        } else {
+                            debug!(?target, "no motor for action");
                         }
                     }
                 }
@@ -208,6 +241,36 @@ mod tests {
         let psyche = Psyche::new()
             .sensor(TestSensor)
             .wit(wit)
+            .motor(CountMotor(count.clone()));
+        let _ = tokio::time::timeout(std::time::Duration::from_millis(50), psyche.run()).await;
+        assert!(count.load(Ordering::SeqCst) > 0);
+    }
+
+    #[tokio::test]
+    async fn wits_and_wills_run_together() {
+        #[derive(Clone)]
+        struct TagLLM;
+
+        #[async_trait::async_trait]
+        impl LLMClient for TagLLM {
+            async fn chat_stream(
+                &self,
+                _msgs: &[ollama_rs::generation::chat::ChatMessage],
+            ) -> Result<TokenStream, Box<dyn std::error::Error + Send + Sync>> {
+                use futures::stream;
+                let tokens = vec!["<log>".to_string(), "hi".to_string(), "</log>".to_string()];
+                Ok(Box::pin(stream::iter(tokens.into_iter().map(Ok))))
+            }
+        }
+
+        let count = Arc::new(AtomicUsize::new(0));
+        let llm = Arc::new(TagLLM);
+        let wit = Wit::new(llm.clone()).delay_ms(10);
+        let will = Will::new(llm.clone()).delay_ms(10).motor("log", "count");
+        let psyche = Psyche::new()
+            .sensor(TestSensor)
+            .wit(wit)
+            .will(will)
             .motor(CountMotor(count.clone()));
         let _ = tokio::time::timeout(std::time::Duration::from_millis(50), psyche.run()).await;
         assert!(count.load(Ordering::SeqCst) > 0);

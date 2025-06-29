@@ -150,4 +150,29 @@ mod tests {
         let l = log.lock().unwrap();
         assert_eq!(l.as_slice(), &[2]);
     }
+
+    #[tokio::test]
+    async fn concurrent_requests_use_all_clients() {
+        let log = Arc::new(Mutex::new(Vec::new()));
+        let c1 = Arc::new(RecordLLM {
+            id: 1,
+            log: log.clone(),
+        });
+        let c2 = Arc::new(RecordLLM {
+            id: 2,
+            log: log.clone(),
+        });
+        let pool = LLMPool::new(vec![c1, c2]);
+        let f1 = async {
+            pool.chat_stream(&[]).await.unwrap().next().await;
+        };
+        let f2 = async {
+            pool.chat_stream(&[]).await.unwrap().next().await;
+        };
+        futures::join!(f1, f2);
+        let l = log.lock().unwrap();
+        assert_eq!(l.len(), 2);
+        assert!(l.contains(&1));
+        assert!(l.contains(&2));
+    }
 }
