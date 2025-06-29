@@ -1,0 +1,6 @@
+These are the recent experiences of a character. They tell a story when taken together--or, rather, a frame in an ongoing story.
+In the last moment, this was happening:
+{last_frame}
+In the past instant, these things have taken place:
+{template}
+Narrate that story in natural language. Concisely in about one sentence, in the first person (from the perspective of the character), based on the timeline above, what's happening?
