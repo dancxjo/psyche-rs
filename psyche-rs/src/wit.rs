@@ -87,6 +87,29 @@ where
     where
         S: Sensor<T> + Send + 'static,
     {
+        self.observe_inner(sensors, None).await
+    }
+
+    /// Observe sensors and allow abortion via the provided channel.
+    pub async fn observe_with_abort<S>(
+        &mut self,
+        sensors: Vec<S>,
+        abort: tokio::sync::oneshot::Receiver<()>,
+    ) -> BoxStream<'static, Vec<Impression<T>>>
+    where
+        S: Sensor<T> + Send + 'static,
+    {
+        self.observe_inner(sensors, Some(abort)).await
+    }
+
+    async fn observe_inner<S>(
+        &mut self,
+        sensors: Vec<S>,
+        abort: Option<tokio::sync::oneshot::Receiver<()>>,
+    ) -> BoxStream<'static, Vec<Impression<T>>>
+    where
+        S: Sensor<T> + Send + 'static,
+    {
         let (tx, rx) = unbounded_channel();
         let llm = self.llm.clone();
         let template = self.prompt.clone();
@@ -95,6 +118,7 @@ where
         let window = self.window.clone();
         let last_frame = self.last_frame.clone();
         let mut pending: Vec<Sensation<T>> = Vec::new();
+        let mut abort = abort;
 
         thread::spawn(move || {
             let rt = tokio::runtime::Builder::new_current_thread()
@@ -164,6 +188,15 @@ where
                                     trace!(?err, "llm streaming failed");
                                 }
                             }
+                        }
+                        _ = async {
+                            if let Some(rx) = &mut abort {
+                                let _ = rx.await;
+                            } else {
+                                futures::future::pending::<()>().await;
+                            }
+                        } => {
+                            break;
                         }
                     }
                 }
