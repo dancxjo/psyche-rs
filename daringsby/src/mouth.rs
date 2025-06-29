@@ -13,8 +13,8 @@ use psyche_rs::{Action, ActionResult, Motor, MotorError};
 
 /// Motor that streams text-to-speech audio via HTTP.
 ///
-/// The motor responds to either a `speak` or `say` action name so that
-/// different planners can trigger speech using their preferred verb.
+/// The motor responds to the `say` action name which streams audio via a
+/// TTS service.
 ///
 /// Sentences from the input body are sent to a TTS service and the
 /// resulting audio bytes are broadcast to subscribers.
@@ -147,11 +147,11 @@ impl Motor for Mouth {
     }
 
     fn name(&self) -> &'static str {
-        "speak"
+        "say"
     }
 
     async fn perform(&self, mut action: Action) -> Result<ActionResult, MotorError> {
-        if action.intention.urge.name != "speak" && action.intention.urge.name != "say" {
+        if action.intention.urge.name != "say" {
             return Err(MotorError::Unrecognized);
         }
         let speaker_id = action
@@ -334,8 +334,8 @@ mod tests {
         let body = stream::once(async { "Hello world. How are you?".to_string() }).boxed();
         let mut map = Map::new();
         map.insert("speaker_id".into(), Value::String("p234".into()));
-        let mut action = Action::new("speak", Value::Object(map), body);
-        action.intention.assigned_motor = "speak".into();
+        let mut action = Action::new("say", Value::Object(map), body);
+        action.intention.assigned_motor = "say".into();
 
         // Act
         mouth.perform(action).await.unwrap();
@@ -372,8 +372,8 @@ mod tests {
         let body = stream::once(async { "Hi.".to_string() }).boxed();
         let mut map = Map::new();
         map.insert("speaker_id".into(), Value::String("p234".into()));
-        let mut action = Action::new("speak", Value::Object(map), body);
-        action.intention.assigned_motor = "speak".into();
+        let mut action = Action::new("say", Value::Object(map), body);
+        action.intention.assigned_motor = "say".into();
 
         // Act
         mouth.perform(action).await.unwrap();
@@ -381,27 +381,6 @@ mod tests {
         let _ = rx.recv().await.unwrap();
 
         // Assert
-        mock.assert();
-    }
-
-    /// The action name `say` is accepted as an alias for `speak`.
-    #[tokio::test]
-    async fn allows_say_alias() {
-        let server = MockServer::start_async().await;
-        let mock = server
-            .mock_async(|when, then| {
-                when.method(GET);
-                then.status(200);
-            })
-            .await;
-        let mouth = Mouth::new(server.url(""), None);
-        let mut rx = mouth.subscribe();
-        let body = stream::once(async { "Hi.".to_string() }).boxed();
-        let mut action = Action::new("say", Map::new().into(), body);
-        action.intention.assigned_motor = "say".into();
-        mouth.perform(action).await.unwrap();
-        let _ = rx.recv().await.unwrap();
-        let _ = rx.recv().await.unwrap();
         mock.assert();
     }
 
@@ -432,8 +411,8 @@ mod tests {
         let mouth = Mouth::new(server.url(""), None);
         let mut rx = mouth.subscribe();
         let body = stream::once(async { "Hi.".to_string() }).boxed();
-        let mut action = Action::new("speak", Map::new().into(), body);
-        action.intention.assigned_motor = "speak".into();
+        let mut action = Action::new("say", Map::new().into(), body);
+        action.intention.assigned_motor = "say".into();
 
         // Act
         mouth.perform(action).await.unwrap();
@@ -474,8 +453,8 @@ mod tests {
         let mouth = Mouth::new(server.url(""), None);
         let mut seg_rx = mouth.subscribe_segments();
         let body = stream::once(async { "Hi.".to_string() }).boxed();
-        let mut action = Action::new("speak", Map::new().into(), body);
-        action.intention.assigned_motor = "speak".into();
+        let mut action = Action::new("say", Map::new().into(), body);
+        action.intention.assigned_motor = "say".into();
         mouth.perform(action).await.unwrap();
         let seg = seg_rx.recv().await.unwrap();
         assert_eq!(seg.text, "Hi.");
