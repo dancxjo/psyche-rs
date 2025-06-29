@@ -39,7 +39,7 @@ impl<T> Sensor<T> for SharedSensor<T> {
 /// Core orchestrator coordinating sensors, wits and motors.
 ///
 /// ```no_run
-/// use psyche_rs::{Psyche, Wit, Sensor, LLMClient, TokenStream, Sensation};
+/// use psyche_rs::{Psyche, Wit, Sensor, LLMClient, LLMTokenStream, Sensation};
 /// use async_trait::async_trait;
 /// use futures::{stream, StreamExt};
 /// use std::sync::Arc;
@@ -51,7 +51,7 @@ impl<T> Sensor<T> for SharedSensor<T> {
 ///     async fn chat_stream(
 ///         &self,
 ///         _msgs: &[ollama_rs::generation::chat::ChatMessage],
-///     ) -> Result<TokenStream, Box<dyn std::error::Error + Send + Sync>> {
+///     ) -> Result<LLMTokenStream, Box<dyn std::error::Error + Send + Sync>> {
 ///         Ok(Box::pin(stream::empty()))
 ///     }
 /// }
@@ -185,7 +185,7 @@ where
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{Intention, LLMClient, TokenStream};
+    use crate::{Intention, LLMClient, LLMTokenStream};
     use futures::{StreamExt, stream};
     use std::sync::atomic::{AtomicUsize, Ordering};
 
@@ -232,7 +232,7 @@ mod tests {
             async fn chat_stream(
                 &self,
                 _msgs: &[ollama_rs::generation::chat::ChatMessage],
-            ) -> Result<TokenStream, Box<dyn std::error::Error + Send + Sync>> {
+            ) -> Result<LLMTokenStream, Box<dyn std::error::Error + Send + Sync>> {
                 use futures::stream;
                 let tokens = vec!["<log>".to_string(), "hi".to_string(), "</log>".to_string()];
                 Ok(Box::pin(stream::iter(tokens.into_iter().map(Ok))))
@@ -260,7 +260,7 @@ mod tests {
             async fn chat_stream(
                 &self,
                 _msgs: &[ollama_rs::generation::chat::ChatMessage],
-            ) -> Result<TokenStream, Box<dyn std::error::Error + Send + Sync>> {
+            ) -> Result<LLMTokenStream, Box<dyn std::error::Error + Send + Sync>> {
                 use futures::stream;
                 let tokens = vec!["<log>".to_string(), "hi".to_string(), "</log>".to_string()];
                 Ok(Box::pin(stream::iter(tokens.into_iter().map(Ok))))
@@ -292,7 +292,7 @@ mod tests {
             async fn chat_stream(
                 &self,
                 _msgs: &[ollama_rs::generation::chat::ChatMessage],
-            ) -> Result<TokenStream, Box<dyn std::error::Error + Send + Sync>> {
+            ) -> Result<LLMTokenStream, Box<dyn std::error::Error + Send + Sync>> {
                 use futures::stream;
                 let tokens = vec![
                     "<say>".to_string(),
@@ -367,7 +367,7 @@ mod tests {
             async fn chat_stream(
                 &self,
                 _msgs: &[ollama_rs::generation::chat::ChatMessage],
-            ) -> Result<TokenStream, Box<dyn std::error::Error + Send + Sync>> {
+            ) -> Result<LLMTokenStream, Box<dyn std::error::Error + Send + Sync>> {
                 use futures::stream;
                 let toks = vec!["<a>".to_string(), "hi".to_string(), "</a>".to_string()];
                 Ok(Box::pin(stream::iter(toks.into_iter().map(Ok))))
@@ -382,7 +382,7 @@ mod tests {
             async fn chat_stream(
                 &self,
                 _msgs: &[ollama_rs::generation::chat::ChatMessage],
-            ) -> Result<TokenStream, Box<dyn std::error::Error + Send + Sync>> {
+            ) -> Result<LLMTokenStream, Box<dyn std::error::Error + Send + Sync>> {
                 use futures::stream;
                 let toks = vec!["<b>".to_string(), "bye".to_string(), "</b>".to_string()];
                 Ok(Box::pin(stream::iter(toks.into_iter().map(Ok))))

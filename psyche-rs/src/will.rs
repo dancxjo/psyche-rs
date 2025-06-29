@@ -257,7 +257,7 @@ impl<T> Will<T> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::llm_client::{LLMClient, TokenStream};
+    use crate::llm_client::{LLMClient, LLMTokenStream};
     use crate::{ActionResult, MotorError};
     use async_trait::async_trait;
     use futures::{StreamExt, stream};
@@ -270,7 +270,7 @@ mod tests {
         async fn chat_stream(
             &self,
             _msgs: &[ChatMessage],
-        ) -> Result<TokenStream, Box<dyn std::error::Error + Send + Sync>> {
+        ) -> Result<LLMTokenStream, Box<dyn std::error::Error + Send + Sync>> {
             let tokens = vec![
                 "<say mood=\"calm\">".to_string(),
                 "Hello ".to_string(),
@@ -322,7 +322,7 @@ mod tests {
             async fn chat_stream(
                 &self,
                 msgs: &[ChatMessage],
-            ) -> Result<TokenStream, Box<dyn std::error::Error + Send + Sync>> {
+            ) -> Result<LLMTokenStream, Box<dyn std::error::Error + Send + Sync>> {
                 self.prompts.lock().unwrap().push(msgs[0].content.clone());
                 Ok(Box::pin(stream::once(async { Ok("<say></say>".into()) })))
             }
@@ -370,7 +370,7 @@ mod tests {
             async fn chat_stream(
                 &self,
                 msgs: &[ChatMessage],
-            ) -> Result<TokenStream, Box<dyn std::error::Error + Send + Sync>> {
+            ) -> Result<LLMTokenStream, Box<dyn std::error::Error + Send + Sync>> {
                 self.prompts.lock().unwrap().push(msgs[0].content.clone());
                 Ok(Box::pin(stream::once(async {
                     Ok("<dummy></dummy>".into())

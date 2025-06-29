@@ -13,6 +13,7 @@ mod memory_sensor;
 mod memory_store;
 mod motor;
 mod neo_qdrant_store;
+mod ollama_llm;
 mod psyche;
 mod round_robin_llm;
 mod sensation;
@@ -24,7 +25,8 @@ pub mod test_helpers;
 mod will;
 mod wit;
 
-pub use crate::llm_client::{LLMClient, OllamaLLM, TokenStream};
+pub use crate::llm_client::{LLMClient, LLMTokenStream};
+pub use crate::ollama_llm::OllamaLLM;
 pub use cluster_analyzer::ClusterAnalyzer;
 pub use combobulator::Combobulator;
 pub use fair_llm::FairLLM;
@@ -80,7 +82,7 @@ mod tests {
             async fn chat_stream(
                 &self,
                 _msgs: &[ollama_rs::generation::chat::ChatMessage],
-            ) -> Result<TokenStream, Box<dyn std::error::Error + Send + Sync>> {
+            ) -> Result<LLMTokenStream, Box<dyn std::error::Error + Send + Sync>> {
                 Ok(Box::pin(stream::once(async {
                     Ok("ping event".to_string())
                 })))
@@ -123,7 +125,7 @@ mod tests {
             async fn chat_stream(
                 &self,
                 _msgs: &[ollama_rs::generation::chat::ChatMessage],
-            ) -> Result<TokenStream, Box<dyn std::error::Error + Send + Sync>> {
+            ) -> Result<LLMTokenStream, Box<dyn std::error::Error + Send + Sync>> {
                 Ok(Box::pin(stream::once(async {
                     Ok("ping event".to_string())
                 })))

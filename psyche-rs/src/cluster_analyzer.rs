@@ -20,7 +20,7 @@ use std::sync::Arc;
 ///     async fn chat_stream(
 ///         &self,
 ///         _m: &[ollama_rs::generation::chat::ChatMessage],
-///     ) -> Result<psyche_rs::TokenStream, Box<dyn std::error::Error + Send + Sync>> {
+///     ) -> Result<psyche_rs::LLMTokenStream, Box<dyn std::error::Error + Send + Sync>> {
 ///         let stream = futures::stream::once(async { Ok("echo".to_string()) });
 ///         Ok(Box::pin(stream))
 ///     }
@@ -116,7 +116,7 @@ mod tests {
         async fn chat_stream(
             &self,
             _m: &[ChatMessage],
-        ) -> Result<crate::TokenStream, Box<dyn std::error::Error + Send + Sync + 'static>>
+        ) -> Result<crate::LLMTokenStream, Box<dyn std::error::Error + Send + Sync + 'static>>
         {
             let reply = self.reply.clone();
             Ok(Box::pin(stream::once(async move { Ok(reply) })))

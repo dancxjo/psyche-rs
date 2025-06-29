@@ -5,7 +5,7 @@ use std::sync::{
 
 use async_trait::async_trait;
 
-use crate::llm_client::{LLMClient, TokenStream};
+use crate::llm_client::{LLMClient, LLMTokenStream};
 use ollama_rs::generation::chat::ChatMessage;
 
 /// Round-robin pool of [`LLMClient`] implementations.
@@ -25,7 +25,7 @@ use ollama_rs::generation::chat::ChatMessage;
 /// # struct Dummy;
 /// # #[async_trait]
 /// # impl LLMClient for Dummy {
-/// #   async fn chat_stream(&self, _: &[ChatMessage]) -> Result<psyche_rs::TokenStream, Box<dyn Error + Send + Sync>> {
+/// #   async fn chat_stream(&self, _: &[ChatMessage]) -> Result<psyche_rs::LLMTokenStream, Box<dyn Error + Send + Sync>> {
 /// #       Ok(Box::pin(stream::empty()))
 /// #   }
 /// # }
@@ -60,7 +60,7 @@ impl LLMClient for RoundRobinLLM {
     async fn chat_stream(
         &self,
         messages: &[ChatMessage],
-    ) -> Result<TokenStream, Box<dyn std::error::Error + Send + Sync>> {
+    ) -> Result<LLMTokenStream, Box<dyn std::error::Error + Send + Sync>> {
         let len = self.clients.len();
         for _ in 0..len {
             let client = self.pick();
