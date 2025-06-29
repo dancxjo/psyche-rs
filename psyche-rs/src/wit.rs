@@ -154,7 +154,7 @@ where
                                 format!("{} {} {}", s.when.to_rfc3339(), s.kind, what)
                             }).collect::<Vec<_>>().join("\n");
                             let lf = { last_frame.lock().unwrap().clone() };
-                            debug!(?timeline, "preparing prompt");
+                            trace!(?timeline, "preparing prompt");
                             let prompt = template
                                 .replace("{last_frame}", &lf)
                                 .replace("{template}", &timeline);
