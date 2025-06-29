@@ -6,6 +6,7 @@
     rel="stylesheet"
     href="https://cdn.jsdelivr.net/npm/@picocss/pico@1.5.11/css/pico.min.css"
   />
+  <script src="https://cdn.jsdelivr.net/npm/canvg@3.0.10/lib/umd.min.js"></script>
 </head>
 <body class="container">
 <button id="start" class="secondary">Start</button>
@@ -29,6 +30,8 @@ let segWs;
 let heardWs;
 let userWs;
 let lookWs;
+let canvasWs;
+let svgWs;
 let lookVideo;
 let lookCanvas;
 let queue = [];
@@ -117,6 +120,14 @@ function start() {
   userWs.onopen = () => console.log('userWs connected');
   userWs.onerror = e => console.error('userWs error', e);
   userWs.onclose = () => console.warn('userWs closed');
+  canvasWs = openSocket(canvasWs, `ws://${location.host}/canvas-jpeg-in`, 'arraybuffer');
+  if (canvasWs.readyState <= WebSocket.OPEN)
+    canvasWs.onmessage = ev => {
+      if (ev.data === 'snap') captureCanvas();
+    };
+  svgWs = openSocket(svgWs, `ws://${location.host}/drawing-svg-out`);
+  if (svgWs.readyState <= WebSocket.OPEN)
+    svgWs.onmessage = ev => renderSvg(ev.data);
   lookWs = openSocket(lookWs, `ws://${location.host}/vision-jpeg-in`, 'arraybuffer');
   if (lookWs.readyState <= WebSocket.OPEN)
     lookWs.onmessage = ev => {
@@ -138,6 +149,18 @@ function capture() {
   const ctx2d = lookCanvas.getContext('2d');
   ctx2d.drawImage(lookVideo, 0, 0);
   lookCanvas.toBlob(b => b && b.arrayBuffer().then(buf => lookWs.send(buf)), 'image/jpeg', 0.8);
+}
+
+function captureCanvas() {
+  if (!canvasWs || canvasWs.readyState !== WebSocket.OPEN) return;
+  lookCanvas.toBlob(b => b && b.arrayBuffer().then(buf => canvasWs.send(buf)), 'image/jpeg', 0.8);
+}
+
+function renderSvg(svg) {
+  const ctx2d = lookCanvas.getContext('2d');
+  ctx2d.clearRect(0, 0, lookCanvas.width, lookCanvas.height);
+  const v = canvg.Canvg.fromString(ctx2d, svg);
+  v.start();
 }
 
 // Attach the start handler only once so we don't open duplicate WebSocket

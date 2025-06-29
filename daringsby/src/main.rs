@@ -21,8 +21,8 @@ use daringsby::SelfDiscovery;
 #[cfg(feature = "source-discovery-sensor")]
 use daringsby::SourceDiscovery;
 use daringsby::{
-    CanvasMotor, CanvasStream, HeardSelfSensor, HeardUserSensor, Heartbeat, LoggingMotor, LookMotor, LookStream,
-    Mouth, SpeechStream, SvgMotor,
+    CanvasMotor, CanvasStream, HeardSelfSensor, HeardUserSensor, Heartbeat, LoggingMotor,
+    LookMotor, LookStream, Mouth, SpeechStream, SvgMotor,
 };
 use std::net::SocketAddr;
 
