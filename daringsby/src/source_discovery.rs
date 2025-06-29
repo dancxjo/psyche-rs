@@ -7,7 +7,9 @@ use tracing::debug;
 use psyche_rs::{Sensation, Sensor};
 
 /// Directory containing the crate's source code packaged into the binary.
-static SRC_DIR: Dir = include_dir!("$CARGO_MANIFEST_DIR/src");
+static DARINGSBY_SRC_DIR: Dir = include_dir!("$CARGO_MANIFEST_DIR/src");
+/// Directory containing the psyche-rs crate's source code packaged into the binary.
+static PSYCHE_SRC_DIR: Dir = include_dir!("$CARGO_MANIFEST_DIR/../psyche-rs/src");
 
 /// The source code chunks that will be revealed sequentially.
 /// Maximum number of lines yielded in a single chunk.
@@ -21,16 +23,19 @@ fn interval_secs() -> u64 {
     }
 }
 
-/// Source code chunks that will be revealed sequentially. Files are split into
-/// reasonably sized segments so the agent only sees a portion at a time.
+/// Source code chunks that will be revealed sequentially from both the
+/// `daringsby` and `psyche-rs` crates. Files are split into reasonably sized
+/// segments so the agent only sees a portion at a time.
 static CHUNKS: Lazy<Vec<String>> = Lazy::new(|| {
     let mut pieces = Vec::new();
-    for file in SRC_DIR.files() {
-        if file.path().extension().and_then(|e| e.to_str()) == Some("rs") {
-            if let Some(text) = file.contents_utf8() {
-                let lines: Vec<&str> = text.lines().collect();
-                for chunk in lines.chunks(MAX_LINES) {
-                    pieces.push(chunk.join("\n"));
+    for dir in [&DARINGSBY_SRC_DIR, &PSYCHE_SRC_DIR] {
+        for file in dir.files() {
+            if file.path().extension().and_then(|e| e.to_str()) == Some("rs") {
+                if let Some(text) = file.contents_utf8() {
+                    let lines: Vec<&str> = text.lines().collect();
+                    for chunk in lines.chunks(MAX_LINES) {
+                        pieces.push(chunk.join("\n"));
+                    }
                 }
             }
         }
@@ -113,5 +118,10 @@ mod tests {
         } else {
             panic!("no chunk emitted");
         }
+    }
+
+    #[test]
+    fn contains_psyche_chunk() {
+        assert!(CHUNKS.iter().any(|c| c.contains("psyche-rs")));
     }
 }
