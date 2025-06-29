@@ -37,6 +37,7 @@ pub struct Will<T = serde_json::Value> {
     motors: Vec<MotorDescription>,
     latest_instant: Arc<Mutex<String>>,
     latest_moment: Arc<Mutex<String>>,
+    thoughts_tx: Option<tokio::sync::mpsc::UnboundedSender<Vec<Sensation<String>>>>,
 }
 
 impl<T> Will<T> {
@@ -51,6 +52,7 @@ impl<T> Will<T> {
             motors: Vec::new(),
             latest_instant: Arc::new(Mutex::new(String::new())),
             latest_moment: Arc::new(Mutex::new(String::new())),
+            thoughts_tx: None,
         }
     }
 
@@ -69,6 +71,15 @@ impl<T> Will<T> {
     /// Sets the duration of the sensation window in milliseconds.
     pub fn window_ms(mut self, ms: u64) -> Self {
         self.window_ms = ms;
+        self
+    }
+
+    /// Sets a channel to emit thought sensations.
+    pub fn thoughts(
+        mut self,
+        tx: tokio::sync::mpsc::UnboundedSender<Vec<Sensation<String>>>,
+    ) -> Self {
+        self.thoughts_tx = Some(tx);
         self
     }
 
@@ -124,6 +135,7 @@ impl<T> Will<T> {
         let motors = self.motors.clone();
         let latest_instant_store = self.latest_instant.clone();
         let latest_moment_store = self.latest_moment.clone();
+        let thoughts_tx = self.thoughts_tx.clone();
 
         thread::spawn(move || {
             if let Err(err) = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
@@ -227,8 +239,49 @@ impl<T> Will<T> {
                                                     state = Some((tag, closing, btx));
                                                 } else {
                                                     if let Some(idx) = buf.find('<') {
+                                                        let text = buf[..idx].to_string();
+                                                        if !text.trim().is_empty() {
+                                                            if let Ok(what) = serde_json::from_value::<T>(Value::String(text.trim().to_string())) {
+                                                                let sensation = Sensation {
+                                                                    kind: "thought".into(),
+                                                                    when: chrono::Local::now(),
+                                                                    what,
+                                                                    source: None,
+                                                                };
+                                                                window.lock().unwrap().push(sensation);
+                                                            }
+                                                            if let Some(tx) = &thoughts_tx {
+                                                                let s = Sensation {
+                                                                    kind: "thought".into(),
+                                                                    when: chrono::Local::now(),
+                                                                    what: format!("I thought to myself: {}", text.trim()),
+                                                                    source: None,
+                                                                };
+                                                                let _ = tx.send(vec![s]);
+                                                            }
+                                                        }
                                                         buf.drain(..idx);
                                                     } else {
+                                                        if !buf.trim().is_empty() {
+                                                            if let Ok(what) = serde_json::from_value::<T>(Value::String(buf.trim().to_string())) {
+                                                                let sensation = Sensation {
+                                                                    kind: "thought".into(),
+                                                                    when: chrono::Local::now(),
+                                                                    what,
+                                                                    source: None,
+                                                                };
+                                                                window.lock().unwrap().push(sensation);
+                                                            }
+                                                            if let Some(tx) = &thoughts_tx {
+                                                                let s = Sensation {
+                                                                    kind: "thought".into(),
+                                                                    when: chrono::Local::now(),
+                                                                    what: format!("I thought to myself: {}", buf.trim()),
+                                                                    source: None,
+                                                                };
+                                                                let _ = tx.send(vec![s]);
+                                                            }
+                                                        }
                                                         buf.clear();
                                                     }
                                                     break;
