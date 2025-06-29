@@ -38,7 +38,10 @@ impl SvgMotor {
 #[async_trait]
 impl Motor for SvgMotor {
     fn description(&self) -> &'static str {
-        "Broadcast SVG drawings to canvas clients"
+        "Use the `draw` motor with SVG markup in the body.\n\
+Parameters: none.\n\
+SVG is broadcast to connected canvas clients via `CanvasStream::subscribe_svg`.\n\
+Emits a `drawing.svg` sensation containing the same SVG string."
     }
 
     fn name(&self) -> &'static str {

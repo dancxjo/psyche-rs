@@ -63,7 +63,11 @@ impl SourceSearchMotor {
 #[async_trait]
 impl Motor for SourceSearchMotor {
     fn description(&self) -> &'static str {
-        "Search the source code for a string"
+        "Use `search_source` with parameter `query`.\n\
+Example: `{\"query\":\"Motor\"}`.\n\
+Associated sensor: `SourceSearchSensor:<query>` which emits one\n\
+`source.search` sensation per matching line.\n\
+The motor itself returns those sensations as its result."
     }
 
     fn name(&self) -> &'static str {

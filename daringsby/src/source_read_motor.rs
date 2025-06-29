@@ -51,7 +51,11 @@ impl SourceReadMotor {
 #[async_trait]
 impl Motor for SourceReadMotor {
     fn description(&self) -> &'static str {
-        "Read a block of source code"
+        "Read a block of source with `read_source`.\n\
+Params: `file_path` and optional `block_index` (0 based).\n\
+Example body: none, parameters only.\n\
+Associated sensor: `SourceBlockSensor:<path>:<index>` which emits one\n\
+`source.block` sensation containing that portion of the file."
     }
 
     fn name(&self) -> &'static str {

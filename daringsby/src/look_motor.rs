@@ -32,7 +32,10 @@ impl LookMotor {
 #[async_trait]
 impl Motor for LookMotor {
     fn description(&self) -> &'static str {
-        "Capture an image from the webcam and describe it"
+        "Invoke `look` to capture a webcam snapshot and\n\
+describe it with the LLM. No parameters.\n\
+Associated sensor: `LookStream` which yields JPEG bytes when directed.\n\
+Returns a `vision.description` sensation containing the text description."
     }
 
     fn name(&self) -> &'static str {

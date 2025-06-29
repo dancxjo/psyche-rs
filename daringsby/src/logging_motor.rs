@@ -14,7 +14,11 @@ pub struct LoggingMotor;
 #[async_trait::async_trait]
 impl Motor for LoggingMotor {
     fn description(&self) -> &'static str {
-        "Prints received actions to the log"
+        "Log text by calling the `log` motor.\n\
+Parameters: none. The body is written to a file and stdout.\n\
+Associated sensor: `LogMemorySensor` via the `read_log_memory` motor\
+to recall past entries.\n\
+Emits a `log` sensation containing the text."
     }
     fn name(&self) -> &'static str {
         "log"

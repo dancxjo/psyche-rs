@@ -59,7 +59,10 @@ impl CanvasMotor {
 #[async_trait]
 impl Motor for CanvasMotor {
     fn description(&self) -> &'static str {
-        "Capture an image from the canvas and describe it"
+        "Invoke `canvas` to snapshot the drawing canvas and\n\
+describe it with the LLM. No parameters.\n\
+Associated sensor: `CanvasStream` which delivers JPEG bytes when directed.\n\
+Produces a `vision.description` sensation containing the description."
     }
 
     fn name(&self) -> &'static str {
