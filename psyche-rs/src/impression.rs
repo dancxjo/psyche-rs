@@ -33,6 +33,15 @@ pub struct Impression<T = serde_json::Value> {
     pub how: String,
 }
 
+impl<T: Default> Default for Impression<T> {
+    fn default() -> Self {
+        Self {
+            what: Vec::new(),
+            how: String::new(),
+        }
+    }
+}
+
 impl<T> Impression<T> {
     /// Create a new impression ensuring `how` contains exactly one
     /// sentence.
@@ -98,5 +107,12 @@ mod tests {
             impression.kinds().collect::<Vec<_>>(),
             vec!["utterance.text"]
         );
+    }
+
+    #[test]
+    fn default_is_empty() {
+        let imp = Impression::<String>::default();
+        assert!(imp.how.is_empty());
+        assert!(imp.what.is_empty());
     }
 }
