@@ -10,8 +10,8 @@ use futures::{StreamExt, stream};
 use ollama_rs::Ollama;
 use once_cell::sync::Lazy;
 use psyche_rs::{
-    Action, Combobulator, Impression, ImpressionSensor, Intention, LLMClient, LLMPool, Motor,
-    OllamaLLM, Sensation, SensationSensor, Sensor, Wit,
+    Action, Combobulator, Impression, ImpressionSensor, Intention, LLMClient, Motor, OllamaLLM,
+    RoundRobinLLM, Sensation, SensationSensor, Sensor, Wit,
 };
 
 #[cfg(feature = "development-status-sensor")]
@@ -74,7 +74,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             Arc::new(OllamaLLM::new(cli, args.model.clone())) as Arc<dyn LLMClient>
         })
         .collect();
-    let llm = Arc::new(LLMPool::new(clients));
+    let llm = Arc::new(RoundRobinLLM::new(clients));
 
     let mouth = Arc::new(Mouth::new(args.tts_url.clone(), args.language_id));
     let audio_rx = mouth.subscribe();

@@ -9,15 +9,16 @@ mod fair_llm;
 mod impression;
 mod impression_sensor;
 mod llm_client;
-mod llm_pool;
 mod memory_sensor;
 mod memory_store;
 mod motor;
 mod neo_qdrant_store;
 mod psyche;
+mod round_robin_llm;
 mod sensation;
 mod sensation_channel_sensor;
 mod sensor;
+mod stream_util;
 #[cfg(test)]
 pub mod test_helpers;
 mod will;
@@ -29,7 +30,6 @@ pub use combobulator::Combobulator;
 pub use fair_llm::FairLLM;
 pub use impression::Impression;
 pub use impression_sensor::ImpressionSensor;
-pub use llm_pool::LLMPool;
 pub use memory_sensor::MemorySensor;
 pub use memory_store::{InMemoryStore, MemoryStore, StoredImpression, StoredSensation};
 pub use motor::{
@@ -38,6 +38,7 @@ pub use motor::{
 };
 pub use neo_qdrant_store::NeoQdrantMemoryStore;
 pub use psyche::Psyche;
+pub use round_robin_llm::RoundRobinLLM;
 pub use sensation::Sensation;
 pub use sensation_channel_sensor::SensationSensor;
 pub use sensor::Sensor;
