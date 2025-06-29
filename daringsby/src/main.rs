@@ -14,9 +14,11 @@ use psyche_rs::{
     Sensation, SensationSensor, Sensor, Wit,
 };
 
+#[cfg(feature = "source-discovery-sensor")]
+use daringsby::SourceDiscovery;
 use daringsby::{
     DevelopmentStatus, HeardSelfSensor, Heartbeat, LoggingMotor, LookMotor, LookStream, Mouth,
-    SelfDiscovery, SourceDiscovery, SpeechStream,
+    SelfDiscovery, SpeechStream,
 };
 use std::net::SocketAddr;
 
@@ -101,10 +103,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         Box::new(Heartbeat) as Box<dyn Sensor<String> + Send>,
         Box::new(SelfDiscovery) as Box<dyn Sensor<String> + Send>,
         Box::new(DevelopmentStatus) as Box<dyn Sensor<String> + Send>,
-        Box::new(SourceDiscovery) as Box<dyn Sensor<String> + Send>,
         Box::new(HeardSelfSensor::new(stream.subscribe_heard())) as Box<dyn Sensor<String> + Send>,
         Box::new(SensationSensor::new(look_rx)) as Box<dyn Sensor<String> + Send>,
     ];
+    #[cfg(feature = "source-discovery-sensor")]
+    sensors.push(Box::new(SourceDiscovery) as Box<dyn Sensor<String> + Send>);
     #[cfg(feature = "moment-feedback")]
     sensors.push(Box::new(SensationSensor::new(sens_rx)));
 

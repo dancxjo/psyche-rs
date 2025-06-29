@@ -1,14 +1,25 @@
+#[cfg(feature = "development-status-sensor")]
 pub mod development_status;
+#[cfg(feature = "heard-self-sensor")]
 pub mod heard_self_sensor;
+#[cfg(feature = "heartbeat-sensor")]
 pub mod heartbeat;
+#[cfg(feature = "logging-motor")]
 pub mod logging_motor;
+#[cfg(feature = "look-motor")]
 pub mod look_motor;
 pub mod look_stream;
+#[cfg(feature = "mouth")]
 pub mod mouth;
+#[cfg(feature = "self-discovery-sensor")]
 pub mod self_discovery;
+#[cfg(feature = "source-discovery-sensor")]
 pub mod source_discovery;
+#[cfg(feature = "source-read-motor")]
 pub mod source_read_motor;
+#[cfg(feature = "source-search-motor")]
 pub mod source_search_motor;
+#[cfg(feature = "source-tree-motor")]
 pub mod source_tree_motor;
 pub mod speech_stream;
 

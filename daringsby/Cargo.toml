@@ -40,4 +40,27 @@ tower = { version = "0.4", features = ["util"] }
 tokio-tungstenite = "0.21"
 
 [features]
+logging-motor = []
+look-motor = []
+mouth = []
+source-read-motor = []
+source-search-motor = []
+source-tree-motor = []
+development-status-sensor = []
+heard-self-sensor = []
+heartbeat-sensor = []
+self-discovery-sensor = []
+source-discovery-sensor = []
 moment-feedback = []
+default = [
+    "logging-motor",
+    "look-motor",
+    "mouth",
+    "source-read-motor",
+    "source-search-motor",
+    "source-tree-motor",
+    "development-status-sensor",
+    "heard-self-sensor",
+    "heartbeat-sensor",
+    "self-discovery-sensor",
+]
