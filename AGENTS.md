@@ -29,3 +29,4 @@
   clearly documenting single-use behavior.
 - When modifying canvas-related code, run `cargo test --workspace` to verify
   canvas and SVG motors.
+- Use `Will::thoughts` to broadcast reasoning as sensations when needed.

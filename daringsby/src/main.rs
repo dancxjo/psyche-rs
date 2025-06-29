@@ -65,15 +65,28 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let args = Args::parse();
     use tokio::sync::mpsc::unbounded_channel;
 
-    let clients: Vec<Arc<dyn LLMClient>> = args
-        .base_url
-        .iter()
-        .map(|url| {
-            let cli = Ollama::try_new(url).expect("failed to create Ollama client");
-            Arc::new(OllamaLLM::new(cli, args.model.clone())) as Arc<dyn LLMClient>
-        })
-        .collect();
-    let llm = Arc::new(RoundRobinLLM::new(clients));
+    let mut urls = args.base_url.clone();
+    let will_url = if !urls.is_empty() {
+        urls.remove(0)
+    } else {
+        "http://localhost:11434".into()
+    };
+    let will_llm: Arc<dyn LLMClient> = Arc::new(OllamaLLM::new(
+        Ollama::try_new(&will_url).expect("failed to create Ollama client"),
+        args.model.clone(),
+    ));
+    let wits_llm: Arc<dyn LLMClient> = if urls.is_empty() {
+        will_llm.clone()
+    } else {
+        let clients: Vec<Arc<dyn LLMClient>> = urls
+            .iter()
+            .map(|url| {
+                let cli = Ollama::try_new(url).expect("failed to create Ollama client");
+                Arc::new(OllamaLLM::new(cli, args.model.clone())) as Arc<dyn LLMClient>
+            })
+            .collect();
+        Arc::new(RoundRobinLLM::new(clients))
+    };
 
     let mouth = Arc::new(Mouth::new(args.tts_url.clone(), args.language_id));
     let audio_rx = mouth.subscribe();
@@ -96,8 +109,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         axum::serve(listener, app).await.expect("axum serve failed");
     });
 
-    let mut quick = Wit::new(llm.clone()).prompt(QUICK_PROMPT).delay_ms(1000);
-    let mut combob = Combobulator::new(llm.clone())
+    let mut quick = Wit::new(wits_llm.clone())
+        .prompt(QUICK_PROMPT)
+        .delay_ms(1000);
+    let mut combob = Combobulator::new(wits_llm.clone())
         .prompt(COMBO_PROMPT)
         .delay_ms(1000);
 
@@ -105,6 +120,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let (look_tx, look_rx) = unbounded_channel::<Vec<Sensation<String>>>();
     let (canvas_tx, canvas_rx) = unbounded_channel::<Vec<Sensation<String>>>();
     let (svg_tx, svg_rx) = unbounded_channel::<String>();
+    let (thought_tx, thought_rx) = unbounded_channel::<Vec<Sensation<String>>>();
     #[cfg(feature = "moment-feedback")]
     let (sens_tx, sens_rx) = unbounded_channel::<Vec<Sensation<String>>>();
 
@@ -115,6 +131,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         Box::new(HeardUserSensor::new(stream.subscribe_user())) as Box<dyn Sensor<String> + Send>,
         Box::new(SensationSensor::new(look_rx)) as Box<dyn Sensor<String> + Send>,
         Box::new(SensationSensor::new(canvas_rx)) as Box<dyn Sensor<String> + Send>,
+        Box::new(SensationSensor::new(thought_rx)) as Box<dyn Sensor<String> + Send>,
     ];
     #[cfg(feature = "development-status-sensor")]
     sensors.push(Box::new(DevelopmentStatus) as Box<dyn Sensor<String> + Send>);
@@ -129,8 +146,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let sensor = ImpressionStreamSensor::new(rx);
     let combo_stream = combob.observe(vec![sensor]).await;
     let logger = Arc::new(LoggingMotor);
-    let looker = Arc::new(LookMotor::new(vision.clone(), llm.clone(), look_tx));
-    let canvas_motor = Arc::new(CanvasMotor::new(canvas.clone(), llm.clone(), canvas_tx));
+    let looker = Arc::new(LookMotor::new(vision.clone(), wits_llm.clone(), look_tx));
+    let canvas_motor = Arc::new(CanvasMotor::new(
+        canvas.clone(),
+        wits_llm.clone(),
+        canvas_tx,
+    ));
     let svg_motor = Arc::new(SvgMotor::new(svg_tx));
     {
         let canvas = canvas.clone();
@@ -145,7 +166,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let (will_tx, will_rx) = unbounded_channel::<Vec<Impression<String>>>();
     let will_sensor = ImpressionStreamSensor::new(will_rx);
-    let mut will = Will::new(llm.clone()).prompt(WILL_PROMPT).delay_ms(1000);
+    let mut will: Will<Impression<String>> = Will::new(will_llm.clone())
+        .prompt(WILL_PROMPT)
+        .delay_ms(1000)
+        .thoughts(thought_tx);
     will.register_motor(logger.as_ref());
     will.register_motor(looker.as_ref());
     will.register_motor(mouth.as_ref());
