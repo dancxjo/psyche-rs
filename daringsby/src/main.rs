@@ -206,8 +206,8 @@ async fn drive_combo_stream(
             map.insert("speaker_id".into(), Value::String(speaker_id.clone()));
             let speak_text = text;
             let speak_body = stream::once(async move { speak_text }).boxed();
-            let mut speak = Action::new("speak", Value::Object(map), speak_body);
-            speak.intention.assigned_motor = "speak".into();
+            let mut speak = Action::new("say", Value::Object(map), speak_body);
+            speak.intention.assigned_motor = "say".into();
             if let Err(e) = mouth.perform(speak).await {
                 error!(error=?e, "mouth perform failed");
             }
