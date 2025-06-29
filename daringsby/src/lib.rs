@@ -9,13 +9,10 @@ pub mod self_discovery;
 pub mod source_discovery;
 pub mod speech_stream;
 
-pub use development_status::DevelopmentStatus;
-pub use heard_self_sensor::HeardSelfSensor;
-pub use heartbeat::{Heartbeat, heartbeat_message};
-pub use logging_motor::LoggingMotor;
-pub use look_motor::LookMotor;
-pub use look_stream::LookStream;
-pub use mouth::Mouth;
-pub use self_discovery::SelfDiscovery;
-pub use source_discovery::SourceDiscovery;
-pub use speech_stream::SpeechStream;
+pub mod motors;
+pub mod sensors;
+pub mod streams;
+
+pub use motors::*;
+pub use sensors::*;
+pub use streams::*;
