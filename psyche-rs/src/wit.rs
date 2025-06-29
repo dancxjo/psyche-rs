@@ -9,6 +9,7 @@ use tokio::sync::mpsc::unbounded_channel;
 use tokio_stream::wrappers::UnboundedReceiverStream;
 use tracing::{debug, trace};
 
+use rand::Rng;
 use segtok::segmenter::{SegmentConfig, split_single};
 
 use crate::{Impression, Sensation, Sensor};
@@ -28,6 +29,7 @@ pub struct Wit<T = serde_json::Value> {
     window_ms: u64,
     window: Arc<Mutex<Vec<Sensation<T>>>>,
     last_frame: Arc<Mutex<String>>,
+    start_jitter_ms: u64,
 }
 
 impl<T> Wit<T> {
@@ -40,6 +42,7 @@ impl<T> Wit<T> {
             window_ms: 60_000,
             window: Arc::new(Mutex::new(Vec::new())),
             last_frame: Arc::new(Mutex::new(String::new())),
+            start_jitter_ms: 0,
         }
     }
 
@@ -58,6 +61,35 @@ impl<T> Wit<T> {
     /// Sets the duration of the sensation window in milliseconds.
     pub fn window_ms(mut self, ms: u64) -> Self {
         self.window_ms = ms;
+        self
+    }
+
+    /// Sets the jitter range for the initial tick in milliseconds.
+    ///
+    /// # Example
+    ///
+    /// ```no_run
+    /// use psyche_rs::{Wit, LLMClient};
+    /// use std::sync::Arc;
+    ///
+    /// #[derive(Clone)]
+    /// struct DummyLLM;
+    ///
+    /// #[async_trait::async_trait]
+    /// impl LLMClient for DummyLLM {
+    ///     async fn chat_stream(
+    ///         &self,
+    ///         _msgs: &[ollama_rs::generation::chat::ChatMessage],
+    ///     ) -> Result<psyche_rs::LLMTokenStream, Box<dyn std::error::Error + Send + Sync>> {
+    ///         Ok(Box::pin(futures::stream::empty()))
+    ///     }
+    /// }
+    ///
+    /// let llm = Arc::new(DummyLLM);
+    /// let _wit = Wit::<serde_json::Value>::new(llm).start_jitter_ms(500);
+    /// ```
+    pub fn start_jitter_ms(mut self, ms: u64) -> Self {
+        self.start_jitter_ms = ms;
         self
     }
 
@@ -118,6 +150,12 @@ where
         let window_ms = self.window_ms;
         let window = self.window.clone();
         let last_frame = self.last_frame.clone();
+        let jitter = if self.start_jitter_ms > 0 {
+            let mut rng = rand::thread_rng();
+            rng.gen_range(0..self.start_jitter_ms)
+        } else {
+            0
+        };
         let mut pending: Vec<Sensation<T>> = Vec::new();
         let mut abort = abort;
 
@@ -128,6 +166,9 @@ where
                 .expect("runtime");
             debug!("wit runtime started");
             rt.block_on(async move {
+                if jitter > 0 {
+                    tokio::time::sleep(std::time::Duration::from_millis(jitter)).await;
+                }
                 let streams: Vec<_> = sensors.into_iter().map(|mut s| s.stream()).collect();
                 let mut sensor_stream = stream::select_all(streams);
                 loop {
