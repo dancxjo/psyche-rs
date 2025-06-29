@@ -38,7 +38,7 @@ impl LookStream {
     /// Build a router exposing the look WebSocket endpoint.
     pub fn router(self: Arc<Self>) -> Router {
         Router::new().route(
-            "/look-jpeg-in",
+            "/vision-jpeg-in",
             get(move |ws: WebSocketUpgrade| {
                 let stream = self.clone();
                 async move { ws.on_upgrade(move |sock| stream.clone().session(sock)) }
@@ -84,7 +84,7 @@ mod tests {
     async fn forwards_images_and_commands() {
         let stream = Arc::new(LookStream::default());
         let addr = start_server(stream.clone()).await;
-        let url = format!("ws://{addr}/look-jpeg-in");
+        let url = format!("ws://{addr}/vision-jpeg-in");
         let (mut ws, _) = connect_async(url).await.unwrap();
         let mut rx = stream.subscribe();
         ws.send(WsMessage::Binary(vec![1, 2, 3])).await.unwrap();
