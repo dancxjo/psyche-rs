@@ -12,7 +12,7 @@ use tracing::{debug, trace};
 use regex::Regex;
 
 use crate::llm_client::LLMClient;
-use crate::{Action, Sensation, Sensor};
+use crate::{Action, Motor, Sensation, Sensor};
 use ollama_rs::generation::chat::ChatMessage;
 use serde_json::{Map, Value};
 
@@ -77,6 +77,15 @@ impl<T> Will<T> {
         self.motors.push(MotorDescription {
             name: name.into(),
             description: description.into(),
+        });
+        self
+    }
+
+    /// Registers an existing [`Motor`] using its `name` and `description`.
+    pub fn register_motor(&mut self, motor: &dyn Motor) -> &mut Self {
+        self.motors.push(MotorDescription {
+            name: motor.name().to_string(),
+            description: motor.description().to_string(),
         });
         self
     }
@@ -233,6 +242,7 @@ impl<T> Will<T> {
 mod tests {
     use super::*;
     use crate::llm_client::{LLMClient, TokenStream};
+    use crate::{ActionResult, MotorError};
     use async_trait::async_trait;
     use futures::{StreamExt, stream};
 
@@ -330,5 +340,69 @@ mod tests {
         let data = prompts.lock().unwrap();
         assert!(!data.is_empty());
         assert!(data[0].contains("flash"));
+    }
+
+    #[tokio::test]
+    async fn prompt_includes_motor_descriptions() {
+        #[derive(Clone)]
+        struct RecLLM {
+            prompts: Arc<Mutex<Vec<String>>>,
+        }
+
+        #[async_trait]
+        impl LLMClient for RecLLM {
+            async fn chat_stream(
+                &self,
+                msgs: &[ChatMessage],
+            ) -> Result<TokenStream, Box<dyn std::error::Error + Send + Sync>> {
+                self.prompts.lock().unwrap().push(msgs[0].content.clone());
+                Ok(Box::pin(stream::once(async {
+                    Ok("<dummy></dummy>".into())
+                })))
+            }
+        }
+
+        struct InstantSensor;
+
+        impl Sensor<String> for InstantSensor {
+            fn stream(&mut self) -> BoxStream<'static, Vec<Sensation<String>>> {
+                let s = Sensation {
+                    kind: "instant".into(),
+                    when: chrono::Local::now(),
+                    what: "flash".into(),
+                    source: None,
+                };
+                stream::once(async move { vec![s] }).boxed()
+            }
+        }
+
+        struct DummyMotor;
+
+        #[async_trait]
+        impl Motor for DummyMotor {
+            fn description(&self) -> &'static str {
+                "dummy motor"
+            }
+            fn name(&self) -> &'static str {
+                "dummy"
+            }
+            async fn perform(&self, _action: Action) -> Result<ActionResult, MotorError> {
+                Ok(ActionResult::default())
+            }
+        }
+
+        let prompts = Arc::new(Mutex::new(Vec::new()));
+        let llm = Arc::new(RecLLM {
+            prompts: prompts.clone(),
+        });
+        let mut will = Will::new(llm).delay_ms(10);
+        let motor = DummyMotor;
+        will.register_motor(&motor);
+        let sensor = InstantSensor;
+        let mut stream = will.observe(vec![sensor]).await;
+        let _ = stream.next().await;
+        let data = prompts.lock().unwrap();
+        assert!(!data.is_empty());
+        assert!(data[0].contains("dummy: dummy motor"));
     }
 }
