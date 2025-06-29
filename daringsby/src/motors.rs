@@ -1,5 +1,7 @@
 #[cfg(feature = "canvas-motor")]
 pub use crate::canvas_motor::CanvasMotor;
+#[cfg(feature = "log-memory-motor")]
+pub use crate::log_memory_motor::LogMemoryMotor;
 /// Motor implementations used by the Daringsby binary.
 ///
 /// # Examples
