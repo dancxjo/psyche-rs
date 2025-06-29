@@ -179,7 +179,7 @@ impl<T> Will<T> {
                                     let mut buf = String::new();
                                     let mut state: Option<(String, String, tokio::sync::mpsc::UnboundedSender<String>)> = None;
                                     while let Some(Ok(tok)) = stream.next().await {
-                                        debug!(token = %tok, "Will received LLM token");
+                                        trace!(token = %tok, "Will received LLM token");
                                         buf.push_str(&tok);
                                         loop {
                                             if let Some((ref _name, ref closing, ref tx_body)) = state {
