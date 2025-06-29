@@ -189,16 +189,26 @@ impl Motor for Mouth {
                         }
                     };
                     match client.get(url).send().await {
-                        Ok(resp) => match resp.bytes().await {
-                            Ok(body) => match Mouth::wav_to_pcm(&body) {
+                        Ok(resp) => {
+                            let mut body = Vec::new();
+                            let mut stream = resp.bytes_stream();
+                            while let Some(chunk) = stream.next().await {
+                                match chunk {
+                                    Ok(b) => body.extend_from_slice(&b),
+                                    Err(e) => {
+                                        error!(error=?e, "tts stream error");
+                                        break;
+                                    }
+                                }
+                            }
+                            match Mouth::wav_to_pcm(&body) {
                                 Ok(pcm) => {
                                     let _ = tx.send(pcm);
                                 }
-                                Err(e) => error!(error = ?e, "wav decode failed"),
-                            },
-                            Err(e) => error!(error = ?e, "tts body error"),
-                        },
-                        Err(e) => error!(error = ?e, "tts request failed"),
+                                Err(e) => error!(error=?e, "wav decode failed"),
+                            }
+                        }
+                        Err(e) => error!(error=?e, "tts request failed"),
                     }
                     let _ = tx.send(Bytes::new());
                 }
@@ -214,16 +224,26 @@ impl Motor for Mouth {
                     }
                 };
                 match client.get(url).send().await {
-                    Ok(resp) => match resp.bytes().await {
-                        Ok(body) => match Mouth::wav_to_pcm(&body) {
+                    Ok(resp) => {
+                        let mut body = Vec::new();
+                        let mut stream = resp.bytes_stream();
+                        while let Some(chunk) = stream.next().await {
+                            match chunk {
+                                Ok(b) => body.extend_from_slice(&b),
+                                Err(e) => {
+                                    error!(error=?e, "tts stream error");
+                                    break;
+                                }
+                            }
+                        }
+                        match Mouth::wav_to_pcm(&body) {
                             Ok(pcm) => {
                                 let _ = tx.send(pcm);
                             }
-                            Err(e) => error!(error = ?e, "wav decode failed"),
-                        },
-                        Err(e) => error!(error = ?e, "tts body error"),
-                    },
-                    Err(e) => error!(error = ?e, "tts request failed"),
+                            Err(e) => error!(error=?e, "wav decode failed"),
+                        }
+                    }
+                    Err(e) => error!(error=?e, "tts request failed"),
                 }
             }
             let _ = tx.send(Bytes::new());

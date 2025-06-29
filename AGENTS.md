@@ -21,3 +21,5 @@
   large modules like `lib.rs` into smaller pieces.
 - Use the `LLMClient` trait for streaming LLM interactions.
 - Avoid streaming silence frames when audio is not playing.
+- Stream HTTP responses using `bytes_stream` to avoid blocking when servers
+  stream data chunked.
