@@ -55,6 +55,7 @@ impl Sensor<String> for Heartbeat {
 mod tests {
     use super::*;
     use chrono::TimeZone;
+    use serde_json;
 
     #[test]
     fn formats_message() {
@@ -65,5 +66,21 @@ mod tests {
             dt.format("%Y-%m-%d %H:%M:%S %Z")
         );
         assert_eq!(msg, expected);
+    }
+
+    #[test]
+    fn sensation_serializes_local_time() {
+        let dt = chrono::Local
+            .with_ymd_and_hms(2024, 1, 1, 12, 0, 0)
+            .unwrap();
+        let s = Sensation {
+            kind: "heartbeat".into(),
+            when: dt,
+            what: heartbeat_message(dt),
+            source: None,
+        };
+        let json = serde_json::to_string(&s).unwrap();
+        let de: Sensation<String> = serde_json::from_str(&json).unwrap();
+        assert_eq!(de.when, dt);
     }
 }

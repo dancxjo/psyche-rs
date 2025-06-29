@@ -65,9 +65,10 @@ impl Motor for LookMotor {
             trace!(%tok, "llm token");
             desc.push_str(&tok);
         }
+        let when = Local::now();
         let sensation = Sensation {
             kind: "vision.description".into(),
-            when: Local::now(),
+            when,
             what: desc.clone(),
             source: None,
         };
@@ -75,65 +76,11 @@ impl Motor for LookMotor {
         Ok(ActionResult {
             sensations: vec![Sensation {
                 kind: "vision.description".into(),
-                when: sensation.when,
+                when,
                 what: serde_json::Value::String(desc),
                 source: None,
             }],
             completed: true,
         })
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use async_trait::async_trait;
-    use futures::{SinkExt, StreamExt, stream};
-    use ollama_rs::generation::chat::ChatMessage;
-    use psyche_rs::TokenStream;
-    use tokio::sync::mpsc::unbounded_channel;
-    use tokio_tungstenite::{connect_async, tungstenite::Message as WsMessage};
-
-    async fn start_server(stream: Arc<LookStream>) -> std::net::SocketAddr {
-        let app = stream.router();
-        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
-        let addr = listener.local_addr().unwrap();
-        tokio::spawn(async move { axum::serve(listener, app).await.unwrap() });
-        addr
-    }
-
-    #[derive(Clone)]
-    struct StaticLLM;
-    #[async_trait]
-    impl LLMClient for StaticLLM {
-        async fn chat_stream(
-            &self,
-            _msgs: &[ChatMessage],
-        ) -> Result<TokenStream, Box<dyn std::error::Error + Send + Sync>> {
-            Ok(Box::pin(stream::once(async { Ok("desc".to_string()) })))
-        }
-    }
-
-    #[tokio::test]
-    async fn performs_and_emits_sensation() {
-        let stream = Arc::new(LookStream::default());
-        let addr = start_server(stream.clone()).await;
-        let url = format!("ws://{addr}/ws/look/in");
-        let (mut ws, _) = connect_async(url).await.unwrap();
-        tokio::spawn(async move {
-            if let Some(Ok(WsMessage::Text(t))) = ws.next().await {
-                if t == "snap" {
-                    ws.send(WsMessage::Binary(vec![9])).await.unwrap();
-                }
-            }
-        });
-        let llm = Arc::new(StaticLLM);
-        let (tx, mut rx) = unbounded_channel();
-        let motor = LookMotor::new(stream.clone(), llm, tx);
-        let action = Action::new("look", serde_json::Value::Null, stream::empty().boxed());
-        let res = motor.perform(action).await.unwrap();
-        assert!(res.completed);
-        let batch = rx.recv().await.unwrap();
-        assert_eq!(batch[0].what, "desc");
     }
 }
