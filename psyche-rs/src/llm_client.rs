@@ -29,6 +29,9 @@ pub struct OllamaLLM {
     model: String,
 }
 
+#[cfg(test)]
+mod tests;
+
 impl OllamaLLM {
     /// Creates a new Ollama-backed client.
     pub fn new(client: Ollama, model: impl Into<String>) -> Self {
