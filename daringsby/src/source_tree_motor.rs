@@ -78,7 +78,6 @@ impl Motor for SourceTreeMotor {
         if intention.action.name != "source_tree" {
             return Err(MotorError::Unrecognized);
         }
-        let action = intention.action;
         let tree = Self::tree();
         Ok(ActionResult {
             sensations: vec![Sensation {

@@ -6,7 +6,9 @@ use futures::{
 };
 use tracing::{debug, info, warn};
 
-use crate::{ActionResult, Intention, Motor, MotorError, Sensation, Sensor, Will, Wit};
+#[cfg(test)]
+use crate::{ActionResult, MotorError};
+use crate::{Motor, Sensation, Sensor, Will, Wit};
 
 /// Sensor wrapper enabling shared ownership.
 struct SharedSensor<T> {
@@ -183,7 +185,7 @@ where
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{LLMClient, TokenStream};
+    use crate::{Intention, LLMClient, TokenStream};
     use futures::{StreamExt, stream};
     use std::sync::atomic::{AtomicUsize, Ordering};
 

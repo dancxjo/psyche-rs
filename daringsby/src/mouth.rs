@@ -9,7 +9,9 @@ use tokio::sync::broadcast::{self, Receiver, Sender};
 use tracing::{error, trace};
 
 use crate::speech_segment::SpeechSegment;
-use psyche_rs::{Action, ActionResult, Intention, Motor, MotorError};
+#[cfg(test)]
+use psyche_rs::Action;
+use psyche_rs::{ActionResult, Intention, Motor, MotorError};
 
 /// Motor that streams text-to-speech audio via HTTP.
 ///
@@ -150,7 +152,7 @@ impl Motor for Mouth {
         "say"
     }
 
-    async fn perform(&self, mut intention: Intention) -> Result<ActionResult, MotorError> {
+    async fn perform(&self, intention: Intention) -> Result<ActionResult, MotorError> {
         if intention.action.name != "say" {
             return Err(MotorError::Unrecognized);
         }

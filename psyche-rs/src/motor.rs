@@ -163,6 +163,25 @@ impl Completion {
             result: None,
         }
     }
+
+    /// Build a [`Completion`] from an [`Action`]. Consumes the action and
+    /// drops its body stream.
+    ///
+    /// ```
+    /// use psyche_rs::{Action, Completion};
+    /// use futures::stream::{self, StreamExt};
+    /// let body = stream::empty().boxed();
+    /// let action = Action::new("say", serde_json::Value::Null, body);
+    /// let c = Completion::of_action(action);
+    /// assert_eq!(c.name, "say");
+    /// ```
+    pub fn of_action(action: Action) -> Self {
+        Self {
+            name: action.name,
+            params: action.params,
+            result: None,
+        }
+    }
 }
 
 /// Outcome from executing a motor action.

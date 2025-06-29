@@ -212,7 +212,7 @@ impl<T> Will<T> {
                                                     let _ = buf.drain(..caps.get(0).unwrap().end());
                                                     let (btx, brx) = unbounded_channel();
                                                     let action = Action::new(tag.clone(), Value::Object(map.clone()), UnboundedReceiverStream::new(brx).boxed());
-                                                    let mut intention = Intention::to(action).assign(tag.clone());
+                                                    let intention = Intention::to(action).assign(tag.clone());
                                                     debug!(motor_name = %tag, "Will assigned motor on intention");
                                                     debug!(?intention, "Will built intention");
                                                     let val = serde_json::to_value(&intention).unwrap();
@@ -303,7 +303,7 @@ mod tests {
         let sensor = DummySensor;
         let mut stream = will.observe(vec![sensor]).await;
         let mut intentions = stream.next().await.unwrap();
-        let mut intention = intentions.pop().unwrap();
+        let intention = intentions.pop().unwrap();
         assert_eq!(intention.action.name, "say");
         let chunks: Vec<String> = intention.action.body.collect().await;
         let body: String = chunks.concat();

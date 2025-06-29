@@ -10,8 +10,8 @@ use futures::{StreamExt, stream};
 use ollama_rs::Ollama;
 use once_cell::sync::Lazy;
 use psyche_rs::{
-    Action, Intention, Combobulator, Impression, ImpressionSensor, LLMClient, LLMPool, Motor, OllamaLLM,
-    Sensation, SensationSensor, Sensor, Wit,
+    Action, Combobulator, Impression, ImpressionSensor, Intention, LLMClient, LLMPool, Motor,
+    OllamaLLM, Sensation, SensationSensor, Sensor, Wit,
 };
 
 #[cfg(feature = "development-status-sensor")]

@@ -133,7 +133,7 @@ mod tests {
             fn name(&self) -> &'static str {
                 "say"
             }
-            async fn perform(&self, mut intention: Intention) -> Result<ActionResult, MotorError> {
+            async fn perform(&self, intention: Intention) -> Result<ActionResult, MotorError> {
                 let mut action = intention.action;
                 use futures::StreamExt;
                 let mut collected = String::new();

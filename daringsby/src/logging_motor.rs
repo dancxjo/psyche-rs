@@ -17,7 +17,7 @@ impl Motor for LoggingMotor {
     fn name(&self) -> &'static str {
         "log"
     }
-    async fn perform(&self, mut intention: Intention) -> Result<ActionResult, MotorError> {
+    async fn perform(&self, intention: Intention) -> Result<ActionResult, MotorError> {
         let mut action = intention.action;
         let mut text = String::new();
         while let Some(chunk) = action.body.next().await {
