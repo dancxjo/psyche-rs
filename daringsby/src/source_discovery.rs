@@ -10,6 +10,8 @@ use psyche_rs::{Sensation, Sensor};
 static DARINGSBY_SRC_DIR: Dir = include_dir!("$CARGO_MANIFEST_DIR/src");
 /// Directory containing the psyche-rs crate's source code packaged into the binary.
 static PSYCHE_SRC_DIR: Dir = include_dir!("$CARGO_MANIFEST_DIR/../psyche-rs/src");
+/// Project README packaged into the binary.
+const README_TEXT: &str = include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/../README.md"));
 
 /// The source code chunks that will be revealed sequentially.
 /// Maximum number of lines yielded in a single chunk.
@@ -23,8 +25,8 @@ fn interval_secs() -> u64 {
     }
 }
 
-/// Source code chunks that will be revealed sequentially from both the
-/// `daringsby` and `psyche-rs` crates. Files are split into reasonably sized
+/// Source code chunks revealed sequentially from the `daringsby` and `psyche-rs`
+/// crates along with the project README. Files are split into reasonably sized
 /// segments so the agent only sees a portion at a time.
 static CHUNKS: Lazy<Vec<String>> = Lazy::new(|| {
     let mut pieces = Vec::new();
@@ -39,6 +41,10 @@ static CHUNKS: Lazy<Vec<String>> = Lazy::new(|| {
                 }
             }
         }
+    }
+    // Split README into chunks
+    for chunk in README_TEXT.lines().collect::<Vec<_>>().chunks(MAX_LINES) {
+        pieces.push(chunk.join("\n"));
     }
     if pieces.is_empty() {
         panic!("CHUNKS is empty: no source code was included at compile time");
@@ -157,5 +163,10 @@ mod tests {
     #[test]
     fn contains_psyche_chunk() {
         assert!(CHUNKS.iter().any(|c| c.contains("psyche-rs")));
+    }
+
+    #[test]
+    fn includes_readme() {
+        assert!(CHUNKS.iter().any(|c| c.contains("Pete Daringsby")));
     }
 }
