@@ -7,7 +7,6 @@ mod cluster_analyzer;
 mod combobulator;
 mod fair_llm;
 mod impression;
-mod impression_sensor;
 mod llm_client;
 mod memory_sensor;
 mod memory_store;
@@ -18,6 +17,7 @@ mod round_robin_llm;
 mod sensation;
 mod sensation_channel_sensor;
 mod sensor;
+mod sensor_util;
 mod stream_util;
 #[cfg(test)]
 pub mod test_helpers;
@@ -29,7 +29,6 @@ pub use cluster_analyzer::ClusterAnalyzer;
 pub use combobulator::Combobulator;
 pub use fair_llm::FairLLM;
 pub use impression::Impression;
-pub use impression_sensor::ImpressionSensor;
 pub use memory_sensor::MemorySensor;
 pub use memory_store::{InMemoryStore, MemoryStore, StoredImpression, StoredSensation};
 pub use motor::{
@@ -42,6 +41,7 @@ pub use round_robin_llm::RoundRobinLLM;
 pub use sensation::Sensation;
 pub use sensation_channel_sensor::SensationSensor;
 pub use sensor::Sensor;
+pub use sensor_util::ImpressionStreamSensor;
 pub use will::{MotorDescription, Will};
 pub use wit::Wit;
 

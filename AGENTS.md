@@ -25,3 +25,5 @@
     stream data chunked.
 - Use `src/test_helpers.rs` for shared test utilities like `StaticLLM`,
   `TestSensor` and `TwoBatch`.
+- Avoid panicking when sensors are reused; prefer returning an empty stream or
+  clearly documenting single-use behavior.

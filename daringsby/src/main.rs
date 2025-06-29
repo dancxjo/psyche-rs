@@ -10,8 +10,8 @@ use futures::{StreamExt, stream};
 use ollama_rs::Ollama;
 use once_cell::sync::Lazy;
 use psyche_rs::{
-    Action, Combobulator, Impression, ImpressionSensor, Intention, LLMClient, Motor, OllamaLLM,
-    RoundRobinLLM, Sensation, SensationSensor, Sensor, Wit,
+    Action, Combobulator, Impression, ImpressionStreamSensor, Intention, LLMClient, Motor,
+    OllamaLLM, RoundRobinLLM, Sensation, SensationSensor, Sensor, Wit,
 };
 
 #[cfg(feature = "development-status-sensor")]
@@ -118,7 +118,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     sensors.push(Box::new(SensationSensor::new(sens_rx)));
 
     let mut quick_stream = quick.observe(sensors).await;
-    let sensor = ImpressionSensor::new(rx);
+    let sensor = ImpressionStreamSensor::new(rx);
     let combo_stream = combob.observe(vec![sensor]).await;
     let logger = Arc::new(LoggingMotor);
     let _looker = Arc::new(LookMotor::new(vision.clone(), llm.clone(), look_tx));
