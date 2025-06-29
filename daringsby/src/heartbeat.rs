@@ -40,7 +40,7 @@ impl Sensor<String> for Heartbeat {
                 debug!(?msg, "heartbeat sensed");
                 let s = Sensation {
                     kind: "heartbeat".into(),
-                    when: chrono::Utc::now(),
+                    when: chrono::Local::now(),
                     what: msg,
                     source: None,
                 };

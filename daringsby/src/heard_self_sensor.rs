@@ -1,4 +1,4 @@
-use chrono::Utc;
+use chrono::Local;
 use futures::{StreamExt, stream::BoxStream};
 use tokio::sync::broadcast::Receiver;
 use tokio_stream::wrappers::BroadcastStream;
@@ -26,7 +26,7 @@ impl Sensor<String> for HeardSelfSensor {
             .map(|text| {
                 vec![Sensation {
                     kind: "self_audio".into(),
-                    when: Utc::now(),
+                    when: Local::now(),
                     what: format!("I just heard myself say out loud: '{}'", text),
                     source: None,
                 }]

@@ -1,7 +1,7 @@
 use async_trait::async_trait;
 use base64::Engine;
 use base64::engine::general_purpose::STANDARD as B64;
-use chrono::Utc;
+use chrono::Local;
 use futures::StreamExt;
 use std::sync::Arc;
 use tokio::sync::mpsc::UnboundedSender;
@@ -67,7 +67,7 @@ impl Motor for LookMotor {
         }
         let sensation = Sensation {
             kind: "vision.description".into(),
-            when: Utc::now(),
+            when: Local::now(),
             what: desc.clone(),
             source: None,
         };

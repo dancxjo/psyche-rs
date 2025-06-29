@@ -1,4 +1,4 @@
-use chrono::Utc;
+use chrono::Local;
 use futures::{StreamExt, stream::BoxStream};
 use tokio::sync::mpsc::UnboundedReceiver;
 use tokio_stream::wrappers::UnboundedReceiverStream;
@@ -29,7 +29,7 @@ where
                     .into_iter()
                     .map(|imp| Sensation {
                         kind: "impression".into(),
-                        when: Utc::now(),
+                        when: Local::now(),
                         what: imp,
                         source: None,
                     })

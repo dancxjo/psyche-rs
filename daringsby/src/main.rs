@@ -3,7 +3,7 @@ use std::sync::{Arc, Mutex};
 use tracing::{Level, error};
 
 #[cfg(feature = "moment-feedback")]
-use chrono::Utc;
+use chrono::Local;
 use futures::{StreamExt, stream};
 use ollama_rs::Ollama;
 use once_cell::sync::Lazy;
@@ -130,7 +130,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     .iter()
                     .map(|imp| Sensation {
                         kind: "impression".into(),
-                        when: Utc::now(),
+                        when: Local::now(),
                         what: imp.how.clone(),
                         source: None,
                     })

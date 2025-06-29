@@ -88,7 +88,7 @@ impl Sensor<String> for SourceDiscovery {
                 let msg = format!("I know that this is from my own source code:\n{}", chunk);
                 let s = Sensation {
                     kind: "self_source".into(),
-                    when: chrono::Utc::now(),
+                    when: chrono::Local::now(),
                     what: msg,
                     source: None,
                 };
