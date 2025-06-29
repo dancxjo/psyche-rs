@@ -60,7 +60,7 @@ function start() {
   if (textWs.readyState <= WebSocket.OPEN)
     textWs.onmessage = ev => texts.push(ev.data);
   heardWs = openSocket(heardWs, `ws://${location.host}/speech-text-self-in`);
-  lookWs = openSocket(lookWs, `ws://${location.host}/look-jpeg-in`, 'arraybuffer');
+  lookWs = openSocket(lookWs, `ws://${location.host}/vision-jpeg-in`, 'arraybuffer');
   if (lookWs.readyState <= WebSocket.OPEN)
     lookWs.onmessage = ev => {
       if (ev.data === 'snap') capture();
