@@ -4,7 +4,7 @@ use futures::{
     StreamExt,
     stream::{self, BoxStream},
 };
-use tracing::{debug, info};
+use tracing::{debug, info, warn};
 
 use crate::{
     Action, ActionResult, Intention, Motor, MotorError, Sensation, Sensor, Urge, Will, Wit,
@@ -177,13 +177,15 @@ where
                 }
                 Some(actions) = merged_wills.next() => {
                     for action in actions {
+                        debug!(?action, "Psyche received action");
                         let target = action.intention.assigned_motor.clone();
                         if let Some(motor) = self.motors.iter().find(|m| m.name() == target) {
+                            debug!(target_motor = %motor.name(), "Psyche matched action to motor");
                             if let Err(e) = motor.perform(action).await {
                                 debug!(?e, "motor action failed");
                             }
                         } else {
-                            debug!(?target, "no motor for action");
+                            warn!(?action, "Psyche could not match motor for action");
                         }
                     }
                 }
@@ -375,5 +377,75 @@ mod tests {
             assert!(res.completed);
             assert_eq!(res.sensations[0].kind, kind);
         }
+    }
+
+    #[tokio::test]
+    async fn will_actions_dispatched_to_motors() {
+        use std::sync::atomic::{AtomicUsize, Ordering};
+
+        #[derive(Clone)]
+        struct MultiLLM;
+
+        #[async_trait::async_trait]
+        impl LLMClient for MultiLLM {
+            async fn chat_stream(
+                &self,
+                _msgs: &[ollama_rs::generation::chat::ChatMessage],
+            ) -> Result<TokenStream, Box<dyn std::error::Error + Send + Sync>> {
+                use futures::stream;
+                let tokens = vec![
+                    "<say>".to_string(),
+                    "Hello".to_string(),
+                    "</say><log>".to_string(),
+                    "Logging this".to_string(),
+                    "</log>".to_string(),
+                ];
+                Ok(Box::pin(stream::iter(tokens.into_iter().map(Ok))))
+            }
+        }
+
+        struct DummySensor;
+        impl Sensor<String> for DummySensor {
+            fn stream(&mut self) -> BoxStream<'static, Vec<Sensation<String>>> {
+                use futures::stream;
+                let s = Sensation {
+                    kind: "t".into(),
+                    when: chrono::Local::now(),
+                    what: "foo".into(),
+                    source: None,
+                };
+                stream::once(async move { vec![s] }).boxed()
+            }
+        }
+
+        struct CountingMotor(Arc<AtomicUsize>, &'static str);
+        #[async_trait::async_trait]
+        impl Motor for CountingMotor {
+            fn description(&self) -> &'static str {
+                "count"
+            }
+            fn name(&self) -> &'static str {
+                self.1
+            }
+            async fn perform(&self, _action: Action) -> Result<ActionResult, MotorError> {
+                self.0.fetch_add(1, Ordering::SeqCst);
+                Ok(ActionResult::default())
+            }
+        }
+
+        let count = Arc::new(AtomicUsize::new(0));
+        let llm = Arc::new(MultiLLM);
+        let will = Will::new(llm.clone())
+            .delay_ms(10)
+            .motor("say", "speak")
+            .motor("log", "record");
+        let psyche = Psyche::new()
+            .sensor(DummySensor)
+            .will(will)
+            .motor(CountingMotor(count.clone(), "say"))
+            .motor(CountingMotor(count.clone(), "log"));
+
+        let _ = tokio::time::timeout(std::time::Duration::from_millis(50), psyche.run()).await;
+        assert!(count.load(Ordering::SeqCst) >= 2);
     }
 }

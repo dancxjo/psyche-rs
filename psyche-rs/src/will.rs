@@ -7,7 +7,7 @@ use futures::{
 };
 use tokio::sync::mpsc::unbounded_channel;
 use tokio_stream::wrappers::UnboundedReceiverStream;
-use tracing::{debug, trace};
+use tracing::{debug, error, trace};
 
 use regex::Regex;
 
@@ -78,6 +78,7 @@ impl<T> Will<T> {
             name: name.into(),
             description: description.into(),
         });
+        debug!(motor_name = %self.motors.last().unwrap().name, "Will registered motor");
         self
     }
 
@@ -87,6 +88,7 @@ impl<T> Will<T> {
             name: motor.name().to_string(),
             description: motor.description().to_string(),
         });
+        debug!(motor_name = %motor.name(), "Will registered motor");
         self
     }
 
@@ -124,12 +126,13 @@ impl<T> Will<T> {
         let latest_moment_store = self.latest_moment.clone();
 
         thread::spawn(move || {
-            let rt = tokio::runtime::Builder::new_current_thread()
-                .enable_all()
-                .build()
-                .expect("runtime");
-            debug!("will runtime started");
-            rt.block_on(async move {
+            if let Err(err) = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                let rt = tokio::runtime::Builder::new_current_thread()
+                    .enable_all()
+                    .build()
+                    .expect("runtime");
+                debug!("will runtime started");
+                rt.block_on(async move {
                 let streams: Vec<_> = sensors.into_iter().map(|mut s| s.stream()).collect();
                 let mut sensor_stream = stream::select_all(streams);
                 loop {
@@ -167,7 +170,7 @@ impl<T> Will<T> {
                                 .replace("{motors}", &motor_text)
                                 .replace("{latest_instant}", &last_instant)
                                 .replace("{latest_moment}", &last_moment);
-                            debug!(?prompt, "sending will prompt");
+                            debug!(%prompt, "Will generated prompt");
                             let msgs = vec![ChatMessage::user(prompt)];
                             match llm.chat_stream(&msgs).await {
                                 Ok(mut stream) => {
@@ -176,7 +179,7 @@ impl<T> Will<T> {
                                     let mut buf = String::new();
                                     let mut state: Option<(String, String, tokio::sync::mpsc::UnboundedSender<String>)> = None;
                                     while let Some(Ok(tok)) = stream.next().await {
-                                        trace!(%tok, "llm token");
+                                        debug!(token = %tok, "Will received LLM token");
                                         buf.push_str(&tok);
                                         loop {
                                             if let Some((ref _name, ref closing, ref tx_body)) = state {
@@ -210,6 +213,8 @@ impl<T> Will<T> {
                                                     let (btx, brx) = unbounded_channel();
                                                     let mut action = Action::new(tag.clone(), Value::Object(map), UnboundedReceiverStream::new(brx).boxed());
                                                     action.intention.assigned_motor = tag.clone();
+                                                    debug!(motor_name = %tag, "Will assigned motor on action");
+                                                    debug!(?action, "Will built action");
                                                     let _ = tx.send(vec![action]);
                                                     state = Some((tag, closing, btx));
                                                 } else {
@@ -232,6 +237,9 @@ impl<T> Will<T> {
                     }
                 }
             });
+            })) {
+                error!(?err, "will runtime crashed");
+            }
         });
 
         UnboundedReceiverStream::new(rx).boxed()
