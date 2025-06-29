@@ -15,6 +15,13 @@ let queue = [];
 let texts = [];
 let playing = false;
 
+function openSocket(existing, url, binaryType) {
+  if (existing && existing.readyState <= WebSocket.OPEN) return existing;
+  const s = new WebSocket(url);
+  if (binaryType) s.binaryType = binaryType;
+  return s;
+}
+
 function segmentDone() {
   const text = texts.shift();
   if (heardWs && text) heardWs.send(text);
@@ -41,22 +48,23 @@ function play() {
 }
 
 function start() {
-  if (ws) return;
-  ws = new WebSocket(`ws://${location.host}/ws/audio/out`);
-  ws.binaryType = 'arraybuffer';
-  ws.onmessage = ev => {
-    queue.push(new Int16Array(ev.data));
-    if (ctx.state === 'suspended') ctx.resume();
-    play();
-  };
-  textWs = new WebSocket(`ws://${location.host}/ws/audio/text/out`);
-  textWs.onmessage = ev => texts.push(ev.data);
-  heardWs = new WebSocket(`ws://${location.host}/ws/audio/self/in`);
-  lookWs = new WebSocket(`ws://${location.host}/ws/look/in`);
-  lookWs.binaryType = 'arraybuffer';
-  lookWs.onmessage = ev => {
-    if (ev.data === 'snap') capture();
-  };
+  ws = openSocket(ws, `ws://${location.host}/ws/audio/out`, 'arraybuffer');
+  if (ws.readyState <= WebSocket.OPEN) {
+    ws.onmessage = ev => {
+      queue.push(new Int16Array(ev.data));
+      if (ctx.state === 'suspended') ctx.resume();
+      play();
+    };
+  }
+  textWs = openSocket(textWs, `ws://${location.host}/ws/audio/text/out`);
+  if (textWs.readyState <= WebSocket.OPEN)
+    textWs.onmessage = ev => texts.push(ev.data);
+  heardWs = openSocket(heardWs, `ws://${location.host}/ws/audio/self/in`);
+  lookWs = openSocket(lookWs, `ws://${location.host}/ws/look/in`, 'arraybuffer');
+  if (lookWs.readyState <= WebSocket.OPEN)
+    lookWs.onmessage = ev => {
+      if (ev.data === 'snap') capture();
+    };
   navigator.mediaDevices.getUserMedia({ video: true }).then(s => {
     lookVideo = document.createElement('video');
     lookVideo.srcObject = s;
