@@ -19,6 +19,9 @@ pub struct StoredImpression {
     pub when: DateTime<Utc>,
     pub how: String,
     pub sensation_ids: Vec<String>,
+    /// IDs of impressions summarized by this one. Empty for regular impressions.
+    #[serde(rename = "summary_of", default)]
+    pub impression_ids: Vec<String>,
 }
 
 /// Trait for interacting with Pete's memory storage.
@@ -30,6 +33,16 @@ pub trait MemoryStore {
     /// Insert a new impression. Implementations are responsible for
     /// persisting the impression and storing its embedding in Qdrant.
     fn store_impression(&self, impression: &StoredImpression) -> anyhow::Result<()>;
+
+    /// Insert a summary impression linked to other impressions.
+    fn store_summary_impression(
+        &self,
+        summary: &StoredImpression,
+        linked_ids: &[String],
+    ) -> anyhow::Result<()> {
+        let _ = linked_ids;
+        self.store_impression(summary)
+    }
 
     /// Link an impression to a lifecycle stage. `detail` may contain a brief
     /// description of the stage.
@@ -165,6 +178,7 @@ mod tests {
             when: Utc::now(),
             how: "example".into(),
             sensation_ids: sens.iter().map(|s| s.id.clone()).collect(),
+            impression_ids: Vec::new(),
         }
     }
 
@@ -207,6 +221,7 @@ mod integration_tests {
             when: Utc::now(),
             how: "Saw a familiar face.".into(),
             sensation_ids,
+            impression_ids: Vec::new(),
         }
     }
 

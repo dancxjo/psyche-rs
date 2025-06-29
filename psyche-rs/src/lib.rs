@@ -3,6 +3,7 @@
 //! This crate currently exposes [`Sensation`], [`Impression`], [`Sensor`] and
 //! [`Wit`] building blocks for constructing artificial agents.
 
+mod cluster_analyzer;
 mod combobulator;
 mod fair_llm;
 mod impression;
@@ -21,6 +22,7 @@ mod will;
 mod wit;
 
 pub use crate::llm_client::{LLMClient, OllamaLLM, TokenStream};
+pub use cluster_analyzer::ClusterAnalyzer;
 pub use combobulator::Combobulator;
 pub use fair_llm::FairLLM;
 pub use impression::Impression;

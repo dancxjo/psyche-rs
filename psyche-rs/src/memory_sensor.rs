@@ -63,6 +63,7 @@ mod tests {
             when: Utc::now(),
             how: "example".into(),
             sensation_ids: vec!["s1".into()],
+            impression_ids: Vec::new(),
         };
         store.store_impression(&impression).unwrap();
 
