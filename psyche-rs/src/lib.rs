@@ -18,6 +18,8 @@ mod psyche;
 mod sensation;
 mod sensation_channel_sensor;
 mod sensor;
+#[cfg(test)]
+pub mod test_helpers;
 mod will;
 mod wit;
 
