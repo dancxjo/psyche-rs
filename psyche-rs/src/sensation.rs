@@ -57,10 +57,10 @@ mod local_time_format {
     {
         let s = String::deserialize(de)?;
         let naive = NaiveDateTime::parse_from_str(&s, FORMAT).map_err(serde::de::Error::custom)?;
-        Ok(Local
+        Local
             .from_local_datetime(&naive)
             .single()
-            .ok_or_else(|| serde::de::Error::custom("invalid local time"))?)
+            .ok_or_else(|| serde::de::Error::custom("invalid local time"))
     }
 }
 

@@ -22,7 +22,7 @@ const DEFAULT_PROMPT: &str = include_str!("prompts/will_prompt.txt");
 ///
 /// If `max_bytes` does not land on a char boundary, the prefix is truncated to
 /// the previous valid boundary and a warning is emitted.
-pub fn safe_prefix<'a>(s: &'a str, max_bytes: usize) -> &'a str {
+pub fn safe_prefix(s: &str, max_bytes: usize) -> &str {
     if let Some(slice) = s.get(..max_bytes) {
         return slice;
     }
@@ -165,6 +165,7 @@ impl<T> Will<T> {
         UnboundedReceiverStream::new(rx).boxed()
     }
 
+    #[allow(clippy::too_many_arguments)]
     fn spawn_runtime<S>(
         llm: Arc<dyn LLMClient>,
         template: String,
