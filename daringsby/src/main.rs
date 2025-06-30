@@ -22,8 +22,9 @@ use daringsby::SelfDiscovery;
 #[cfg(feature = "source-discovery-sensor")]
 use daringsby::SourceDiscovery;
 use daringsby::{
-    CanvasMotor, CanvasStream, HeardSelfSensor, HeardUserSensor, Heartbeat, LoggingMotor, Mouth,
-    RecallMotor, RecallSensor, SpeechStream, SvgMotor, VisionMotor, VisionSensor,
+    CanvasMotor, CanvasStream, HeardSelfSensor, HeardUserSensor, Heartbeat, LogMemoryMotor,
+    LoggingMotor, Mouth, RecallMotor, RecallSensor, SourceReadMotor, SourceSearchMotor,
+    SourceTreeMotor, SpeechStream, SvgMotor, VisionMotor, VisionSensor,
 };
 use psyche_rs::{InMemoryStore, MemoryStore, StoredImpression};
 use std::net::SocketAddr;
@@ -125,6 +126,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let (svg_tx, svg_rx) = unbounded_channel::<String>();
     let (thought_tx, thought_rx) = unbounded_channel::<Vec<Sensation<String>>>();
     let (recall_tx, recall_rx) = unbounded_channel::<Vec<Sensation<String>>>();
+    let (log_mem_tx, log_mem_rx) = unbounded_channel::<Vec<Sensation<String>>>();
+    let (read_tx, read_rx) = unbounded_channel::<Vec<Sensation<String>>>();
+    let (search_tx, search_rx) = unbounded_channel::<Vec<Sensation<String>>>();
+    let (tree_tx, tree_rx) = unbounded_channel::<Vec<Sensation<String>>>();
     let store = Arc::new(InMemoryStore::new());
     #[cfg(feature = "moment-feedback")]
     let (sens_tx, sens_rx) = unbounded_channel::<Vec<Sensation<String>>>();
@@ -138,6 +143,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         Box::new(SensationSensor::new(canvas_rx)) as Box<dyn Sensor<String> + Send>,
         Box::new(SensationSensor::new(thought_rx)) as Box<dyn Sensor<String> + Send>,
         Box::new(RecallSensor::new(recall_rx)) as Box<dyn Sensor<String> + Send>,
+        Box::new(SensationSensor::new(log_mem_rx)) as Box<dyn Sensor<String> + Send>,
+        Box::new(SensationSensor::new(read_rx)) as Box<dyn Sensor<String> + Send>,
+        Box::new(SensationSensor::new(search_rx)) as Box<dyn Sensor<String> + Send>,
+        Box::new(SensationSensor::new(tree_rx)) as Box<dyn Sensor<String> + Send>,
     ];
     #[cfg(feature = "development-status-sensor")]
     sensors.push(Box::new(DevelopmentStatus) as Box<dyn Sensor<String> + Send>);
@@ -169,6 +178,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         recall_tx,
         5,
     ));
+    let log_memory_motor = Arc::new(LogMemoryMotor::new(log_mem_tx));
+    let source_read_motor = Arc::new(SourceReadMotor::new(read_tx));
+    let source_search_motor = Arc::new(SourceSearchMotor::new(search_tx));
+    let source_tree_motor = Arc::new(SourceTreeMotor::new(tree_tx));
     {
         let canvas = canvas.clone();
         tokio::spawn(async move {
@@ -192,6 +205,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     will.register_motor(canvas_motor.as_ref());
     will.register_motor(svg_motor.as_ref());
     will.register_motor(recall_motor.as_ref());
+    will.register_motor(log_memory_motor.as_ref());
+    will.register_motor(source_read_motor.as_ref());
+    will.register_motor(source_search_motor.as_ref());
+    will.register_motor(source_tree_motor.as_ref());
     let will_stream = will.observe(vec![will_sensor]).await;
 
     let q_instant = INSTANT.clone();
@@ -241,6 +258,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         canvas_motor,
         svg_motor,
         recall_motor,
+        log_memory_motor,
+        source_read_motor,
+        source_search_motor,
+        source_tree_motor,
     ));
 
     tokio::signal::ctrl_c().await?;
@@ -299,6 +320,10 @@ async fn drive_will_stream<M>(
     canvas: Arc<CanvasMotor>,
     drawer: Arc<SvgMotor>,
     recall: Arc<RecallMotor<M>>,
+    log_memory: Arc<LogMemoryMotor>,
+    source_read: Arc<SourceReadMotor>,
+    source_search: Arc<SourceSearchMotor>,
+    source_tree: Arc<SourceTreeMotor>,
 ) where
     M: psyche_rs::MemoryStore + Send + Sync + 'static,
 {
@@ -327,6 +352,30 @@ async fn drive_will_stream<M>(
                 }
                 "recall" => {
                     recall.perform(intent).await.expect("recall motor failed");
+                }
+                "read_log_memory" => {
+                    log_memory
+                        .perform(intent)
+                        .await
+                        .expect("log memory motor failed");
+                }
+                "read_source" => {
+                    source_read
+                        .perform(intent)
+                        .await
+                        .expect("read source motor failed");
+                }
+                "search_source" => {
+                    source_search
+                        .perform(intent)
+                        .await
+                        .expect("search source motor failed");
+                }
+                "source_tree" => {
+                    source_tree
+                        .perform(intent)
+                        .await
+                        .expect("source tree motor failed");
                 }
                 _ => {
                     tracing::warn!(motor = %intent.assigned_motor, "unknown motor");
