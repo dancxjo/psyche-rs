@@ -98,7 +98,7 @@ where
     }
 
     /// Add a motor to the psyche.
-    pub fn motor(mut self, motor: impl Motor + Send + Sync + 'static) -> Self {
+    pub fn motor(mut self, motor: impl Motor + 'static) -> Self {
         self.motors.push(Arc::new(motor));
         self
     }
