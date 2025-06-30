@@ -351,4 +351,27 @@ mod tests {
         let _ = store.fetch_recent_impressions(5);
         assert_eq!(neo_mock.hits(), 1);
     }
+
+    #[test]
+    fn retrieve_related_hits_qdrant() {
+        let neo = MockServer::start();
+        let qdrant = MockServer::start();
+
+        let q_mock = qdrant.mock(|when, then| {
+            when.method(POST);
+            then.status(200).json_body(json!({"result": []}));
+        });
+
+        let neo_mock = neo.mock(|when, then| {
+            when.method(POST);
+            then.status(200).json_body(json!({
+                "results": [{"data": []}]
+            }));
+        });
+
+        let store = NeoQdrantMemoryStore::new(neo.url(""), "u", "p", qdrant.url(""));
+        let _ = store.retrieve_related_impressions("hi", 3);
+        assert_eq!(q_mock.hits(), 1);
+        assert_eq!(neo_mock.hits(), 0);
+    }
 }

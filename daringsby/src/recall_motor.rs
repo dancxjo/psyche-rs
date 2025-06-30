@@ -106,10 +106,9 @@ impl<M: MemoryStore> RecallMotor<M> {
 #[async_trait]
 impl<M: MemoryStore + Send + Sync> Motor for RecallMotor<M> {
     fn description(&self) -> &'static str {
-        "Discovers nearest neighbors of recent moments and summarizes them.\n\
+        "Recalls related impressions for recent moments and summarizes them.\n\
 Example:\n\
-<recall></recall>\n\
-Queries for neighbors, summarizes relevant context, emits as an impression."
+<recall></recall>"
     }
 
     fn name(&self) -> &'static str {
@@ -143,11 +142,11 @@ Queries for neighbors, summarizes relevant context, emits as an impression."
 #[async_trait]
 impl<M: MemoryStore + Send + Sync> SensorDirectingMotor for RecallMotor<M> {
     fn attached_sensors(&self) -> Vec<String> {
-        vec!["RecallSensor".to_string()]
+        vec!["Recall".to_string()]
     }
 
     async fn direct_sensor(&self, sensor_name: &str) -> Result<(), MotorError> {
-        if sensor_name != "RecallSensor" {
+        if sensor_name != "Recall" {
             return Err(MotorError::Failed(format!(
                 "Unknown sensor: {}",
                 sensor_name
