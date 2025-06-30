@@ -172,6 +172,7 @@ where
                 let streams: Vec<_> = sensors.into_iter().map(|mut s| s.stream()).collect();
                 let mut sensor_stream = stream::select_all(streams);
                 loop {
+                    trace!("wit loop tick");
                     tokio::select! {
                         Some(batch) = sensor_stream.next() => {
                             trace!(count = batch.len(), "sensations received");
@@ -215,6 +216,7 @@ where
                                 .replace("{last_frame}", &lf)
                                 .replace("{template}", &timeline);
                             debug!(?prompt, "sending LLM prompt");
+                            trace!("wit invoking llm");
                             let msgs = vec![ChatMessage::user(prompt)];
                             match llm.chat_stream(&msgs).await {
                                 Ok(mut stream) => {
@@ -242,6 +244,7 @@ where
                                         debug!(count = impressions.len(), "impressions generated");
                                         let _ = tx.send(impressions);
                                     }
+                                    trace!("wit llm stream finished");
                                 }
                                 Err(err) => {
                                     trace!(?err, "llm streaming failed");

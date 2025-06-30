@@ -149,6 +149,7 @@ impl<T> Will<T> {
                 let mut sensor_stream = stream::select_all(streams);
                 let mut pending: Vec<Sensation<T>> = Vec::new();
                 loop {
+                    trace!("will loop tick");
                     tokio::select! {
                         Some(batch) = sensor_stream.next() => {
                             trace!(count = batch.len(), "sensations received");
@@ -206,6 +207,7 @@ impl<T> Will<T> {
                                 .replace("{latest_instant}", &last_instant)
                                 .replace("{latest_moment}", &last_moment);
                             debug!(%prompt, "Will generated prompt");
+                            trace!("will invoking llm");
                             let msgs = vec![ChatMessage::user(prompt)];
                             match llm.chat_stream(&msgs).await {
                                 Ok(mut stream) => {
@@ -323,6 +325,7 @@ impl<T> Will<T> {
                                             let _ = tx.send(vec![s]);
                                         }
                                     }
+                                    trace!("will llm stream finished");
                                 }
                                 Err(err) => {
                                     trace!(?err, "llm streaming failed");

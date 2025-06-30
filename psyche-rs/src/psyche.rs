@@ -5,7 +5,7 @@ use futures::{
     StreamExt,
     stream::{self, BoxStream},
 };
-use tracing::{debug, info, warn};
+use tracing::{debug, info, trace, warn};
 
 #[cfg(test)]
 use crate::{ActionResult, MotorError};
@@ -165,12 +165,14 @@ where
         let stream = will.observe(sensors_for_will).await;
         let mut merged_wills = stream::select_all(vec![stream]);
         loop {
+            trace!("psyche loop tick");
             tokio::select! {
                 _ = tokio::signal::ctrl_c() => {
                     info!("psyche shutting down");
                     break;
                 }
                 Some(batch) = merged_wits.next() => {
+                    trace!(batch_len = batch.len(), "psyche received impressions");
                     if let Some(store) = &self.store {
                         for imp in batch {
                             if let Err(e) = persist_impression(store.as_ref(), &imp, "Instant") {
@@ -180,6 +182,7 @@ where
                     }
                 }
                 Some(intentions) = merged_wills.next() => {
+                    trace!(count = intentions.len(), "psyche received intentions");
                     for intention in intentions {
                         debug!(?intention, "Psyche received intention");
                         let target = intention.assigned_motor.clone();
