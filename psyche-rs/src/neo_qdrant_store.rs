@@ -194,6 +194,42 @@ MERGE (i)-[:HAS_STAGE]->(l)
         Ok(imps)
     }
 
+    fn fetch_recent_impressions(&self, limit: usize) -> anyhow::Result<Vec<StoredImpression>> {
+        let query = "MATCH (i:Impression) RETURN i ORDER BY i.when DESC LIMIT $limit";
+        let params = json!({"limit": limit});
+        let payload = json!({"statements":[{"statement":query, "parameters":params}]});
+        let resp = self
+            .client
+            .post(format!("{}/db/neo4j/tx/commit", self.neo4j_url))
+            .basic_auth(&self.neo_user, Some(&self.neo_pass))
+            .json(&payload)
+            .send()
+            .context("neo4j recent failed")?;
+        if !resp.status().is_success() {
+            return Err(anyhow!("neo4j error: {}", resp.text().unwrap_or_default()));
+        }
+        #[derive(Deserialize)]
+        struct Res {
+            results: Vec<R1>,
+        }
+        #[derive(Deserialize)]
+        struct R1 {
+            data: Vec<R2>,
+        }
+        #[derive(Deserialize)]
+        struct R2 {
+            row: (StoredImpression,),
+        }
+        let res: Res = resp.json().context("parse neo4j recent")?;
+        let out = res
+            .results
+            .into_iter()
+            .flat_map(|r| r.data)
+            .map(|r| r.row.0)
+            .collect();
+        Ok(out)
+    }
+
     fn load_full_impression(
         &self,
         impression_id: &str,
@@ -259,6 +295,7 @@ mod tests {
     use super::*;
     use chrono::Utc;
     use httpmock::prelude::*;
+    use serde_json::json;
 
     #[test]
     fn store_impression_hits_backends() {
@@ -296,5 +333,22 @@ mod tests {
 
         assert_eq!(neo_mock.hits(), 2);
         assert_eq!(q_mock.hits(), 1);
+    }
+
+    #[test]
+    fn fetch_recent_queries_neo4j() {
+        let neo = MockServer::start();
+        let qdrant = MockServer::start();
+
+        let neo_mock = neo.mock(|when, then| {
+            when.method(POST);
+            then.status(200).json_body(json!({
+                "results": [{"data": []}]
+            }));
+        });
+
+        let store = NeoQdrantMemoryStore::new(neo.url(""), "u", "p", qdrant.url(""));
+        let _ = store.fetch_recent_impressions(5);
+        assert_eq!(neo_mock.hits(), 1);
     }
 }

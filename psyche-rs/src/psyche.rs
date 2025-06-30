@@ -1,5 +1,6 @@
 use std::sync::{Arc, Mutex};
 
+use chrono::Utc;
 use futures::{
     StreamExt,
     stream::{self, BoxStream},
@@ -8,7 +9,9 @@ use tracing::{debug, info, warn};
 
 #[cfg(test)]
 use crate::{ActionResult, MotorError};
-use crate::{Motor, Sensation, Sensor, Will, Wit};
+use crate::{
+    Impression, MemoryStore, Motor, Sensation, Sensor, StoredImpression, StoredSensation, Will, Wit,
+};
 
 /// Sensor wrapper enabling shared ownership.
 struct SharedSensor<T> {
@@ -70,6 +73,7 @@ pub struct Psyche<T = serde_json::Value> {
     motors: Vec<Box<dyn Motor + Send>>,
     wits: Vec<Wit<T>>,
     will: Option<Will<T>>,
+    store: Option<Arc<dyn MemoryStore + Send + Sync>>,
 }
 
 impl<T> Psyche<T>
@@ -83,6 +87,7 @@ where
             motors: Vec::new(),
             wits: Vec::new(),
             will: None,
+            store: None,
         }
     }
 
@@ -107,6 +112,12 @@ where
     /// Add a will to the psyche.
     pub fn will(mut self, will: Will<T>) -> Self {
         self.will = Some(will);
+        self
+    }
+
+    /// Attach a memory store used to persist impressions.
+    pub fn memory(mut self, store: Arc<dyn MemoryStore + Send + Sync>) -> Self {
+        self.store = Some(store);
         self
     }
 }
@@ -159,9 +170,14 @@ where
                     info!("psyche shutting down");
                     break;
                 }
-                Some(_batch) = merged_wits.next() => {
-                    // Impressions are currently ignored by the psyche. Motors
-                    // are only activated by actions produced through the Will.
+                Some(batch) = merged_wits.next() => {
+                    if let Some(store) = &self.store {
+                        for imp in batch {
+                            if let Err(e) = persist_impression(store.as_ref(), &imp, "Instant") {
+                                warn!(?e, "failed to persist impression");
+                            }
+                        }
+                    }
                 }
                 Some(intentions) = merged_wills.next() => {
                     for intention in intentions {
@@ -180,6 +196,34 @@ where
             }
         }
     }
+}
+
+fn persist_impression<T: serde::Serialize>(
+    store: &dyn MemoryStore,
+    imp: &Impression<T>,
+    kind: &str,
+) -> anyhow::Result<()> {
+    let mut sensation_ids = Vec::new();
+    for s in &imp.what {
+        let sid = uuid::Uuid::new_v4().to_string();
+        sensation_ids.push(sid.clone());
+        let stored = StoredSensation {
+            id: sid,
+            kind: s.kind.clone(),
+            when: s.when.with_timezone(&Utc),
+            data: serde_json::to_string(&s.what)?,
+        };
+        store.store_sensation(&stored)?;
+    }
+    let stored_imp = StoredImpression {
+        id: uuid::Uuid::new_v4().to_string(),
+        kind: kind.into(),
+        when: Utc::now(),
+        how: imp.how.clone(),
+        sensation_ids,
+        impression_ids: Vec::new(),
+    };
+    store.store_impression(&stored_imp)
 }
 
 #[cfg(test)]

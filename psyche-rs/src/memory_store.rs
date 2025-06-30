@@ -60,6 +60,9 @@ pub trait MemoryStore {
         top_k: usize,
     ) -> anyhow::Result<Vec<StoredImpression>>;
 
+    /// Fetch the most recent impressions from storage.
+    fn fetch_recent_impressions(&self, limit: usize) -> anyhow::Result<Vec<StoredImpression>>;
+
     /// Load the full impression, including associated sensations and lifecycle
     /// information. The returned `HashMap` maps stage names to their detail
     /// strings.
@@ -125,6 +128,13 @@ impl MemoryStore for InMemoryStore {
     ) -> anyhow::Result<Vec<StoredImpression>> {
         let imps = self.impressions.lock().unwrap();
         Ok(imps.values().take(top_k).cloned().collect())
+    }
+
+    fn fetch_recent_impressions(&self, limit: usize) -> anyhow::Result<Vec<StoredImpression>> {
+        let mut imps: Vec<_> = self.impressions.lock().unwrap().values().cloned().collect();
+        imps.sort_by_key(|i| std::cmp::Reverse(i.when));
+        imps.truncate(limit);
+        Ok(imps)
     }
 
     fn load_full_impression(
@@ -294,5 +304,20 @@ mod integration_tests {
         let (_, sens, _) = store.load_full_impression("i_dup").unwrap();
         assert_eq!(sens.len(), 1);
         assert_eq!(sens[0].data, r#"{"face_id":"abc123"}"#);
+    }
+
+    #[test]
+    fn fetch_recent_returns_latest() {
+        let store = InMemoryStore::new();
+        for i in 0..3 {
+            let s = make_sensation(&format!("s{}", i));
+            store.store_sensation(&s).unwrap();
+            let mut imp = make_impression(&format!("i{}", i), vec![s.id.clone()]);
+            imp.when = imp.when + chrono::Duration::seconds(i as i64);
+            store.store_impression(&imp).unwrap();
+        }
+        let latest = store.fetch_recent_impressions(2).unwrap();
+        assert_eq!(latest.len(), 2);
+        assert!(latest[0].when >= latest[1].when);
     }
 }

@@ -14,6 +14,8 @@ pub use crate::logging_motor::LoggingMotor;
 pub use crate::look_motor::LookMotor;
 #[cfg(feature = "mouth")]
 pub use crate::mouth::Mouth;
+#[cfg(feature = "neighbor-discovery-motor")]
+pub use crate::neighbor_discovery_motor::NeighborDiscoveryMotor;
 #[cfg(feature = "source-read-motor")]
 pub use crate::source_read_motor::SourceReadMotor;
 #[cfg(feature = "source-search-motor")]

@@ -12,6 +12,8 @@ pub use crate::heard_self_sensor::HeardSelfSensor;
 pub use crate::heard_user_sensor::HeardUserSensor;
 #[cfg(feature = "heartbeat-sensor")]
 pub use crate::heartbeat::{Heartbeat, heartbeat_message};
+#[cfg(feature = "neighbor-discovery-motor")]
+pub use crate::neighbor_summary_sensor::NeighborSummarySensor;
 #[cfg(feature = "self-discovery-sensor")]
 pub use crate::self_discovery::SelfDiscovery;
 #[cfg(feature = "source-discovery-sensor")]
