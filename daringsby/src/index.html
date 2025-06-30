@@ -23,9 +23,10 @@
   <button type="submit">Send</button>
 </form>
 <canvas id="drawing-area" class="container" width="640" height="480"></canvas>
+<audio id="audio-player" hidden></audio>
 <script>
 const SAMPLE_RATE = 22050;
-const ctx = new (window.AudioContext || window.webkitAudioContext)({ sampleRate: SAMPLE_RATE });
+let audioEl;
 let segWs;
 let heardWs;
 let userWs;
@@ -34,6 +35,7 @@ let canvasWs;
 let svgWs;
 let lookVideo;
 let lookCanvas;
+// Queues of audio PCM buffers and corresponding text waiting to be played.
 let queue = [];
 let texts = [];
 let playing = false;
@@ -74,9 +76,34 @@ function sendMessage(ev) {
   input.value = '';
 }
 
+// Convert a 16-bit PCM Int16Array into a WAV byte array so the
+// resulting Blob can be used as the source of an <audio> element.
+function pcmToWav(pcm) {
+  const buffer = new ArrayBuffer(44 + pcm.length * 2);
+  const view = new DataView(buffer);
+  const write = (off, str) => {
+    for (let i = 0; i < str.length; i++) view.setUint8(off + i, str.charCodeAt(i));
+  };
+  write(0, 'RIFF');
+  view.setUint32(4, 36 + pcm.length * 2, true);
+  write(8, 'WAVE');
+  write(12, 'fmt ');
+  view.setUint32(16, 16, true);
+  view.setUint16(20, 1, true);
+  view.setUint16(22, 1, true);
+  view.setUint32(24, SAMPLE_RATE, true);
+  view.setUint32(28, SAMPLE_RATE * 2, true);
+  view.setUint16(32, 2, true);
+  view.setUint16(34, 16, true);
+  write(36, 'data');
+  view.setUint32(40, pcm.length * 2, true);
+  for (let i = 0; i < pcm.length; i++) view.setInt16(44 + i * 2, pcm[i], true);
+  return new Uint8Array(buffer);
+}
+
 function play() {
   if (playing || !queue.length) return;
-  console.log("Queue length", queue.length, "Texts length", texts.length);
+  console.log('Queue length', queue.length, 'Texts length', texts.length);
   playing = true;
   const pcm = queue.shift();
   if (pcm.length === 0) {
@@ -85,21 +112,21 @@ function play() {
     play();
     return;
   }
-  const buf = ctx.createBuffer(1, pcm.length, SAMPLE_RATE);
-  const chan = buf.getChannelData(0);
-  for (let i = 0; i < pcm.length; i++) chan[i] = pcm[i] / 32768;
-  const src = ctx.createBufferSource();
-  src.buffer = buf;
-  src.connect(ctx.destination);
-  src.onended = () => {
+  const wav = pcmToWav(pcm);
+  const blob = new Blob([wav], { type: 'audio/wav' });
+  const url = URL.createObjectURL(blob);
+  audioEl.src = url;
+  audioEl.onended = () => {
+    URL.revokeObjectURL(url);
     playing = false;
     sendHeard();
     play();
   };
-  src.start();
+  audioEl.play().catch(e => console.error('audio play error', e));
 }
 
 function start() {
+  audioEl = document.getElementById('audio-player');
   segWs = openSocket(segWs, `ws://${location.host}/speech-segments-out`);
   if (segWs.readyState <= WebSocket.OPEN)
     segWs.onmessage = ev => {
@@ -109,7 +136,6 @@ function start() {
       for (let i = 0; i < bin.length; i++) buf[i] = bin.charCodeAt(i);
       queue.push(new Int16Array(buf.buffer));
       texts.push(seg.text);
-      if (ctx.state === 'suspended') ctx.resume();
       play();
     };
   heardWs = openSocket(heardWs, `ws://${location.host}/speech-text-self-in`);
