@@ -114,7 +114,7 @@ impl<T> Will<T> {
             .iter()
             .map(|s| {
                 let what = serde_json::to_string(&s.what).unwrap_or_default();
-                format!("{} {} {}", s.when.to_rfc3339(), s.kind, what)
+                format!("{} {} {}", s.when.format("%Y-%m-%d %H:%M:%S"), s.kind, what)
             })
             .collect::<Vec<_>>()
             .join("\n")
@@ -156,14 +156,26 @@ impl<T> Will<T> {
                         _ = tokio::time::sleep(std::time::Duration::from_millis(delay)) => {
                             let snapshot = {
                                 let mut w = window.lock().unwrap();
-                                let cutoff = chrono::Local::now() - chrono::Duration::milliseconds(window_ms as i64);
+                                let cutoff = chrono::Local::now() -
+                                    chrono::Duration::milliseconds(window_ms as i64);
                                 w.retain(|s| s.when > cutoff);
                                 w.clone()
                             };
-                            let situation = snapshot.iter().map(|s| {
-                                let what = serde_json::to_string(&s.what).unwrap_or_default();
-                                format!("{} {} {}", s.when.to_rfc3339(), s.kind, what)
-                            }).collect::<Vec<_>>().join("\n");
+                            trace!(snapshot_len = snapshot.len(), "Will captured snapshot");
+                            let situation = snapshot
+                                .iter()
+                                .map(|s| {
+                                    let what =
+                                        serde_json::to_string(&s.what).unwrap_or_default();
+                                    format!(
+                                        "{} {} {}",
+                                        s.when.format("%Y-%m-%d %H:%M:%S"),
+                                        s.kind,
+                                        what
+                                    )
+                                })
+                                .collect::<Vec<_>>()
+                                .join("\n");
                             let motor_text = motors.iter().map(|m| format!("{}: {}", m.name, m.description)).collect::<Vec<_>>().join("\n");
                             let mut last_instant = String::new();
                             let mut last_moment = String::new();

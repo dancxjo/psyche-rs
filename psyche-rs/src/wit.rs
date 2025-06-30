@@ -104,7 +104,7 @@ impl<T> Wit<T> {
             .iter()
             .map(|s| {
                 let what = serde_json::to_string(&s.what).unwrap_or_default();
-                format!("{} {} {}", s.when.to_rfc3339(), s.kind, what)
+                format!("{} {} {}", s.when.format("%Y-%m-%d %H:%M:%S"), s.kind, what)
             })
             .collect::<Vec<_>>()
             .join("\n")
@@ -191,10 +191,24 @@ where
                                 let w = window.lock().unwrap();
                                 w.clone()
                             };
-                            let timeline = snapshot.iter().map(|s| {
-                                let what = serde_json::to_string(&s.what).unwrap_or_default();
-                                format!("{} {} {}", s.when.to_rfc3339(), s.kind, what)
-                            }).collect::<Vec<_>>().join("\n");
+                            if snapshot.is_empty() {
+                                trace!("Wit skipping LLM call due to empty snapshot");
+                                continue;
+                            }
+                            let timeline = snapshot
+                                .iter()
+                                .map(|s| {
+                                    let what =
+                                        serde_json::to_string(&s.what).unwrap_or_default();
+                                    format!(
+                                        "{} {} {}",
+                                        s.when.format("%Y-%m-%d %H:%M:%S"),
+                                        s.kind,
+                                        what
+                                    )
+                                })
+                                .collect::<Vec<_>>()
+                                .join("\n");
                             let lf = { last_frame.lock().unwrap().clone() };
                             trace!(?timeline, "preparing prompt");
                             let prompt = template
@@ -208,6 +222,9 @@ where
                                     while let Some(Ok(tok)) = stream.next().await {
                                         trace!(%tok, "llm token");
                                         text.push_str(&tok);
+                                    }
+                                    if text.trim().is_empty() {
+                                        text = "No meaningful observation was made.".to_string();
                                     }
                                     *last_frame.lock().unwrap() = text.clone();
                                     let impressions: Vec<Impression<T>> = split_single(&text, SegmentConfig::default())
@@ -426,5 +443,20 @@ mod tests {
         let data = prompts.lock().unwrap();
         assert!(data.len() >= 2);
         assert!(data[1].contains("frame"));
+    }
+
+    #[tokio::test]
+    async fn timeline_uses_local_time_and_has_fallback() {
+        let llm = Arc::new(StaticLLM { reply: "".into() });
+        let mut wit = Wit::new(llm).delay_ms(10);
+        let sensor = TestSensor;
+        let mut stream = wit.observe(vec![sensor]).await;
+        let impressions = stream.next().await.unwrap();
+        assert_eq!(impressions[0].how, "No meaningful observation was made.");
+
+        let tl = wit.timeline();
+        let line = tl.lines().next().unwrap();
+        let ts = &line[..19];
+        chrono::NaiveDateTime::parse_from_str(ts, "%Y-%m-%d %H:%M:%S").unwrap();
     }
 }
