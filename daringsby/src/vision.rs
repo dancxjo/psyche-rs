@@ -12,13 +12,13 @@ use psyche_rs::{ActionResult, Completion, Intention, LLMClient, Motor, MotorErro
 use crate::look_stream::LookStream;
 
 /// Motor that captures a webcam snapshot and describes it using an LLM.
-pub struct LookMotor {
+pub struct Vision {
     stream: Arc<LookStream>,
     llm: Arc<dyn LLMClient>,
     tx: UnboundedSender<Vec<Sensation<String>>>,
 }
 
-impl LookMotor {
+impl Vision {
     /// Create a new look motor backed by the given stream and LLM.
     pub fn new(
         stream: Arc<LookStream>,
@@ -30,7 +30,7 @@ impl LookMotor {
 }
 
 #[async_trait]
-impl Motor for LookMotor {
+impl Motor for Vision {
     fn description(&self) -> &'static str {
         "Take a look at what's in front of your face.\n\
 Parameters: none.\n\
@@ -61,7 +61,7 @@ sent to any `LookStream` subscribers."
         let prompt = format!(
             "This is what you are seeing. If this is your first person perspective, what do you see?\n{b64}"
         );
-        debug!(?prompt, "look prompt");
+        debug!(?prompt, "vision prompt");
         let msgs = vec![ollama_rs::generation::chat::ChatMessage::user(prompt)];
         let mut stream = self
             .llm
@@ -104,7 +104,7 @@ sent to any `LookStream` subscribers."
 }
 
 #[async_trait::async_trait]
-impl psyche_rs::SensorDirectingMotor for LookMotor {
+impl psyche_rs::SensorDirectingMotor for Vision {
     /// Return the name of the single sensor controlled by this motor.
     fn attached_sensors(&self) -> Vec<String> {
         vec!["LookStream".to_string()]

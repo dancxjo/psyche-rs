@@ -44,7 +44,7 @@ serial_test = "2"
 
 [features]
 logging-motor = []
-look-motor = []
+vision = []
 canvas-motor = []
 mouth = []
 source-read-motor = []
@@ -62,7 +62,7 @@ source-discovery-sensor = []
 moment-feedback = []
 default = [
     "logging-motor",
-    "look-motor",
+    "vision",
     "canvas-motor",
     "mouth",
     "development-status-sensor",
