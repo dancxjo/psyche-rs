@@ -114,6 +114,20 @@ impl<T> Wit<T> {
     }
 }
 
+/// Configuration for spawning a [`Wit`] runtime loop.
+struct WitRuntimeConfig<S, T> {
+    llm: Arc<dyn LLMClient>,
+    template: String,
+    delay: u64,
+    window_ms: u64,
+    window: Arc<Mutex<Vec<Sensation<T>>>>,
+    last_frame: Arc<Mutex<String>>,
+    sensors: Vec<S>,
+    tx: tokio::sync::mpsc::UnboundedSender<Vec<Impression<T>>>,
+    abort: Option<tokio::sync::oneshot::Receiver<()>>,
+    jitter: u64,
+}
+
 impl<T> Wit<T>
 where
     T: Clone + Send + 'static + serde::Serialize,
@@ -138,22 +152,23 @@ where
         self.observe_inner(sensors, Some(abort)).await
     }
 
-    #[allow(clippy::too_many_arguments)]
-    fn spawn_runtime<S>(
-        llm: Arc<dyn LLMClient>,
-        template: String,
-        delay: u64,
-        window_ms: u64,
-        window: Arc<Mutex<Vec<Sensation<T>>>>,
-        last_frame: Arc<Mutex<String>>,
-        sensors: Vec<S>,
-        tx: tokio::sync::mpsc::UnboundedSender<Vec<Impression<T>>>,
-        mut abort: Option<tokio::sync::oneshot::Receiver<()>>,
-        jitter: u64,
-    ) -> tokio::task::JoinHandle<()>
+    fn spawn_runtime<S>(config: WitRuntimeConfig<S, T>) -> tokio::task::JoinHandle<()>
     where
         S: Sensor<T> + Send + 'static,
     {
+        let WitRuntimeConfig {
+            llm,
+            template,
+            delay,
+            window_ms,
+            window,
+            last_frame,
+            sensors,
+            tx,
+            mut abort,
+            jitter,
+        } = config;
+
         tokio::spawn(async move {
             if jitter > 0 {
                 tokio::time::sleep(std::time::Duration::from_millis(jitter)).await;
@@ -281,7 +296,7 @@ where
             0
         };
 
-        Self::spawn_runtime(
+        let config = WitRuntimeConfig {
             llm,
             template,
             delay,
@@ -289,10 +304,11 @@ where
             window,
             last_frame,
             sensors,
-            tx.clone(),
+            tx: tx.clone(),
             abort,
             jitter,
-        );
+        };
+        Self::spawn_runtime(config);
 
         UnboundedReceiverStream::new(rx).boxed()
     }

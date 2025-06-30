@@ -56,6 +56,21 @@ pub struct Will<T = serde_json::Value> {
     thoughts_tx: Option<tokio::sync::mpsc::UnboundedSender<Vec<Sensation<String>>>>,
 }
 
+/// Configuration for spawning a [`Will`] runtime loop.
+struct WillRuntimeConfig<S, T> {
+    llm: Arc<dyn LLMClient>,
+    template: String,
+    delay: u64,
+    window_ms: u64,
+    window: Arc<Mutex<Vec<Sensation<T>>>>,
+    motors: Vec<MotorDescription>,
+    latest_instant_store: Arc<Mutex<String>>,
+    latest_moment_store: Arc<Mutex<String>>,
+    thoughts_tx: Option<tokio::sync::mpsc::UnboundedSender<Vec<Sensation<String>>>>,
+    sensors: Vec<S>,
+    tx: tokio::sync::mpsc::UnboundedSender<Vec<Intention>>,
+}
+
 impl<T> Will<T> {
     pub fn new(llm: Arc<dyn LLMClient>) -> Self {
         Self {
@@ -148,7 +163,7 @@ impl<T> Will<T> {
         let latest_moment_store = self.latest_moment.clone();
         let thoughts_tx = self.thoughts_tx.clone();
 
-        Self::spawn_runtime(
+        let config = WillRuntimeConfig {
             llm,
             template,
             delay,
@@ -159,30 +174,32 @@ impl<T> Will<T> {
             latest_moment_store,
             thoughts_tx,
             sensors,
-            tx.clone(),
-        );
+            tx: tx.clone(),
+        };
+        Self::spawn_runtime(config);
 
         UnboundedReceiverStream::new(rx).boxed()
     }
 
-    #[allow(clippy::too_many_arguments)]
-    fn spawn_runtime<S>(
-        llm: Arc<dyn LLMClient>,
-        template: String,
-        delay: u64,
-        window_ms: u64,
-        window: Arc<Mutex<Vec<Sensation<T>>>>,
-        motors: Vec<MotorDescription>,
-        latest_instant_store: Arc<Mutex<String>>,
-        latest_moment_store: Arc<Mutex<String>>,
-        thoughts_tx: Option<tokio::sync::mpsc::UnboundedSender<Vec<Sensation<String>>>>,
-        sensors: Vec<S>,
-        tx: tokio::sync::mpsc::UnboundedSender<Vec<Intention>>,
-    ) -> tokio::task::JoinHandle<()>
+    fn spawn_runtime<S>(config: WillRuntimeConfig<S, T>) -> tokio::task::JoinHandle<()>
     where
         T: Clone + Default + Send + 'static + serde::Serialize + for<'de> serde::Deserialize<'de>,
         S: Sensor<T> + Send + 'static,
     {
+        let WillRuntimeConfig {
+            llm,
+            template,
+            delay,
+            window_ms,
+            window,
+            motors,
+            latest_instant_store,
+            latest_moment_store,
+            thoughts_tx,
+            sensors,
+            tx,
+        } = config;
+
         tokio::spawn(async move {
             debug!("will runtime started");
             let streams: Vec<_> = sensors.into_iter().map(|mut s| s.stream()).collect();
