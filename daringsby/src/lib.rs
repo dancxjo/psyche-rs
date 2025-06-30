@@ -20,10 +20,10 @@ pub mod look_motor;
 pub mod look_stream;
 #[cfg(feature = "mouth")]
 pub mod mouth;
-#[cfg(feature = "neighbor-discovery-motor")]
-pub mod neighbor_discovery_motor;
-#[cfg(feature = "neighbor-discovery-motor")]
-pub mod neighbor_summary_sensor;
+#[cfg(feature = "recall-motor")]
+pub mod recall_motor;
+#[cfg(feature = "recall-motor")]
+pub mod recall_sensor;
 #[cfg(feature = "self-discovery-sensor")]
 pub mod self_discovery;
 #[cfg(feature = "source-discovery-sensor")]

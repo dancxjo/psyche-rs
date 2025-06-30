@@ -12,41 +12,52 @@ use psyche_rs::{
     SensorDirectingMotor, StoredImpression,
 };
 
-/// Motor that discovers neighbors of recent impressions and summarizes them.
+/// Motor that recalls related impressions and summarizes them.
 ///
 /// The associated sensor emits a `neighbor.summary` sensation containing the
 /// one-sentence summary.
-pub struct NeighborDiscoveryMotor<M: MemoryStore> {
+pub struct RecallMotor<M: MemoryStore> {
     store: M,
     llm: Arc<dyn LLMClient>,
     tx: UnboundedSender<Vec<Sensation<String>>>,
+    batch_size: usize,
 }
 
-impl<M: MemoryStore> NeighborDiscoveryMotor<M> {
+impl<M: MemoryStore> RecallMotor<M> {
     /// Create a new motor backed by the given store and LLM.
     pub fn new(
         store: M,
         llm: Arc<dyn LLMClient>,
         tx: UnboundedSender<Vec<Sensation<String>>>,
+        batch_size: usize,
     ) -> Self {
-        Self { store, llm, tx }
+        Self {
+            store,
+            llm,
+            tx,
+            batch_size,
+        }
     }
 
     async fn discover_and_summarize(&self) -> Result<String, MotorError> {
         let recents = self
             .store
-            .fetch_recent_impressions(1)
+            .fetch_recent_impressions(self.batch_size)
             .map_err(|e| MotorError::Failed(e.to_string()))?;
-        let moment = match recents.into_iter().next() {
-            Some(m) => m,
-            None => return Err(MotorError::Failed("no recent impressions".into())),
-        };
+        if recents.is_empty() {
+            return Err(MotorError::Failed("no recent impressions".into()));
+        }
+        let moment_text = recents
+            .iter()
+            .map(|i| i.how.as_str())
+            .collect::<Vec<_>>()
+            .join("\n");
         let neighbors = self
             .store
-            .retrieve_related_impressions(&moment.how, 3)
+            .retrieve_related_impressions(&moment_text, 3)
             .map_err(|e| MotorError::Failed(e.to_string()))?;
         let ctx = json!({
-            "moment": moment.how,
+            "moment": moment_text,
             "neighbors": neighbors.iter().map(|n| n.how.clone()).collect::<Vec<_>>()
         });
         let prompt = format!(
@@ -76,7 +87,7 @@ impl<M: MemoryStore> NeighborDiscoveryMotor<M> {
             when: Utc::now(),
             how: summary.to_string(),
             sensation_ids: Vec::new(),
-            impression_ids: vec![moment.id],
+            impression_ids: recents.iter().map(|m| m.id.clone()).collect(),
         };
         self.store
             .store_summary_impression(&stored, &stored.impression_ids)
@@ -93,20 +104,20 @@ impl<M: MemoryStore> NeighborDiscoveryMotor<M> {
 }
 
 #[async_trait]
-impl<M: MemoryStore + Send + Sync> Motor for NeighborDiscoveryMotor<M> {
+impl<M: MemoryStore + Send + Sync> Motor for RecallMotor<M> {
     fn description(&self) -> &'static str {
         "Discovers nearest neighbors of recent moments and summarizes them.\n\
 Example:\n\
-<discover_neighbors></discover_neighbors>\n\
+<recall></recall>\n\
 Queries for neighbors, summarizes relevant context, emits as an impression."
     }
 
     fn name(&self) -> &'static str {
-        "discover_neighbors"
+        "recall"
     }
 
     async fn perform(&self, intention: Intention) -> Result<ActionResult, MotorError> {
-        if intention.action.name != "discover_neighbors" {
+        if intention.action.name != "recall" {
             return Err(MotorError::Unrecognized);
         }
         let action = intention.action;
@@ -130,13 +141,13 @@ Queries for neighbors, summarizes relevant context, emits as an impression."
 }
 
 #[async_trait]
-impl<M: MemoryStore + Send + Sync> SensorDirectingMotor for NeighborDiscoveryMotor<M> {
+impl<M: MemoryStore + Send + Sync> SensorDirectingMotor for RecallMotor<M> {
     fn attached_sensors(&self) -> Vec<String> {
-        vec!["NeighborSummarySensor".to_string()]
+        vec!["RecallSensor".to_string()]
     }
 
     async fn direct_sensor(&self, sensor_name: &str) -> Result<(), MotorError> {
-        if sensor_name != "NeighborSummarySensor" {
+        if sensor_name != "RecallSensor" {
             return Err(MotorError::Failed(format!(
                 "Unknown sensor: {}",
                 sensor_name

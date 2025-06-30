@@ -53,7 +53,7 @@ source-search-motor = []
 source-tree-motor = []
 svg-motor = []
 log-memory-motor = []
-neighbor-discovery-motor = []
+recall-motor = []
 canvas-stream = []
 development-status-sensor = []
 heard-self-sensor = []
@@ -74,7 +74,7 @@ default = [
     "source-tree-motor",
     "svg-motor",
     "log-memory-motor",
-    "neighbor-discovery-motor",
+    "recall-motor",
     "canvas-stream",
     "heard-self-sensor",
     "heard-user-sensor",
