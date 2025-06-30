@@ -70,7 +70,7 @@ impl<T> Sensor<T> for SharedSensor<T> {
 /// ```
 pub struct Psyche<T = serde_json::Value> {
     sensors: Vec<Arc<Mutex<dyn Sensor<T> + Send>>>,
-    motors: Vec<Box<dyn Motor + Send>>,
+    motors: Vec<Arc<dyn Motor + Send + Sync>>,
     wits: Vec<Wit<T>>,
     will: Option<Will<T>>,
     store: Option<Arc<dyn MemoryStore + Send + Sync>>,
@@ -98,8 +98,8 @@ where
     }
 
     /// Add a motor to the psyche.
-    pub fn motor(mut self, motor: impl Motor + Send + 'static) -> Self {
-        self.motors.push(Box::new(motor));
+    pub fn motor(mut self, motor: impl Motor + Send + Sync + 'static) -> Self {
+        self.motors.push(Arc::new(motor));
         self
     }
 
@@ -185,9 +185,12 @@ where
                         let target = intention.assigned_motor.clone();
                         if let Some(motor) = self.motors.iter().find(|m| m.name() == target) {
                             debug!(target_motor = %motor.name(), "Psyche matched intention to motor");
-                            if let Err(e) = motor.perform(intention).await {
-                                debug!(?e, "motor action failed");
-                            }
+                            let motor = motor.clone();
+                            tokio::spawn(async move {
+                                if let Err(e) = motor.perform(intention).await {
+                                    debug!(?e, "motor action failed");
+                                }
+                            });
                         } else {
                             warn!(?intention, "Psyche could not match motor for intention");
                         }
@@ -391,6 +394,74 @@ mod tests {
             .motor(CountingMotor(count.clone(), "log"));
 
         let _ = tokio::time::timeout(std::time::Duration::from_millis(200), psyche.run()).await;
+        assert!(count.load(Ordering::SeqCst) >= 2);
+    }
+
+    #[tokio::test]
+    async fn actions_do_not_block_loop() {
+        use std::sync::atomic::{AtomicUsize, Ordering};
+
+        #[derive(Clone)]
+        struct MultiActionLLM;
+
+        #[async_trait::async_trait]
+        impl LLMClient for MultiActionLLM {
+            async fn chat_stream(
+                &self,
+                _msgs: &[ollama_rs::generation::chat::ChatMessage],
+            ) -> Result<LLMTokenStream, Box<dyn std::error::Error + Send + Sync>> {
+                use futures::stream;
+                let toks = vec![
+                    "<log>".to_string(),
+                    "1".to_string(),
+                    "</log>".to_string(),
+                    "<log>".to_string(),
+                    "2".to_string(),
+                    "</log>".to_string(),
+                ];
+                Ok(Box::pin(stream::iter(toks.into_iter().map(Ok))))
+            }
+        }
+
+        struct DummySensor;
+        impl Sensor<String> for DummySensor {
+            fn stream(&mut self) -> BoxStream<'static, Vec<Sensation<String>>> {
+                use futures::stream;
+                let s = Sensation {
+                    kind: "t".into(),
+                    when: chrono::Local::now(),
+                    what: "foo".into(),
+                    source: None,
+                };
+                stream::once(async move { vec![s] }).boxed()
+            }
+        }
+
+        struct SlowMotor(Arc<AtomicUsize>);
+        #[async_trait::async_trait]
+        impl Motor for SlowMotor {
+            fn description(&self) -> &'static str {
+                "slow"
+            }
+            fn name(&self) -> &'static str {
+                "log"
+            }
+            async fn perform(&self, _intention: Intention) -> Result<ActionResult, MotorError> {
+                tokio::time::sleep(std::time::Duration::from_millis(150)).await;
+                self.0.fetch_add(1, Ordering::SeqCst);
+                Ok(ActionResult::default())
+            }
+        }
+
+        let count = Arc::new(AtomicUsize::new(0));
+        let llm = Arc::new(MultiActionLLM);
+        let will = Will::new(llm.clone()).delay_ms(10).motor("log", "count");
+        let psyche = Psyche::new()
+            .sensor(DummySensor)
+            .will(will)
+            .motor(SlowMotor(count.clone()));
+
+        let _ = tokio::time::timeout(std::time::Duration::from_millis(250), psyche.run()).await;
         assert!(count.load(Ordering::SeqCst) >= 2);
     }
 
