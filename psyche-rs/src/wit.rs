@@ -172,7 +172,6 @@ where
                 let streams: Vec<_> = sensors.into_iter().map(|mut s| s.stream()).collect();
                 let mut sensor_stream = stream::select_all(streams);
                 loop {
-                    trace!("wit loop tick");
                     tokio::select! {
                         Some(batch) = sensor_stream.next() => {
                             trace!(count = batch.len(), "sensations received");
@@ -182,6 +181,7 @@ where
                             if pending.is_empty() {
                                 continue;
                             }
+                            trace!("wit loop tick");
                             {
                                 let mut w = window.lock().unwrap();
                                 w.extend(pending.drain(..));
