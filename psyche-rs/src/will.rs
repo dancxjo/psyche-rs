@@ -212,14 +212,14 @@ impl<T> Will<T> {
                                     let start_re = Regex::new(r"^<([a-zA-Z0-9_]+)([^>]*)>").unwrap();
                                     let attr_re = Regex::new(r#"([a-zA-Z0-9_]+)="([^"]*)""#).unwrap();
                                     let mut buf = String::new();
-                                    let mut state: Option<(String, String, tokio::sync::mpsc::UnboundedSender<String>)> = None;
+                                    let mut state: Option<(String, String, String, tokio::sync::mpsc::UnboundedSender<String>)> = None;
                                     let mut pending_text = String::new();
                                     while let Some(Ok(tok)) = stream.next().await {
                                         trace!(token = %tok, "Will received LLM token");
                                         buf.push_str(&tok);
                                         loop {
-                                            if let Some((ref _name, ref closing, ref tx_body)) = state {
-                                                if let Some(pos) = buf.find(closing) {
+                                            if let Some((ref _name, ref closing, ref closing_lower, ref tx_body)) = state {
+                                                if let Some(pos) = buf.to_ascii_lowercase().find(closing_lower) {
                                                     if pos > 0 {
                                                         let part = buf[..pos].to_string();
                                                         let _ = tx_body.send(part);
@@ -261,13 +261,14 @@ impl<T> Will<T> {
                                                         }
                                                         pending_text.clear();
                                                     }
-                                                    let tag = caps.get(1).unwrap().as_str().to_string();
+                                                    let tag = caps.get(1).unwrap().as_str().to_ascii_lowercase();
                                                     let attrs = caps.get(2).map(|m| m.as_str()).unwrap_or("");
                                                     let mut map = Map::new();
                                                     for cap in attr_re.captures_iter(attrs) {
                                                         map.insert(cap[1].to_string(), Value::String(cap[2].to_string()));
                                                     }
                                                     let closing = format!("</{}>", tag);
+                                                    let closing_lower = closing.to_ascii_lowercase();
                                                     let _ = buf.drain(..caps.get(0).unwrap().end());
                                                     let (btx, brx) = unbounded_channel();
                                                     let action = Action::new(tag.clone(), Value::Object(map.clone()), UnboundedReceiverStream::new(brx).boxed());
@@ -283,7 +284,7 @@ impl<T> Will<T> {
                                                         source: None,
                                                     });
                                                     let _ = tx.send(vec![intention]);
-                                                    state = Some((tag, closing, btx));
+                                                    state = Some((tag, closing, closing_lower, btx));
                                                 } else {
                                                     if let Some(idx) = buf.find('<') {
                                                         let text = buf[..idx].to_string();
@@ -394,6 +395,34 @@ mod tests {
         let chunks: Vec<String> = intention.action.body.collect().await;
         let body: String = chunks.concat();
         assert_eq!(body, "Hello world");
+    }
+
+    #[tokio::test]
+    async fn streams_actions_case_insensitive() {
+        #[derive(Clone)]
+        struct StaticUpperLLM;
+
+        #[async_trait]
+        impl LLMClient for StaticUpperLLM {
+            async fn chat_stream(
+                &self,
+                _msgs: &[ChatMessage],
+            ) -> Result<LLMTokenStream, Box<dyn std::error::Error + Send + Sync>> {
+                use futures::stream;
+                let tokens = vec!["<Say>".to_string(), "Hi".to_string(), "</Say>".to_string()];
+                Ok(Box::pin(stream::iter(tokens.into_iter().map(Ok))))
+            }
+        }
+
+        let llm = Arc::new(StaticUpperLLM);
+        let mut will = Will::new(llm).delay_ms(10).motor("say", "speak");
+        let sensor = DummySensor;
+        let mut stream = will.observe(vec![sensor]).await;
+        let mut intentions = stream.next().await.unwrap();
+        let intention = intentions.pop().unwrap();
+        assert_eq!(intention.action.name, "say");
+        let collected: Vec<String> = intention.action.body.collect().await;
+        assert_eq!(collected.concat(), "Hi");
     }
 
     #[tokio::test]
