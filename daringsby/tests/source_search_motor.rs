@@ -15,11 +15,11 @@ async fn attached_sensors_returns_search_sensor() {
 async fn direct_sensor_emits_matches() {
     let (tx, mut rx) = unbounded_channel();
     let motor = SourceSearchMotor::new(tx);
-    SensorDirectingMotor::direct_sensor(&motor, "SourceSearchSensor:Vision")
+    SensorDirectingMotor::direct_sensor(&motor, "SourceSearchSensor:VisionMotor")
         .await
         .expect("should succeed");
     let sensations = rx.try_recv().expect("sensation");
-    assert!(sensations[0].what.contains("Vision"));
+    assert!(sensations[0].what.contains("VisionMotor"));
 }
 
 #[tokio::test]

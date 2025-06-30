@@ -21,8 +21,8 @@ use daringsby::SelfDiscovery;
 #[cfg(feature = "source-discovery-sensor")]
 use daringsby::SourceDiscovery;
 use daringsby::{
-    CanvasMotor, CanvasStream, HeardSelfSensor, HeardUserSensor, Heartbeat, LoggingMotor,
-    LookStream, Mouth, SpeechStream, SvgMotor, Vision,
+    CanvasMotor, CanvasStream, HeardSelfSensor, HeardUserSensor, Heartbeat, LoggingMotor, Mouth,
+    SpeechStream, SvgMotor, VisionMotor, VisionSensor,
 };
 use std::net::SocketAddr;
 
@@ -93,7 +93,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let text_rx = mouth.subscribe_text();
     let segment_rx = mouth.subscribe_segments();
     let stream = Arc::new(SpeechStream::new(audio_rx, text_rx, segment_rx));
-    let vision_stream = Arc::new(LookStream::default());
+    let vision_stream = Arc::new(VisionSensor::default());
     let canvas = Arc::new(CanvasStream::default());
     let app = stream
         .clone()
@@ -146,7 +146,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let sensor = ImpressionStreamSensor::new(rx);
     let combo_stream = combob.observe(vec![sensor]).await;
     let logger = Arc::new(LoggingMotor);
-    let vision_motor = Arc::new(Vision::new(
+    let vision_motor = Arc::new(VisionMotor::new(
         vision_stream.clone(),
         wits_llm.clone(),
         look_tx,
@@ -268,7 +268,7 @@ async fn drive_combo_stream(
 async fn drive_will_stream(
     mut will_stream: impl futures::Stream<Item = Vec<Intention>> + Unpin + Send + 'static,
     logger: Arc<LoggingMotor>,
-    vision_motor: Arc<Vision>,
+    vision_motor: Arc<VisionMotor>,
     mouth: Arc<Mouth>,
     canvas: Arc<CanvasMotor>,
     drawer: Arc<SvgMotor>,

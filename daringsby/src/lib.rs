@@ -15,7 +15,6 @@ pub mod log_file;
 pub mod log_memory_motor;
 #[cfg(feature = "logging-motor")]
 pub mod logging_motor;
-pub mod look_stream;
 #[cfg(feature = "mouth")]
 pub mod mouth;
 #[cfg(feature = "self-discovery-sensor")]
@@ -33,7 +32,8 @@ pub mod speech_stream;
 #[cfg(feature = "svg-motor")]
 pub mod svg_motor;
 #[cfg(feature = "vision")]
-pub mod vision;
+pub mod vision_motor;
+pub mod vision_sensor;
 
 pub mod logger;
 pub mod motors;

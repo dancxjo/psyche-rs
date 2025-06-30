@@ -21,4 +21,4 @@ pub use crate::source_tree_motor::SourceTreeMotor;
 #[cfg(feature = "svg-motor")]
 pub use crate::svg_motor::SvgMotor;
 #[cfg(feature = "vision")]
-pub use crate::vision::Vision;
+pub use crate::vision_motor::VisionMotor;
