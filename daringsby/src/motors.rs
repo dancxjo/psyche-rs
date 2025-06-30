@@ -12,6 +12,8 @@ pub use crate::log_memory_motor::LogMemoryMotor;
 pub use crate::logging_motor::LoggingMotor;
 #[cfg(feature = "mouth")]
 pub use crate::mouth::Mouth;
+#[cfg(feature = "recall-motor")]
+pub use crate::recall_motor::RecallMotor;
 #[cfg(feature = "source-read-motor")]
 pub use crate::source_read_motor::SourceReadMotor;
 #[cfg(feature = "source-search-motor")]

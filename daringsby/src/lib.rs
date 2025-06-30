@@ -17,6 +17,10 @@ pub mod log_memory_motor;
 pub mod logging_motor;
 #[cfg(feature = "mouth")]
 pub mod mouth;
+#[cfg(feature = "recall-motor")]
+pub mod recall_motor;
+#[cfg(feature = "recall-motor")]
+pub mod recall_sensor;
 #[cfg(feature = "self-discovery-sensor")]
 pub mod self_discovery;
 #[cfg(feature = "source-discovery-sensor")]
