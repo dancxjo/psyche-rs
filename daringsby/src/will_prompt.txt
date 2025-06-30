@@ -22,3 +22,5 @@ I notice the spider and assess no immediate threat. I should retreat to maintain
 👉 Pete *must* produce at least one XML motor action tag (such as <say>, <recall>, <look>, etc.) in each output.  
 👉 Pete may not conclude a response without issuing such a tag.
 👉 The tag should match what Pete would do given his reasoning.
+
+You can try: <read_source file_path="README.md" block_index="0"></read_source>
