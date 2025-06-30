@@ -149,7 +149,6 @@ impl<T> Will<T> {
                 let mut sensor_stream = stream::select_all(streams);
                 let mut pending: Vec<Sensation<T>> = Vec::new();
                 loop {
-                    trace!("will loop tick");
                     tokio::select! {
                         Some(batch) = sensor_stream.next() => {
                             trace!(count = batch.len(), "sensations received");
@@ -159,6 +158,7 @@ impl<T> Will<T> {
                             if pending.is_empty() {
                                 continue;
                             }
+                            trace!("will loop tick");
                             {
                                 let mut w = window.lock().unwrap();
                                 w.extend(pending.drain(..));
@@ -580,5 +580,61 @@ mod tests {
         let _ = stream.next().await;
         tokio::time::sleep(std::time::Duration::from_millis(30)).await;
         assert_eq!(calls.load(Ordering::SeqCst), 1);
+    }
+
+    #[tokio::test]
+    async fn waits_for_llm_before_next_tick() {
+        use async_stream::stream;
+        use std::sync::atomic::{AtomicUsize, Ordering};
+
+        #[derive(Clone)]
+        struct SlowLLM(Arc<AtomicUsize>);
+
+        #[async_trait]
+        impl LLMClient for SlowLLM {
+            async fn chat_stream(
+                &self,
+                _msgs: &[ChatMessage],
+            ) -> Result<LLMTokenStream, Box<dyn std::error::Error + Send + Sync>> {
+                self.0.fetch_add(1, Ordering::SeqCst);
+                let s = stream! {
+                    tokio::time::sleep(std::time::Duration::from_millis(40)).await;
+                    yield Ok("<a>".to_string());
+                    tokio::time::sleep(std::time::Duration::from_millis(40)).await;
+                    yield Ok("</a>".to_string());
+                };
+                Ok(Box::pin(s))
+            }
+        }
+
+        struct SlowSensor;
+
+        impl Sensor<String> for SlowSensor {
+            fn stream(&mut self) -> BoxStream<'static, Vec<Sensation<String>>> {
+                let s = stream! {
+                    loop {
+                        yield vec![Sensation {
+                            kind: "t".into(),
+                            when: chrono::Local::now(),
+                            what: "hi".into(),
+                            source: None,
+                        }];
+                        tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+                    }
+                };
+                Box::pin(s)
+            }
+        }
+
+        let calls = Arc::new(AtomicUsize::new(0));
+        let llm = Arc::new(SlowLLM(calls.clone()));
+        let mut will = Will::new(llm).delay_ms(10).motor("a", "do A");
+        let sensor = SlowSensor;
+        let mut stream = will.observe(vec![sensor]).await;
+        let _ = stream.next().await;
+        tokio::time::sleep(std::time::Duration::from_millis(20)).await;
+        assert_eq!(calls.load(Ordering::SeqCst), 1);
+        tokio::time::sleep(std::time::Duration::from_millis(120)).await;
+        assert!(calls.load(Ordering::SeqCst) >= 2);
     }
 }
