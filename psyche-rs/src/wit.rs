@@ -96,14 +96,18 @@ impl<T> Wit<T> {
     /// Returns a textual timeline of sensations in the current window.
     pub fn timeline(&self) -> String
     where
-        T: serde::Serialize,
+        T: serde::Serialize + Clone,
     {
-        self.window
-            .lock()
-            .unwrap()
+        let mut sensations = self.window.lock().unwrap().clone();
+        sensations.sort_by_key(|s| s.when);
+        sensations.dedup_by(|a, b| {
+            a.kind == b.kind
+                && serde_json::to_string(&a.what).ok() == serde_json::to_string(&b.what).ok()
+        });
+        sensations
             .iter()
             .map(|s| {
-                let what = serde_json::to_string(&s.what).unwrap_or_default();
+                let what = crate::text_util::to_plain_text(&s.what);
                 format!("{} {} {}", s.when.format("%Y-%m-%d %H:%M:%S"), s.kind, what)
             })
             .collect::<Vec<_>>()

@@ -22,6 +22,7 @@ mod sensor_util;
 mod stream_util;
 #[cfg(test)]
 pub mod test_helpers;
+mod text_util;
 mod will;
 mod wit;
 

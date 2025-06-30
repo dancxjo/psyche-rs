@@ -55,7 +55,7 @@ impl<T> Combobulator<T> {
     /// Returns a textual timeline of sensations in the current window.
     pub fn timeline(&self) -> String
     where
-        T: serde::Serialize,
+        T: serde::Serialize + Clone,
     {
         self.wit.timeline()
     }
@@ -63,7 +63,7 @@ impl<T> Combobulator<T> {
     /// Returns the timeline with a short description prefix.
     pub fn describe_timeline(&self) -> String
     where
-        T: serde::Serialize,
+        T: serde::Serialize + Clone,
     {
         format!("Situation timeline\n{}", self.timeline())
     }
