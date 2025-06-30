@@ -167,6 +167,59 @@ impl MemoryStore for InMemoryStore {
     }
 }
 
+impl<M> MemoryStore for std::sync::Arc<M>
+where
+    M: MemoryStore + ?Sized,
+{
+    fn store_sensation(&self, s: &StoredSensation) -> anyhow::Result<()> {
+        (**self).store_sensation(s)
+    }
+
+    fn store_impression(&self, i: &StoredImpression) -> anyhow::Result<()> {
+        (**self).store_impression(i)
+    }
+
+    fn store_summary_impression(
+        &self,
+        summary: &StoredImpression,
+        linked_ids: &[String],
+    ) -> anyhow::Result<()> {
+        (**self).store_summary_impression(summary, linked_ids)
+    }
+
+    fn add_lifecycle_stage(
+        &self,
+        impression_id: &str,
+        stage: &str,
+        detail: &str,
+    ) -> anyhow::Result<()> {
+        (**self).add_lifecycle_stage(impression_id, stage, detail)
+    }
+
+    fn retrieve_related_impressions(
+        &self,
+        query_how: &str,
+        top_k: usize,
+    ) -> anyhow::Result<Vec<StoredImpression>> {
+        (**self).retrieve_related_impressions(query_how, top_k)
+    }
+
+    fn fetch_recent_impressions(&self, limit: usize) -> anyhow::Result<Vec<StoredImpression>> {
+        (**self).fetch_recent_impressions(limit)
+    }
+
+    fn load_full_impression(
+        &self,
+        impression_id: &str,
+    ) -> anyhow::Result<(
+        StoredImpression,
+        Vec<StoredSensation>,
+        HashMap<String, String>,
+    )> {
+        (**self).load_full_impression(impression_id)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

@@ -14,6 +14,7 @@ use psyche_rs::{
     OllamaLLM, RoundRobinLLM, Sensation, SensationSensor, Sensor, Will, Wit,
 };
 
+use chrono::Utc;
 #[cfg(feature = "development-status-sensor")]
 use daringsby::DevelopmentStatus;
 #[cfg(feature = "self-discovery-sensor")]
@@ -22,9 +23,11 @@ use daringsby::SelfDiscovery;
 use daringsby::SourceDiscovery;
 use daringsby::{
     CanvasMotor, CanvasStream, HeardSelfSensor, HeardUserSensor, Heartbeat, LoggingMotor, Mouth,
-    SpeechStream, SvgMotor, VisionMotor, VisionSensor,
+    RecallMotor, RecallSensor, SpeechStream, SvgMotor, VisionMotor, VisionSensor,
 };
+use psyche_rs::{InMemoryStore, MemoryStore, StoredImpression};
 use std::net::SocketAddr;
+use uuid::Uuid;
 
 const QUICK_PROMPT: &str = include_str!("quick_prompt.txt");
 const COMBO_PROMPT: &str = include_str!("combobulator_prompt.txt");
@@ -121,6 +124,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let (canvas_tx, canvas_rx) = unbounded_channel::<Vec<Sensation<String>>>();
     let (svg_tx, svg_rx) = unbounded_channel::<String>();
     let (thought_tx, thought_rx) = unbounded_channel::<Vec<Sensation<String>>>();
+    let (recall_tx, recall_rx) = unbounded_channel::<Vec<Sensation<String>>>();
+    let store = Arc::new(InMemoryStore::new());
     #[cfg(feature = "moment-feedback")]
     let (sens_tx, sens_rx) = unbounded_channel::<Vec<Sensation<String>>>();
 
@@ -132,6 +137,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         Box::new(SensationSensor::new(look_rx)) as Box<dyn Sensor<String> + Send>,
         Box::new(SensationSensor::new(canvas_rx)) as Box<dyn Sensor<String> + Send>,
         Box::new(SensationSensor::new(thought_rx)) as Box<dyn Sensor<String> + Send>,
+        Box::new(RecallSensor::new(recall_rx)) as Box<dyn Sensor<String> + Send>,
     ];
     #[cfg(feature = "development-status-sensor")]
     sensors.push(Box::new(DevelopmentStatus) as Box<dyn Sensor<String> + Send>);
@@ -157,6 +163,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         canvas_tx,
     ));
     let svg_motor = Arc::new(SvgMotor::new(svg_tx));
+    let recall_motor = Arc::new(RecallMotor::new(
+        store.clone(),
+        wits_llm.clone(),
+        recall_tx,
+        5,
+    ));
     {
         let canvas = canvas.clone();
         tokio::spawn(async move {
@@ -179,14 +191,27 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     will.register_motor(mouth.as_ref());
     will.register_motor(canvas_motor.as_ref());
     will.register_motor(svg_motor.as_ref());
+    will.register_motor(recall_motor.as_ref());
     let will_stream = will.observe(vec![will_sensor]).await;
 
     let q_instant = INSTANT.clone();
+    let store_quick = store.clone();
     tokio::spawn(async move {
         while let Some(imps) = quick_stream.next().await {
             let mut guard = q_instant.lock().await;
             *guard = imps.clone();
             drop(guard);
+            for imp in &imps {
+                let stored = StoredImpression {
+                    id: Uuid::new_v4().to_string(),
+                    kind: "Instant".into(),
+                    when: Utc::now(),
+                    how: imp.how.clone(),
+                    sensation_ids: Vec::new(),
+                    impression_ids: Vec::new(),
+                };
+                let _ = store_quick.store_impression(&stored);
+            }
             let _ = tx.send(imps.clone());
             let _ = will_tx.send(imps);
         }
@@ -215,6 +240,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         mouth,
         canvas_motor,
         svg_motor,
+        recall_motor,
     ));
 
     tokio::signal::ctrl_c().await?;
@@ -265,14 +291,17 @@ async fn drive_combo_stream(
     }
 }
 
-async fn drive_will_stream(
+async fn drive_will_stream<M>(
     mut will_stream: impl futures::Stream<Item = Vec<Intention>> + Unpin + Send + 'static,
     logger: Arc<LoggingMotor>,
     vision_motor: Arc<VisionMotor>,
     mouth: Arc<Mouth>,
     canvas: Arc<CanvasMotor>,
     drawer: Arc<SvgMotor>,
-) {
+    recall: Arc<RecallMotor<M>>,
+) where
+    M: psyche_rs::MemoryStore + Send + Sync + 'static,
+{
     use futures::StreamExt;
 
     while let Some(ints) = will_stream.next().await {
@@ -295,6 +324,9 @@ async fn drive_will_stream(
                 }
                 "draw" => {
                     drawer.perform(intent).await.expect("svg motor failed");
+                }
+                "recall" => {
+                    recall.perform(intent).await.expect("recall motor failed");
                 }
                 _ => {
                     tracing::warn!(motor = %intent.assigned_motor, "unknown motor");

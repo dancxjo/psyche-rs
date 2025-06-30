@@ -30,3 +30,5 @@
 - When modifying canvas-related code, run `cargo test --workspace` to verify
   canvas and SVG motors.
 - Use `Will::thoughts` to broadcast reasoning as sensations when needed.
+- When adding new sensors or motors, be sure to register them in `daringsby/src/main.rs`
+  and extend the dispatch logic in `drive_will_stream`.
