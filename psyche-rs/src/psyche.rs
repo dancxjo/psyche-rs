@@ -404,15 +404,29 @@ mod tests {
             }
         }
 
-        let first = Will::<serde_json::Value>::new(Arc::new(FirstLLM))
+        let first = Will::<String>::new(Arc::new(FirstLLM))
             .delay_ms(10)
             .motor("a", "count");
-        let second = Will::<serde_json::Value>::new(Arc::new(SecondLLM))
+        let second = Will::<String>::new(Arc::new(SecondLLM))
             .delay_ms(10)
             .motor("b", "count");
+        struct DummySensor;
+        impl Sensor<String> for DummySensor {
+            fn stream(&mut self) -> BoxStream<'static, Vec<Sensation<String>>> {
+                use futures::stream;
+                let s = Sensation {
+                    kind: "t".into(),
+                    when: chrono::Local::now(),
+                    what: "foo".into(),
+                    source: None,
+                };
+                stream::once(async move { vec![s] }).boxed()
+            }
+        }
         let count_a = Arc::new(AtomicUsize::new(0));
         let count_b = Arc::new(AtomicUsize::new(0));
         let psyche = Psyche::new()
+            .sensor(DummySensor)
             .will(first)
             .will(second)
             .motor(CountMotor(count_a.clone(), "a"))

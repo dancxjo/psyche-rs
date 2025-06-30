@@ -147,20 +147,31 @@ impl<T> Will<T> {
                 rt.block_on(async move {
                 let streams: Vec<_> = sensors.into_iter().map(|mut s| s.stream()).collect();
                 let mut sensor_stream = stream::select_all(streams);
+                let mut pending: Vec<Sensation<T>> = Vec::new();
                 loop {
                     tokio::select! {
                         Some(batch) = sensor_stream.next() => {
                             trace!(count = batch.len(), "sensations received");
-                            window.lock().unwrap().extend(batch);
+                            pending.extend(batch);
                         }
                         _ = tokio::time::sleep(std::time::Duration::from_millis(delay)) => {
-                            let snapshot = {
+                            if pending.is_empty() {
+                                continue;
+                            }
+                            {
                                 let mut w = window.lock().unwrap();
-                                let cutoff = chrono::Local::now() -
-                                    chrono::Duration::milliseconds(window_ms as i64);
+                                w.extend(pending.drain(..));
+                                let cutoff = chrono::Local::now() - chrono::Duration::milliseconds(window_ms as i64);
                                 w.retain(|s| s.when > cutoff);
+                            }
+                            let snapshot = {
+                                let w = window.lock().unwrap();
                                 w.clone()
                             };
+                            if snapshot.is_empty() {
+                                trace!("Will skipping LLM call due to empty snapshot");
+                                continue;
+                            }
                             trace!(snapshot_len = snapshot.len(), "Will captured snapshot");
                             let situation = snapshot
                                 .iter()
@@ -495,5 +506,47 @@ mod tests {
         let data = prompts.lock().unwrap();
         assert!(!data.is_empty());
         assert!(data[0].contains("dummy: dummy motor"));
+    }
+
+    #[tokio::test]
+    async fn avoids_duplicates_without_input() {
+        use std::sync::atomic::{AtomicUsize, Ordering};
+
+        #[derive(Clone)]
+        struct CountLLM(Arc<AtomicUsize>);
+
+        #[async_trait]
+        impl LLMClient for CountLLM {
+            async fn chat_stream(
+                &self,
+                _msgs: &[ChatMessage],
+            ) -> Result<LLMTokenStream, Box<dyn std::error::Error + Send + Sync>> {
+                self.0.fetch_add(1, Ordering::SeqCst);
+                Ok(Box::pin(stream::once(async { Ok("<a></a>".to_string()) })))
+            }
+        }
+
+        struct TestSensor;
+
+        impl Sensor<String> for TestSensor {
+            fn stream(&mut self) -> BoxStream<'static, Vec<Sensation<String>>> {
+                let s = Sensation {
+                    kind: "t".into(),
+                    when: chrono::Local::now(),
+                    what: "hi".into(),
+                    source: None,
+                };
+                stream::once(async move { vec![s] }).boxed()
+            }
+        }
+
+        let calls = Arc::new(AtomicUsize::new(0));
+        let llm = Arc::new(CountLLM(calls.clone()));
+        let mut will = Will::new(llm).delay_ms(10).motor("a", "do A");
+        let sensor = TestSensor;
+        let mut stream = will.observe(vec![sensor]).await;
+        let _ = stream.next().await;
+        tokio::time::sleep(std::time::Duration::from_millis(30)).await;
+        assert_eq!(calls.load(Ordering::SeqCst), 1);
     }
 }
