@@ -7,7 +7,7 @@ use futures::{
 };
 use tokio::sync::mpsc::unbounded_channel;
 use tokio_stream::wrappers::UnboundedReceiverStream;
-use tracing::{debug, error, trace};
+use tracing::{debug, error, trace, warn};
 
 use regex::Regex;
 
@@ -17,6 +17,33 @@ use ollama_rs::generation::chat::ChatMessage;
 use serde_json::{Map, Value};
 
 const DEFAULT_PROMPT: &str = include_str!("prompts/will_prompt.txt");
+
+/// Returns a prefix of `s` that fits within `max_bytes` without splitting UTF-8
+/// characters.
+///
+/// If `max_bytes` does not land on a char boundary, the prefix is truncated to
+/// the previous valid boundary and a warning is emitted.
+///
+/// # Examples
+///
+/// ```
+/// use psyche_rs::safe_prefix;
+/// assert_eq!(safe_prefix("aïb", 2), "a");
+/// assert_eq!(safe_prefix("abc", 2), "ab");
+/// ```
+pub fn safe_prefix<'a>(s: &'a str, max_bytes: usize) -> &'a str {
+    if let Some(slice) = s.get(..max_bytes) {
+        return slice;
+    }
+    let mut end = max_bytes.min(s.len());
+    while end > 0 && !s.is_char_boundary(end) {
+        end -= 1;
+    }
+    if end != max_bytes {
+        warn!(index = max_bytes, "Invalid char boundary, truncating slice");
+    }
+    &s[..end]
+}
 
 /// Description of an available motor.
 #[derive(Clone)]
@@ -227,18 +254,19 @@ impl<T> Will<T> {
                                             if let Some((ref _name, ref closing, ref closing_lower, ref tx_body)) = state {
                                                 if let Some(pos) = buf.to_ascii_lowercase().find(closing_lower) {
                                                     if pos > 0 {
-                                                        let part = buf[..pos].to_string();
-                                                        let _ = tx_body.send(part);
+                                                        let prefix = safe_prefix(&buf, pos);
+                                                        let _ = tx_body.send(prefix.to_string());
                                                     }
-                                                    buf.drain(..pos + closing.len());
+                                                    let drain_len = safe_prefix(&buf, pos + closing.len()).len();
+                                                    buf.drain(..drain_len);
                                                     state = None;
                                                     break;
                                                 } else {
                                                     if buf.len() > closing.len() {
                                                         let send_len = buf.len() - closing.len();
-                                                        let part = buf[..send_len].to_string();
-                                                        let _ = tx_body.send(part);
-                                                        buf.drain(..send_len);
+                                                        let prefix = safe_prefix(&buf, send_len);
+                                                        let _ = tx_body.send(prefix.to_string());
+                                                        buf.drain(..prefix.len());
                                                     }
                                                     break;
                                                 }
@@ -293,9 +321,9 @@ impl<T> Will<T> {
                                                     state = Some((tag, closing, closing_lower, btx));
                                                 } else {
                                                     if let Some(idx) = buf.find('<') {
-                                                        let text = buf[..idx].to_string();
-                                                        pending_text.push_str(&text);
-                                                        buf.drain(..idx);
+                                                        let prefix = safe_prefix(&buf, idx);
+                                                        pending_text.push_str(prefix);
+                                                        buf.drain(..prefix.len());
                                                     } else {
                                                         if !buf.is_empty() {
                                                             pending_text.push_str(&buf);
@@ -640,5 +668,37 @@ mod tests {
         assert_eq!(calls.load(Ordering::SeqCst), 1);
         tokio::time::sleep(std::time::Duration::from_millis(120)).await;
         assert!(calls.load(Ordering::SeqCst) >= 2);
+    }
+
+    #[tokio::test]
+    async fn handles_multibyte_tokens() {
+        #[derive(Clone)]
+        struct UnicodeLLM;
+
+        #[async_trait]
+        impl LLMClient for UnicodeLLM {
+            async fn chat_stream(
+                &self,
+                _msgs: &[ChatMessage],
+            ) -> Result<LLMTokenStream, Box<dyn std::error::Error + Send + Sync>> {
+                use futures::stream;
+                let tokens = vec![
+                    "<say>".to_string(),
+                    "as \u{201c}".to_string(),
+                    "Pete".to_string(),
+                    "</say>".to_string(),
+                ];
+                Ok(Box::pin(stream::iter(tokens.into_iter().map(Ok))))
+            }
+        }
+
+        let llm = Arc::new(UnicodeLLM);
+        let mut will = Will::new(llm).delay_ms(10).motor("say", "speak");
+        let sensor = DummySensor;
+        let mut stream = will.observe(vec![sensor]).await;
+        let mut intentions = stream.next().await.unwrap();
+        let intention = intentions.pop().unwrap();
+        let chunks: Vec<String> = intention.action.body.collect().await;
+        assert_eq!(chunks.concat(), "as \u{201c}Pete");
     }
 }

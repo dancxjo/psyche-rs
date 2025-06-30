@@ -45,7 +45,7 @@ pub use sensation::Sensation;
 pub use sensation_channel_sensor::SensationSensor;
 pub use sensor::Sensor;
 pub use sensor_util::ImpressionStreamSensor;
-pub use will::{MotorDescription, Will};
+pub use will::{MotorDescription, Will, safe_prefix};
 pub use wit::Wit;
 
 #[cfg(test)]
