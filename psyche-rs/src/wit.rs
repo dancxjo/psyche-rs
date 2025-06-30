@@ -138,6 +138,7 @@ where
         self.observe_inner(sensors, Some(abort)).await
     }
 
+    #[allow(clippy::too_many_arguments)]
     fn spawn_runtime<S>(
         llm: Arc<dyn LLMClient>,
         template: String,
