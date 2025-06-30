@@ -13,7 +13,7 @@ use tokio::sync::broadcast::{self, Receiver, Sender};
 /// receives JPEG image bytes in response. Connected clients receive
 /// `"snap"` commands and respond with JPEG bytes.
 ///
-/// This is largely identical to `LookStream` but intended for a drawing canvas
+/// This is largely identical to `VisionSensor` but intended for a drawing canvas
 /// rather than a webcam.
 pub struct CanvasStream {
     tx: Sender<Vec<u8>>,    // Image bytes

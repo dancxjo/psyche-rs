@@ -9,19 +9,19 @@ use tracing::{debug, trace};
 
 use psyche_rs::{ActionResult, Completion, Intention, LLMClient, Motor, MotorError, Sensation};
 
-use crate::look_stream::LookStream;
+use crate::vision_sensor::VisionSensor;
 
 /// Motor that captures a webcam snapshot and describes it using an LLM.
-pub struct Vision {
-    stream: Arc<LookStream>,
+pub struct VisionMotor {
+    stream: Arc<VisionSensor>,
     llm: Arc<dyn LLMClient>,
     tx: UnboundedSender<Vec<Sensation<String>>>,
 }
 
-impl Vision {
+impl VisionMotor {
     /// Create a new look motor backed by the given stream and LLM.
     pub fn new(
-        stream: Arc<LookStream>,
+        stream: Arc<VisionSensor>,
         llm: Arc<dyn LLMClient>,
         tx: UnboundedSender<Vec<Sensation<String>>>,
     ) -> Self {
@@ -30,7 +30,7 @@ impl Vision {
 }
 
 #[async_trait]
-impl Motor for Vision {
+impl Motor for VisionMotor {
     fn description(&self) -> &'static str {
         "Take a look at what's in front of your face.\n\
 Parameters: none.\n\
@@ -39,7 +39,7 @@ Example:\n\
 Explanation:\n\
 The Will triggers a webcam snapshot and asks the LLM to describe the image.\n\
 The resulting description is returned as a `vision.description` sensation and\
-sent to any `LookStream` subscribers."
+sent to any `VisionSensor` subscribers."
     }
 
     fn name(&self) -> &'static str {
@@ -104,15 +104,15 @@ sent to any `LookStream` subscribers."
 }
 
 #[async_trait::async_trait]
-impl psyche_rs::SensorDirectingMotor for Vision {
+impl psyche_rs::SensorDirectingMotor for VisionMotor {
     /// Return the name of the single sensor controlled by this motor.
     fn attached_sensors(&self) -> Vec<String> {
-        vec!["LookStream".to_string()]
+        vec!["VisionSensor".to_string()]
     }
 
-    /// Trigger a snapshot on the internal [`LookStream`].
+    /// Trigger a snapshot on the internal [`VisionSensor`].
     async fn direct_sensor(&self, sensor_name: &str) -> Result<(), MotorError> {
-        if sensor_name == "LookStream" {
+        if sensor_name == "VisionSensor" {
             self.stream.request_snap();
             Ok(())
         } else {

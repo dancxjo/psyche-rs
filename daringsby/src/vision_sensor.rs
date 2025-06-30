@@ -11,12 +11,12 @@ use tokio::sync::broadcast::{self, Receiver, Sender};
 ///
 /// The server broadcasts "snap" commands to connected clients and
 /// receives JPEG image bytes in response.
-pub struct LookStream {
+pub struct VisionSensor {
     tx: Sender<Vec<u8>>, // image bytes
     cmd: Sender<String>, // commands like "snap"
 }
 
-impl Default for LookStream {
+impl Default for VisionSensor {
     fn default() -> Self {
         let (tx, _) = broadcast::channel(8);
         let (cmd, _) = broadcast::channel(8);
@@ -24,7 +24,7 @@ impl Default for LookStream {
     }
 }
 
-impl LookStream {
+impl VisionSensor {
     /// Subscribe to incoming images.
     pub fn subscribe(&self) -> Receiver<Vec<u8>> {
         self.tx.subscribe()
@@ -35,7 +35,7 @@ impl LookStream {
         let _ = self.cmd.send("snap".into());
     }
 
-    /// Build a router exposing the look WebSocket endpoint.
+    /// Build a router exposing the vision WebSocket endpoint.
     pub fn router(self: Arc<Self>) -> Router {
         Router::new().route(
             "/vision-jpeg-in",
@@ -72,7 +72,7 @@ mod tests {
     use futures::{SinkExt, StreamExt};
     use tokio_tungstenite::{connect_async, tungstenite::Message as WsMessage};
 
-    async fn start_server(stream: Arc<LookStream>) -> std::net::SocketAddr {
+    async fn start_server(stream: Arc<VisionSensor>) -> std::net::SocketAddr {
         let app = stream.router();
         let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
         let addr = listener.local_addr().unwrap();
@@ -82,7 +82,7 @@ mod tests {
 
     #[tokio::test]
     async fn forwards_images_and_commands() {
-        let stream = Arc::new(LookStream::default());
+        let stream = Arc::new(VisionSensor::default());
         let addr = start_server(stream.clone()).await;
         let url = format!("ws://{addr}/vision-jpeg-in");
         let (mut ws, _) = connect_async(url).await.unwrap();

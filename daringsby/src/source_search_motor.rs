@@ -15,7 +15,7 @@ static PSYCHE_SRC_DIR: Dir = include_dir!("$CARGO_MANIFEST_DIR/../psyche-rs/src"
 ///
 /// The `"SourceSearchSensor"` emits a [`Sensation`] for each matching line when
 /// directed. Parameters are appended to the sensor name using
-/// `:"query"`, for example `"SourceSearchSensor:Vision"`.
+/// `:"query"`, for example `"SourceSearchSensor:VisionMotor"`.
 pub struct SourceSearchMotor {
     tx: UnboundedSender<Vec<Sensation<String>>>,
 }
