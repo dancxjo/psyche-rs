@@ -138,36 +138,28 @@ where
         self.observe_inner(sensors, Some(abort)).await
     }
 
-    async fn observe_inner<S>(
-        &mut self,
+    fn spawn_runtime<S>(
+        llm: Arc<dyn LLMClient>,
+        template: String,
+        delay: u64,
+        window_ms: u64,
+        window: Arc<Mutex<Vec<Sensation<T>>>>,
+        last_frame: Arc<Mutex<String>>,
         sensors: Vec<S>,
-        abort: Option<tokio::sync::oneshot::Receiver<()>>,
-    ) -> BoxStream<'static, Vec<Impression<T>>>
+        tx: tokio::sync::mpsc::UnboundedSender<Vec<Impression<T>>>,
+        mut abort: Option<tokio::sync::oneshot::Receiver<()>>,
+        jitter: u64,
+    ) -> tokio::task::JoinHandle<()>
     where
         S: Sensor<T> + Send + 'static,
     {
-        let (tx, rx) = unbounded_channel();
-        let llm = self.llm.clone();
-        let template = self.prompt.clone();
-        let delay = self.delay_ms;
-        let window_ms = self.window_ms;
-        let window = self.window.clone();
-        let last_frame = self.last_frame.clone();
-        let jitter = if self.start_jitter_ms > 0 {
-            let mut rng = rand::thread_rng();
-            rng.gen_range(0..self.start_jitter_ms)
-        } else {
-            0
-        };
-        let mut pending: Vec<Sensation<T>> = Vec::new();
-        let mut abort = abort;
-
         tokio::spawn(async move {
             if jitter > 0 {
                 tokio::time::sleep(std::time::Duration::from_millis(jitter)).await;
             }
             let streams: Vec<_> = sensors.into_iter().map(|mut s| s.stream()).collect();
             let mut sensor_stream = stream::select_all(streams);
+            let mut pending: Vec<Sensation<T>> = Vec::new();
             loop {
                 tokio::select! {
                     Some(batch) = sensor_stream.next() => {
@@ -263,7 +255,43 @@ where
                     }
                 }
             }
-        });
+        })
+    }
+
+    async fn observe_inner<S>(
+        &mut self,
+        sensors: Vec<S>,
+        abort: Option<tokio::sync::oneshot::Receiver<()>>,
+    ) -> BoxStream<'static, Vec<Impression<T>>>
+    where
+        S: Sensor<T> + Send + 'static,
+    {
+        let (tx, rx) = unbounded_channel();
+        let llm = self.llm.clone();
+        let template = self.prompt.clone();
+        let delay = self.delay_ms;
+        let window_ms = self.window_ms;
+        let window = self.window.clone();
+        let last_frame = self.last_frame.clone();
+        let jitter = if self.start_jitter_ms > 0 {
+            let mut rng = rand::thread_rng();
+            rng.gen_range(0..self.start_jitter_ms)
+        } else {
+            0
+        };
+
+        Self::spawn_runtime(
+            llm,
+            template,
+            delay,
+            window_ms,
+            window,
+            last_frame,
+            sensors,
+            tx.clone(),
+            abort,
+            jitter,
+        );
 
         UnboundedReceiverStream::new(rx).boxed()
     }

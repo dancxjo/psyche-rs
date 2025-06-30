@@ -86,7 +86,10 @@ impl<T> Will<T> {
         self
     }
 
-    pub fn thoughts(mut self, tx: tokio::sync::mpsc::UnboundedSender<Vec<Sensation<String>>>) -> Self {
+    pub fn thoughts(
+        mut self,
+        tx: tokio::sync::mpsc::UnboundedSender<Vec<Sensation<String>>>,
+    ) -> Self {
         self.thoughts_tx = Some(tx);
         self
     }
@@ -116,7 +119,8 @@ impl<T> Will<T> {
         let mut sensations = self.window.lock().unwrap().clone();
         sensations.sort_by_key(|s| s.when);
         sensations.dedup_by(|a, b| {
-            a.kind == b.kind && serde_json::to_string(&a.what).ok() == serde_json::to_string(&b.what).ok()
+            a.kind == b.kind
+                && serde_json::to_string(&a.what).ok() == serde_json::to_string(&b.what).ok()
         });
         sensations
             .iter()
@@ -144,6 +148,40 @@ impl<T> Will<T> {
         let latest_moment_store = self.latest_moment.clone();
         let thoughts_tx = self.thoughts_tx.clone();
 
+        Self::spawn_runtime(
+            llm,
+            template,
+            delay,
+            window_ms,
+            window,
+            motors,
+            latest_instant_store,
+            latest_moment_store,
+            thoughts_tx,
+            sensors,
+            tx.clone(),
+        );
+
+        UnboundedReceiverStream::new(rx).boxed()
+    }
+
+    fn spawn_runtime<S>(
+        llm: Arc<dyn LLMClient>,
+        template: String,
+        delay: u64,
+        window_ms: u64,
+        window: Arc<Mutex<Vec<Sensation<T>>>>,
+        motors: Vec<MotorDescription>,
+        latest_instant_store: Arc<Mutex<String>>,
+        latest_moment_store: Arc<Mutex<String>>,
+        thoughts_tx: Option<tokio::sync::mpsc::UnboundedSender<Vec<Sensation<String>>>>,
+        sensors: Vec<S>,
+        tx: tokio::sync::mpsc::UnboundedSender<Vec<Intention>>,
+    ) -> tokio::task::JoinHandle<()>
+    where
+        T: Clone + Default + Send + 'static + serde::Serialize + for<'de> serde::Deserialize<'de>,
+        S: Sensor<T> + Send + 'static,
+    {
         tokio::spawn(async move {
             debug!("will runtime started");
             let streams: Vec<_> = sensors.into_iter().map(|mut s| s.stream()).collect();
@@ -358,8 +396,6 @@ impl<T> Will<T> {
                     }
                 }
             }
-        });
-
-        UnboundedReceiverStream::new(rx).boxed()
+        })
     }
 }
