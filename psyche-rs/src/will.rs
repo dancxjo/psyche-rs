@@ -131,20 +131,7 @@ impl<T> Will<T> {
     where
         T: serde::Serialize + Clone,
     {
-        let mut sensations = self.window.lock().unwrap().clone();
-        sensations.sort_by_key(|s| s.when);
-        sensations.dedup_by(|a, b| {
-            a.kind == b.kind
-                && serde_json::to_string(&a.what).ok() == serde_json::to_string(&b.what).ok()
-        });
-        sensations
-            .iter()
-            .map(|s| {
-                let what = crate::text_util::to_plain_text(&s.what);
-                format!("{} {} {}", s.when.format("%Y-%m-%d %H:%M:%S"), s.kind, what)
-            })
-            .collect::<Vec<_>>()
-            .join("\n")
+        crate::build_timeline(&self.window)
     }
 
     pub async fn observe<S>(&mut self, sensors: Vec<S>) -> BoxStream<'static, Vec<Intention>>

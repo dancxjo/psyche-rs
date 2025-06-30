@@ -23,6 +23,7 @@ mod stream_util;
 #[cfg(test)]
 pub mod test_helpers;
 pub mod text_util;
+mod timeline;
 mod will;
 mod wit;
 
@@ -45,6 +46,7 @@ pub use sensation::Sensation;
 pub use sensation_channel_sensor::SensationSensor;
 pub use sensor::Sensor;
 pub use sensor_util::ImpressionStreamSensor;
+pub use timeline::build_timeline;
 pub use will::{MotorDescription, Will, safe_prefix};
 pub use wit::Wit;
 
