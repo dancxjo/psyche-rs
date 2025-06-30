@@ -21,6 +21,8 @@
   large modules like `lib.rs` into smaller pieces.
 - Use the `LLMClient` trait for streaming LLM interactions.
 - Avoid streaming silence frames when audio is not playing.
+- Format `Impression` values using their `how` string when included in prompts
+  instead of serializing the entire struct.
 - Stream HTTP responses using `bytes_stream` to avoid blocking when servers
     stream data chunked.
 - Use `src/test_helpers.rs` for shared test utilities like `StaticLLM`,
