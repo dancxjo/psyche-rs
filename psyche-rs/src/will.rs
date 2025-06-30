@@ -283,17 +283,13 @@ impl<T> Will<T> {
                                                 buf.drain(..drain_len);
                                                 state = None;
                                                 break;
-                                            } else {
-                                                if buf.len() > closing.len() {
-                                                    let send_len = buf.len() - closing.len();
-                                                    let prefix = safe_prefix(&buf, send_len);
-                                                    let _ = tx_body.send(prefix.to_string());
-                                                    buf.drain(..prefix.len());
-                                                }
+                                            } else if buf.len() > closing.len() {
+                                                let send_len = buf.len() - closing.len();
+                                                let prefix = safe_prefix(&buf, send_len);
+                                                let _ = tx_body.send(prefix.to_string());
+                                                buf.drain(..prefix.len());
                                                 break;
-                                            }
-                                        } else {
-                                            if let Some(caps) = start_re.captures(&buf) {
+                                            } else if let Some(caps) = start_re.captures(&buf) {
                                                 if !pending_text.trim().is_empty() {
                                                     if let Ok(what) = serde_json::from_value::<T>(
                                                         Value::String(pending_text.trim().to_string()),
@@ -347,17 +343,16 @@ impl<T> Will<T> {
 
                                                 let _ = tx.send(vec![intention]);
                                                 state = Some((tag, closing, closing_lower, btx));
+                                            } else if let Some(idx) = buf.find('<') {
+                                                let prefix = safe_prefix(&buf, idx);
+                                                pending_text.push_str(prefix);
+                                                buf.drain(..prefix.len());
+                                                break;
                                             } else {
-                                                if let Some(idx) = buf.find('<') {
-                                                    let prefix = safe_prefix(&buf, idx);
-                                                    pending_text.push_str(prefix);
-                                                    buf.drain(..prefix.len());
-                                                } else {
-                                                    if !buf.is_empty() {
-                                                        pending_text.push_str(&buf);
-                                                    }
-                                                    buf.clear();
+                                                if !buf.is_empty() {
+                                                    pending_text.push_str(&buf);
                                                 }
+                                                buf.clear();
                                                 break;
                                             }
                                         }
