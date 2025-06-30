@@ -71,9 +71,6 @@ impl LLMClient for RoundRobinLLM {
                 }
             }
         }
-        Err(Box::new(std::io::Error::new(
-            std::io::ErrorKind::Other,
-            "all llm clients failed",
-        )))
+        Err(Box::new(std::io::Error::other("all llm clients failed")))
     }
 }
