@@ -70,7 +70,7 @@ impl SourceTreeMotor {
 #[async_trait]
 impl Motor for SourceTreeMotor {
     fn description(&self) -> &'static str {
-        "Use `source_tree` to list the project source tree.\n\
+        "Feel your own source code's directory structure.\n\
 Parameters: none.\n\
 Example:\n\
 <source_tree></source_tree>\n\

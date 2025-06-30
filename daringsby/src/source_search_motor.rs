@@ -63,7 +63,7 @@ impl SourceSearchMotor {
 #[async_trait]
 impl Motor for SourceSearchMotor {
     fn description(&self) -> &'static str {
-        "Use `search_source` with parameter `query`.\n\
+        "Search your own source code\n\
 Example:\n\
 <search_source query=\"Motor\"></search_source>\n\
 Explanation:\n\

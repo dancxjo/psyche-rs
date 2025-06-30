@@ -38,7 +38,7 @@ impl SvgMotor {
 #[async_trait]
 impl Motor for SvgMotor {
     fn description(&self) -> &'static str {
-        "Use the `draw` motor with SVG markup in the body.\n\
+        "Envision something in your imagination using SVG markup.\n\
 Parameters: none.\n\
 Example:\n\
 <draw><circle cx=\"5\" cy=\"5\" r=\"5\" fill=\"red\"/></draw>\n\

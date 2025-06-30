@@ -36,7 +36,7 @@ impl LogMemoryMotor {
 #[async_trait]
 impl Motor for LogMemoryMotor {
     fn description(&self) -> &'static str {
-        "Call `read_log_memory` to retrieve the persisted motor log.\n\
+        "Review your logged memory.\n\
 Parameters: none.\n\
 Example:\n\
 <read_log_memory></read_log_memory>\n\

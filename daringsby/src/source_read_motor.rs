@@ -51,7 +51,7 @@ impl SourceReadMotor {
 #[async_trait]
 impl Motor for SourceReadMotor {
     fn description(&self) -> &'static str {
-        "Read a block of source with `read_source`.\n\
+        "Investigate a chunk of your own code.\n\
 Params: `file_path` (required) and optional `block_index` (0 based).\n\
 Example:\n\
 <read_source file_path=\"src/main.rs\" block_index=\"0\"></read_source>\n\

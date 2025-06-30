@@ -14,7 +14,7 @@ pub struct LoggingMotor;
 #[async_trait::async_trait]
 impl Motor for LoggingMotor {
     fn description(&self) -> &'static str {
-        "Log text by calling the `log` motor.\n\
+        "Dedicate a string to your long term memory\n\
 Parameters: none.\n\
 Example:\n\
 <log>System initialized successfully.</log>\n\

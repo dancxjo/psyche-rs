@@ -32,7 +32,7 @@ impl LookMotor {
 #[async_trait]
 impl Motor for LookMotor {
     fn description(&self) -> &'static str {
-        "Invoke `look` to capture a webcam snapshot and describe it with the LLM.\n\
+        "Take a look at what's in front of your face.\n\
 Parameters: none.\n\
 Example:\n\
 <look></look>\n\

@@ -145,13 +145,12 @@ impl Mouth {
 #[async_trait::async_trait]
 impl Motor for Mouth {
     fn description(&self) -> &'static str {
-        "Speak text using the `say` action.\n\
-Params: `speaker_id` (required) and optional `language_id`.\n\
+        "Speak text out loud to your interlocutor (or no one at all).\n\
+Params: `speaker_id` (required) and required `language_id`.\n\
 Example:\n\
 <say speaker_id=\"p234\" language_id=\"en\">Hello, world.</say>\n\
 Explanation:\n\
-The Will sends the text to the TTS service with the given voice and language.\n\
-Audio bytes stream to subscribers via `subscribe()` and combined segments via\n`subscribe_segments()`. No sensations are produced."
+The Will sends the text to the TTS service with the given voice and language."
     }
 
     fn name(&self) -> &'static str {

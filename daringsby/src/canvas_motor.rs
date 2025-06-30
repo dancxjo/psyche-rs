@@ -59,7 +59,7 @@ impl CanvasMotor {
 #[async_trait]
 impl Motor for CanvasMotor {
     fn description(&self) -> &'static str {
-        "Invoke `canvas` to snapshot the drawing canvas and describe it using the LLM.\n\
+        "See what's in your mind's eye. This is a place for you to explore your creativity. This causes you to see what's currently on the canvas.\n\
 Parameters: none.\n\
 Example:\n\
 <canvas></canvas>\n\
