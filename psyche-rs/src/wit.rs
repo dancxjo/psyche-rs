@@ -1,5 +1,4 @@
 use std::sync::{Arc, Mutex};
-use std::thread;
 
 use futures::{
     StreamExt,
@@ -159,66 +158,63 @@ where
         let mut pending: Vec<Sensation<T>> = Vec::new();
         let mut abort = abort;
 
-        thread::spawn(move || {
-            let rt = tokio::runtime::Builder::new_current_thread()
-                .enable_all()
-                .build()
-                .expect("runtime");
-            debug!("wit runtime started");
-            rt.block_on(async move {
-                if jitter > 0 {
-                    tokio::time::sleep(std::time::Duration::from_millis(jitter)).await;
-                }
-                let streams: Vec<_> = sensors.into_iter().map(|mut s| s.stream()).collect();
-                let mut sensor_stream = stream::select_all(streams);
-                loop {
-                    tokio::select! {
-                        Some(batch) = sensor_stream.next() => {
-                            trace!(count = batch.len(), "sensations received");
-                            pending.extend(batch);
+        tokio::spawn(async move {
+            if jitter > 0 {
+                tokio::time::sleep(std::time::Duration::from_millis(jitter)).await;
+            }
+            let streams: Vec<_> = sensors.into_iter().map(|mut s| s.stream()).collect();
+            let mut sensor_stream = stream::select_all(streams);
+            loop {
+                tokio::select! {
+                    Some(batch) = sensor_stream.next() => {
+                        trace!(count = batch.len(), "sensations received");
+                        pending.extend(batch);
+                    }
+                    _ = tokio::time::sleep(std::time::Duration::from_millis(delay)) => {
+                        if pending.is_empty() {
+                            continue;
                         }
-                        _ = tokio::time::sleep(std::time::Duration::from_millis(delay)) => {
-                            if pending.is_empty() {
-                                continue;
-                            }
-                            trace!("wit loop tick");
-                            {
-                                let mut w = window.lock().unwrap();
-                                w.extend(pending.drain(..));
-                                let cutoff = chrono::Local::now() - chrono::Duration::milliseconds(window_ms as i64);
-                                w.retain(|s| s.when > cutoff);
-                            }
-                            let snapshot = {
-                                let w = window.lock().unwrap();
-                                w.clone()
-                            };
-                            if snapshot.is_empty() {
-                                trace!("Wit skipping LLM call due to empty snapshot");
-                                continue;
-                            }
-                            let timeline = snapshot
-                                .iter()
-                                .map(|s| {
-                                    let what =
-                                        serde_json::to_string(&s.what).unwrap_or_default();
-                                    format!(
-                                        "{} {} {}",
-                                        s.when.format("%Y-%m-%d %H:%M:%S"),
-                                        s.kind,
-                                        what
-                                    )
-                                })
-                                .collect::<Vec<_>>()
-                                .join("\n");
-                            let lf = { last_frame.lock().unwrap().clone() };
-                            trace!(?timeline, "preparing prompt");
-                            let prompt = template
-                                .replace("{last_frame}", &lf)
-                                .replace("{template}", &timeline);
-                            debug!(?prompt, "sending LLM prompt");
-                            trace!("wit invoking llm");
-                            let msgs = vec![ChatMessage::user(prompt)];
-                            match llm.chat_stream(&msgs).await {
+                        trace!("wit loop tick");
+                        {
+                            let mut w = window.lock().unwrap();
+                            w.extend(pending.drain(..));
+                            let cutoff = chrono::Local::now() - chrono::Duration::milliseconds(window_ms as i64);
+                            w.retain(|s| s.when > cutoff);
+                        }
+                        let snapshot = {
+                            let w = window.lock().unwrap();
+                            w.clone()
+                        };
+                        if snapshot.is_empty() {
+                            trace!("Wit skipping LLM call due to empty snapshot");
+                            continue;
+                        }
+                        let timeline = snapshot
+                            .iter()
+                            .map(|s| {
+                                let what = serde_json::to_string(&s.what).unwrap_or_default();
+                                format!(
+                                    "{} {} {}",
+                                    s.when.format("%Y-%m-%d %H:%M:%S"),
+                                    s.kind,
+                                    what
+                                )
+                            })
+                            .collect::<Vec<_>>()
+                            .join("\n");
+                        let lf = { last_frame.lock().unwrap().clone() };
+                        trace!(?timeline, "preparing prompt");
+                        let prompt = template
+                            .replace("{last_frame}", &lf)
+                            .replace("{template}", &timeline);
+                        debug!(?prompt, "sending LLM prompt");
+                        trace!("wit invoking llm");
+                        let msgs = vec![ChatMessage::user(prompt)];
+                        let llm_clone = llm.clone();
+                        let tx_clone = tx.clone();
+                        let last_frame_clone = last_frame.clone();
+                        tokio::spawn(async move {
+                            match llm_clone.chat_stream(&msgs).await {
                                 Ok(mut stream) => {
                                     let mut text = String::new();
                                     while let Some(Ok(tok)) = stream.next().await {
@@ -228,7 +224,7 @@ where
                                     if text.trim().is_empty() {
                                         text = "No meaningful observation was made.".to_string();
                                     }
-                                    *last_frame.lock().unwrap() = text.clone();
+                                    *last_frame_clone.lock().unwrap() = text.clone();
                                     let impressions: Vec<Impression<T>> = split_single(&text, SegmentConfig::default())
                                         .into_iter()
                                         .filter_map(|s| {
@@ -242,7 +238,7 @@ where
                                         .collect();
                                     if !impressions.is_empty() {
                                         debug!(count = impressions.len(), "impressions generated");
-                                        let _ = tx.send(impressions);
+                                        let _ = tx_clone.send(impressions);
                                     }
                                     trace!("wit llm stream finished");
                                 }
@@ -250,19 +246,19 @@ where
                                     trace!(?err, "llm streaming failed");
                                 }
                             }
+                        });
+                    }
+                    _ = async {
+                        if let Some(rx) = &mut abort {
+                            let _ = rx.await;
+                        } else {
+                            futures::future::pending::<()>().await;
                         }
-                        _ = async {
-                            if let Some(rx) = &mut abort {
-                                let _ = rx.await;
-                            } else {
-                                futures::future::pending::<()>().await;
-                            }
-                        } => {
-                            break;
-                        }
+                    } => {
+                        break;
                     }
                 }
-            });
+            }
         });
 
         UnboundedReceiverStream::new(rx).boxed()
