@@ -22,7 +22,7 @@ use daringsby::SelfDiscovery;
 use daringsby::SourceDiscovery;
 use daringsby::{
     CanvasMotor, CanvasStream, HeardSelfSensor, HeardUserSensor, Heartbeat, LoggingMotor,
-    LookMotor, LookStream, Mouth, SpeechStream, SvgMotor,
+    LookStream, Mouth, SpeechStream, SvgMotor, Vision,
 };
 use std::net::SocketAddr;
 
@@ -93,12 +93,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let text_rx = mouth.subscribe_text();
     let segment_rx = mouth.subscribe_segments();
     let stream = Arc::new(SpeechStream::new(audio_rx, text_rx, segment_rx));
-    let vision = Arc::new(LookStream::default());
+    let vision_stream = Arc::new(LookStream::default());
     let canvas = Arc::new(CanvasStream::default());
     let app = stream
         .clone()
         .router()
-        .merge(vision.clone().router())
+        .merge(vision_stream.clone().router())
         .merge(canvas.clone().router());
     let addr: SocketAddr = format!("{}:{}", args.host, args.port).parse()?;
     tokio::spawn(async move {
@@ -146,7 +146,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let sensor = ImpressionStreamSensor::new(rx);
     let combo_stream = combob.observe(vec![sensor]).await;
     let logger = Arc::new(LoggingMotor);
-    let looker = Arc::new(LookMotor::new(vision.clone(), wits_llm.clone(), look_tx));
+    let vision_motor = Arc::new(Vision::new(
+        vision_stream.clone(),
+        wits_llm.clone(),
+        look_tx,
+    ));
     let canvas_motor = Arc::new(CanvasMotor::new(
         canvas.clone(),
         wits_llm.clone(),
@@ -171,7 +175,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .delay_ms(1000)
         .thoughts(thought_tx);
     will.register_motor(logger.as_ref());
-    will.register_motor(looker.as_ref());
+    will.register_motor(vision_motor.as_ref());
     will.register_motor(mouth.as_ref());
     will.register_motor(canvas_motor.as_ref());
     will.register_motor(svg_motor.as_ref());
@@ -207,7 +211,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     tokio::spawn(drive_will_stream(
         will_stream,
         logger,
-        looker,
+        vision_motor,
         mouth,
         canvas_motor,
         svg_motor,
@@ -264,7 +268,7 @@ async fn drive_combo_stream(
 async fn drive_will_stream(
     mut will_stream: impl futures::Stream<Item = Vec<Intention>> + Unpin + Send + 'static,
     logger: Arc<LoggingMotor>,
-    looker: Arc<LookMotor>,
+    vision_motor: Arc<Vision>,
     mouth: Arc<Mouth>,
     canvas: Arc<CanvasMotor>,
     drawer: Arc<SvgMotor>,
@@ -278,7 +282,10 @@ async fn drive_will_stream(
                     logger.perform(intent).await.expect("logging motor failed");
                 }
                 "look" => {
-                    looker.perform(intent).await.expect("look motor failed");
+                    vision_motor
+                        .perform(intent)
+                        .await
+                        .expect("look motor failed");
                 }
                 "say" => {
                     mouth.perform(intent).await.expect("mouth motor failed");

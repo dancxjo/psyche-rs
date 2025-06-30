@@ -1,4 +1,4 @@
-use daringsby::{look_motor::LookMotor, look_stream::LookStream};
+use daringsby::{look_stream::LookStream, vision::Vision};
 use psyche_rs::{LLMClient, MotorError, SensorDirectingMotor};
 use std::sync::Arc;
 use tokio::sync::mpsc::unbounded_channel;
@@ -23,7 +23,7 @@ async fn attached_sensors_returns_stream_name() {
     let stream = Arc::new(LookStream::default());
     let llm = Arc::new(DummyLLM);
     let (tx, _) = unbounded_channel();
-    let motor = LookMotor::new(stream, llm, tx);
+    let motor = Vision::new(stream, llm, tx);
     let sensors = SensorDirectingMotor::attached_sensors(&motor);
     assert_eq!(sensors, vec!["LookStream".to_string()]);
 }
@@ -33,7 +33,7 @@ async fn direct_sensor_valid_name_succeeds() {
     let stream = Arc::new(LookStream::default());
     let llm = Arc::new(DummyLLM);
     let (tx, _) = unbounded_channel();
-    let motor = LookMotor::new(stream.clone(), llm, tx);
+    let motor = Vision::new(stream.clone(), llm, tx);
     SensorDirectingMotor::direct_sensor(&motor, "LookStream")
         .await
         .expect("should succeed");
@@ -44,7 +44,7 @@ async fn direct_sensor_unknown_name_fails() {
     let stream = Arc::new(LookStream::default());
     let llm = Arc::new(DummyLLM);
     let (tx, _) = unbounded_channel();
-    let motor = LookMotor::new(stream.clone(), llm, tx);
+    let motor = Vision::new(stream.clone(), llm, tx);
     let err = SensorDirectingMotor::direct_sensor(&motor, "Unknown").await;
     assert!(matches!(err, Err(MotorError::Failed(_))));
 }

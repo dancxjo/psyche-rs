@@ -10,8 +10,6 @@ pub use crate::log_memory_motor::LogMemoryMotor;
 /// ```
 #[cfg(feature = "logging-motor")]
 pub use crate::logging_motor::LoggingMotor;
-#[cfg(feature = "look-motor")]
-pub use crate::look_motor::LookMotor;
 #[cfg(feature = "mouth")]
 pub use crate::mouth::Mouth;
 #[cfg(feature = "source-read-motor")]
@@ -22,3 +20,5 @@ pub use crate::source_search_motor::SourceSearchMotor;
 pub use crate::source_tree_motor::SourceTreeMotor;
 #[cfg(feature = "svg-motor")]
 pub use crate::svg_motor::SvgMotor;
+#[cfg(feature = "vision")]
+pub use crate::vision::Vision;
