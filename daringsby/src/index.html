@@ -24,6 +24,7 @@
 </form>
 <canvas id="drawing-area" class="container" width="640" height="480"></canvas>
 <audio id="audio-player" hidden></audio>
+<video id="look-video" hidden playsinline></video>
 <script>
 const SAMPLE_RATE = 22050;
 let audioEl;
@@ -61,15 +62,22 @@ function startVideo() {
   }
   return lookStreamPromise.then(s => {
     if (!lookVideo) {
-      lookVideo = document.createElement('video');
+      // Reuse the hidden video element so browsers keep the stream alive
+      lookVideo = document.getElementById('look-video');
       lookCanvas = document.getElementById('drawing-area');
       lookVideo.srcObject = s;
+      lookVideo.muted = true;
       const track = s.getVideoTracks()[0];
       track.addEventListener('ended', () => {
         lookStreamPromise = null;
       });
     }
-    if (lookVideo.paused) lookVideo.play();
+    if (lookVideo.paused) {
+      const playPromise = lookVideo.play();
+      if (playPromise !== undefined) {
+        playPromise.catch(e => console.error('video play error', e));
+      }
+    }
   });
 }
 
