@@ -174,7 +174,7 @@ where
         loop {
             trace!("psyche loop tick");
             tokio::select! {
-                _ = tokio::signal::ctrl_c() => {
+                _ = crate::shutdown_signal() => {
                     info!("psyche shutting down");
                     break;
                 }

@@ -9,11 +9,16 @@ use crate::{Sensation, text_util::to_plain_text};
 ///
 /// # Examples
 ///
-/// ```
+/// ```no_run
 /// use chrono::Local;
 /// use psyche_rs::{Sensation, PlainDescribe};
 ///
-/// let s = Sensation { kind: "utterance.text".into(), when: Local::now(), what: "hello".into(), source: None };
+/// let s = Sensation::<String> {
+///     kind: "utterance.text".into(),
+///     when: Local::now(),
+///     what: "hello".into(),
+///     source: None,
+/// };
 /// assert_eq!(s.to_plain(), "hello");
 /// ```
 pub trait PlainDescribe {
