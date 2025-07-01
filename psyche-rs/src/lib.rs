@@ -102,7 +102,7 @@ mod tests {
         }
 
         let llm = Arc::new(StaticLLM);
-        let mut witness = Wit::new(llm).delay_ms(10);
+        let mut witness = Wit::new(llm).prompt("{template}").delay_ms(10);
         let s = TestSensor;
         let mut stream = witness.observe(vec![s]).await;
         if let Some(impressions) = stream.next().await {
@@ -171,7 +171,7 @@ mod tests {
             }
         }
 
-        let mut witness = Wit::new(llm).delay_ms(10);
+        let mut witness = Wit::new(llm).prompt("{template}").delay_ms(10);
         let sensor = TestSensor;
 
         let log = Arc::new(Mutex::new(Vec::new()));

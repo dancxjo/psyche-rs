@@ -48,13 +48,13 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let sensors = build_sensors(stream.clone());
 
     let (instant_tx, instant_rx) = unbounded_channel();
-    let quick = Wit::new(llms.quick.clone()).prompt(include_str!("quick_prompt.txt"));
+    let quick = Wit::new(llms.quick.clone()).prompt(include_str!("prompts/quick_prompt.txt"));
     let quick_task = tokio::spawn(run_quick(quick, sensors, instant_tx));
 
     let quick_sensor = ImpressionStreamSensor::new(instant_rx);
     let (situ_tx, situ_rx) = unbounded_channel();
-    let combob =
-        Combobulator::new(llms.combob.clone()).prompt(include_str!("combobulator_prompt.txt"));
+    let combob = Combobulator::new(llms.combob.clone())
+        .prompt(include_str!("prompts/combobulator_prompt.txt"));
     let combob_task = tokio::spawn(run_combobulator(
         combob,
         vec![Box::new(quick_sensor)],
@@ -62,7 +62,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     ));
 
     let combo_sensor = ImpressionStreamSensor::new(situ_rx);
-    let will = Will::new(llms.will.clone()).prompt(include_str!("will_prompt.txt"));
+    let will = Will::new(llms.will.clone()).prompt(include_str!("prompts/will_prompt.txt"));
     let will_task = tokio::spawn(run_will(
         will,
         vec![Box::new(combo_sensor)],
