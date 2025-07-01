@@ -13,6 +13,7 @@ mod memory_store;
 mod motor;
 mod neo_qdrant_store;
 mod ollama_llm;
+mod plain_describe;
 mod psyche;
 mod psyche_event;
 mod round_robin_llm;
@@ -41,6 +42,7 @@ pub use motor::{
     SensorDirectingMotor,
 };
 pub use neo_qdrant_store::NeoQdrantMemoryStore;
+pub use plain_describe::PlainDescribe;
 pub use psyche::Psyche;
 pub use round_robin_llm::RoundRobinLLM;
 pub use sensation::Sensation;

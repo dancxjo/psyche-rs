@@ -11,7 +11,7 @@ use tracing::{debug, trace};
 use rand::Rng;
 use segtok::segmenter::{SegmentConfig, split_single};
 
-use crate::{Impression, Sensation, Sensor};
+use crate::{Impression, PlainDescribe, Sensation, Sensor};
 
 use crate::llm_client::LLMClient;
 use ollama_rs::generation::chat::ChatMessage;
@@ -191,7 +191,7 @@ where
                         let timeline = snapshot
                             .iter()
                             .map(|s| {
-                                let what = serde_json::to_string(&s.what).unwrap_or_default();
+                                let what = s.to_plain();
                                 format!(
                                     "{} {} {}",
                                     s.when.format("%Y-%m-%d %H:%M:%S"),

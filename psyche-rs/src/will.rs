@@ -11,7 +11,7 @@ use tracing::{debug, error, trace, warn};
 use regex::Regex;
 
 use crate::llm_client::LLMClient;
-use crate::{Action, Intention, Motor, Sensation, Sensor};
+use crate::{Action, Intention, Motor, PlainDescribe, Sensation, Sensor};
 use ollama_rs::generation::chat::ChatMessage;
 use serde_json::{Map, Value};
 
@@ -230,7 +230,7 @@ impl<T> Will<T> {
                         let situation = snapshot
                             .iter()
                             .map(|s| {
-                                let what = serde_json::to_string(&s.what).unwrap_or_default();
+                                let what = s.to_plain();
                                 format!("{} {} {}", s.when.format("%Y-%m-%d %H:%M:%S"), s.kind, what)
                             })
                             .collect::<Vec<_>>()
@@ -246,7 +246,7 @@ impl<T> Will<T> {
                         let mut last_moment = String::new();
 
                         for s in &snapshot {
-                            let val = serde_json::to_string(&s.what).unwrap_or_default();
+                            let val = s.to_plain();
                             match s.kind.as_str() {
                                 "instant" => last_instant = val,
                                 "moment" => last_moment = val,
