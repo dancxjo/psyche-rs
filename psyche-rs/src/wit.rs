@@ -11,7 +11,7 @@ use tracing::{debug, trace};
 use rand::Rng;
 use segtok::segmenter::{SegmentConfig, split_single};
 
-use crate::{Impression, PlainDescribe, Sensation, Sensor, render_template};
+use crate::{Impression, Sensation, Sensor, render_template};
 
 use crate::llm_client::LLMClient;
 use ollama_rs::generation::chat::ChatMessage;
@@ -188,19 +188,7 @@ where
                             trace!("Wit skipping LLM call due to empty snapshot");
                             continue;
                         }
-                        let timeline = snapshot
-                            .iter()
-                            .map(|s| {
-                                let what = s.to_plain();
-                                format!(
-                                    "{} {} {}",
-                                    s.when.format("%Y-%m-%d %H:%M:%S"),
-                                    s.kind,
-                                    what
-                                )
-                            })
-                            .collect::<Vec<_>>()
-                            .join("\n");
+                        let timeline = crate::build_timeline(&window);
                         let lf = { last_frame.lock().unwrap().clone() };
                         trace!(?timeline, "preparing prompt");
                         #[derive(serde::Serialize)]

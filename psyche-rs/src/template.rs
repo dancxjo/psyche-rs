@@ -39,7 +39,7 @@ mod tests {
 
     #[test]
     fn renders_variable() {
-        let out = render_template("Hello {{text}}", &Ctx { text: "world" }).unwrap();
+        let out = render_template("Hello {text}", &Ctx { text: "world" }).unwrap();
         assert_eq!(out, "Hello world");
     }
 }
