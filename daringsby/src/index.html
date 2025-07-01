@@ -35,6 +35,7 @@ let canvasWs;
 let svgWs;
 let lookVideo;
 let lookCanvas;
+let lookStreamPromise = null;
 // Queues of audio PCM buffers and corresponding text waiting to be played.
 let queue = [];
 let texts = [];
@@ -46,6 +47,30 @@ function openSocket(existing, url, binaryType) {
   const s = new WebSocket(url);
   if (binaryType) s.binaryType = binaryType;
   return s;
+}
+
+// Start or resume the webcam, ensuring only one initialization at a time.
+function startVideo() {
+  if (!lookStreamPromise) {
+    lookStreamPromise = navigator.mediaDevices
+      .getUserMedia({ video: true })
+      .catch(e => {
+        lookStreamPromise = null;
+        throw e;
+      });
+  }
+  return lookStreamPromise.then(s => {
+    if (!lookVideo) {
+      lookVideo = document.createElement('video');
+      lookCanvas = document.getElementById('drawing-area');
+      lookVideo.srcObject = s;
+      const track = s.getVideoTracks()[0];
+      track.addEventListener('ended', () => {
+        lookStreamPromise = null;
+      });
+    }
+    if (lookVideo.paused) lookVideo.play();
+  });
 }
 
 function segmentDone() {
@@ -159,17 +184,15 @@ function start() {
     lookWs.onmessage = ev => {
       if (ev.data === 'snap') capture();
     };
-  navigator.mediaDevices.getUserMedia({ video: true }).then(s => {
-    lookVideo = document.createElement('video');
-    lookVideo.srcObject = s;
-    lookVideo.play();
-    lookCanvas = document.getElementById('drawing-area');
-  });
+  startVideo();
   document.getElementById('start').style.display = 'none';
 }
 
 function capture() {
-  if (!lookVideo) return;
+  if (!lookVideo || lookVideo.readyState < HTMLMediaElement.HAVE_ENOUGH_DATA) {
+    startVideo().then(capture);
+    return;
+  }
   lookCanvas.width = lookVideo.videoWidth;
   lookCanvas.height = lookVideo.videoHeight;
   const ctx2d = lookCanvas.getContext('2d');
