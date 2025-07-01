@@ -23,6 +23,7 @@ const DEFAULT_PROMPT: &str = include_str!("prompts/wit_prompt.txt");
 #[derive(Clone)]
 pub struct Wit<T = serde_json::Value> {
     llm: Arc<dyn LLMClient>,
+    name: String,
     prompt: String,
     delay_ms: u64,
     window_ms: u64,
@@ -36,6 +37,7 @@ impl<T> Wit<T> {
     pub fn new(llm: Arc<dyn LLMClient>) -> Self {
         Self {
             llm,
+            name: "Wit".into(),
             prompt: DEFAULT_PROMPT.to_string(),
             delay_ms: 1000,
             window_ms: 60_000,
@@ -43,6 +45,12 @@ impl<T> Wit<T> {
             last_frame: Arc::new(Mutex::new(String::new())),
             start_jitter_ms: 0,
         }
+    }
+
+    /// Sets the agent name used for logging.
+    pub fn name(mut self, name: impl Into<String>) -> Self {
+        self.name = name.into();
+        self
     }
 
     /// Overrides the prompt template.
@@ -104,6 +112,7 @@ impl<T> Wit<T> {
 /// Configuration for spawning a [`Wit`] runtime loop.
 struct WitRuntimeConfig<S, T> {
     llm: Arc<dyn LLMClient>,
+    name: String,
     template: String,
     delay: u64,
     window_ms: u64,
@@ -145,6 +154,7 @@ where
     {
         let WitRuntimeConfig {
             llm,
+            name,
             template,
             delay,
             window_ms,
@@ -157,7 +167,7 @@ where
         } = config;
 
         tokio::spawn(async move {
-            debug!(agent = "Wit", "starting Wit thread");
+            debug!(agent = %name, "starting Wit thread");
             if jitter > 0 {
                 tokio::time::sleep(std::time::Duration::from_millis(jitter)).await;
             }
@@ -208,7 +218,9 @@ where
                         let llm_clone = llm.clone();
                         let tx_clone = tx.clone();
                         let last_frame_clone = last_frame.clone();
+                        let name_clone = name.clone();
                         tokio::spawn(async move {
+                            debug!(agent = %name_clone, "LLM call started");
                             match llm_clone.chat_stream(&msgs).await {
                                 Ok(mut stream) => {
                                     let mut text = String::new();
@@ -235,6 +247,7 @@ where
                                         debug!(count = impressions.len(), "impressions generated");
                                         let _ = tx_clone.send(impressions);
                                     }
+                                    debug!(agent = %name_clone, "LLM call ended");
                                     trace!("wit llm stream finished");
                                 }
                                 Err(err) => {
@@ -281,6 +294,7 @@ where
 
         let config = WitRuntimeConfig {
             llm,
+            name: self.name.clone(),
             template,
             delay,
             window_ms,
