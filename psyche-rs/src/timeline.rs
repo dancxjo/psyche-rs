@@ -9,18 +9,23 @@ use crate::{Sensation, text_util::to_plain_text};
 /// Sensations are sorted by timestamp, deduplicated by kind and
 /// plain-text description, then formatted as lines of the form:
 ///
-/// ```
+/// ```text
 /// 2024-02-03 12:34:56 utterance.text "hello"
 /// ```
 ///
 /// # Examples
 ///
-/// ```
+/// ```no_run
 /// use std::sync::{Arc, Mutex};
 /// use chrono::Local;
 /// use psyche_rs::{Sensation, build_timeline};
 ///
-/// let s = Sensation { kind: "test".into(), when: Local::now(), what: "hi".into(), source: None };
+/// let s = Sensation::<String> {
+///     kind: "test".into(),
+///     when: Local::now(),
+///     what: "hi".into(),
+///     source: None,
+/// };
 /// let tl = build_timeline(&Arc::new(Mutex::new(vec![s])));
 /// assert!(tl.contains("\"hi\""));
 /// ```

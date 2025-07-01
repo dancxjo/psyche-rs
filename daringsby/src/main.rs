@@ -11,7 +11,7 @@ use ollama_rs::Ollama;
 use once_cell::sync::Lazy;
 use psyche_rs::{
     Action, Combobulator, Impression, ImpressionStreamSensor, Intention, LLMClient, Motor,
-    OllamaLLM, RoundRobinLLM, Sensation, SensationSensor, Sensor, Will, Wit,
+    OllamaLLM, RoundRobinLLM, Sensation, SensationSensor, Sensor, Will, Wit, shutdown_signal,
 };
 use reqwest::Client;
 use url::Url;
@@ -282,8 +282,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         source_tree_motor,
     ));
 
-    tokio::signal::ctrl_c().await?;
-    Ok(())
+    shutdown_signal().await;
+    std::process::exit(0);
 }
 
 async fn drive_combo_stream(

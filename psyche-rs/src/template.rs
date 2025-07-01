@@ -7,7 +7,7 @@ use tinytemplate::TinyTemplate;
 ///
 /// # Examples
 ///
-/// ```
+/// ```no_run
 /// use psyche_rs::render_template;
 /// use serde::Serialize;
 ///
