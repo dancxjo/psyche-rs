@@ -14,6 +14,7 @@ mod motor;
 mod neo_qdrant_store;
 mod ollama_llm;
 mod psyche;
+mod psyche_event;
 mod round_robin_llm;
 mod sensation;
 mod sensation_channel_sensor;

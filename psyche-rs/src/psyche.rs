@@ -164,6 +164,13 @@ where
             .collect();
         let stream = will.observe(sensors_for_will).await;
         let mut merged_wills = stream::select_all(vec![stream]);
+
+        use crate::psyche_event::PsycheEvent;
+        let mut merged = stream::select(
+            merged_wits.map(PsycheEvent::Impressions),
+            merged_wills.map(PsycheEvent::Intentions),
+        );
+
         loop {
             trace!("psyche loop tick");
             tokio::select! {
@@ -171,31 +178,35 @@ where
                     info!("psyche shutting down");
                     break;
                 }
-                Some(batch) = merged_wits.next() => {
-                    trace!(batch_len = batch.len(), "psyche received impressions");
-                    if let Some(store) = &self.store {
-                        for imp in batch {
-                            if let Err(e) = persist_impression(store.as_ref(), &imp, "Instant") {
-                                warn!(?e, "failed to persist impression");
+                Some(event) = merged.next() => {
+                    match event {
+                        PsycheEvent::Impressions(batch) => {
+                            trace!(batch_len = batch.len(), "psyche received impressions");
+                            if let Some(store) = &self.store {
+                                for imp in batch {
+                                    if let Err(e) = persist_impression(store.as_ref(), &imp, "Instant") {
+                                        warn!(?e, "failed to persist impression");
+                                    }
+                                }
                             }
                         }
-                    }
-                }
-                Some(intentions) = merged_wills.next() => {
-                    trace!(count = intentions.len(), "psyche received intentions");
-                    for intention in intentions {
-                        debug!(?intention, "Psyche received intention");
-                        let target = intention.assigned_motor.clone();
-                        if let Some(motor) = self.motors.iter().find(|m| m.name() == target) {
-                            debug!(target_motor = %motor.name(), "Psyche matched intention to motor");
-                            let motor = motor.clone();
-                            tokio::spawn(async move {
-                                if let Err(e) = motor.perform(intention).await {
-                                    debug!(?e, "motor action failed");
+                        PsycheEvent::Intentions(intentions) => {
+                            trace!(count = intentions.len(), "psyche received intentions");
+                            for intention in intentions {
+                                debug!(?intention, "Psyche received intention");
+                                let target = intention.assigned_motor.clone();
+                                if let Some(motor) = self.motors.iter().find(|m| m.name() == target) {
+                                    debug!(target_motor = %motor.name(), "Psyche matched intention to motor");
+                                    let motor = motor.clone();
+                                    tokio::spawn(async move {
+                                        if let Err(e) = motor.perform(intention).await {
+                                            debug!(?e, "motor action failed");
+                                        }
+                                    });
+                                } else {
+                                    warn!(?intention, "Psyche could not match motor for intention");
                                 }
-                            });
-                        } else {
-                            warn!(?intention, "Psyche could not match motor for intention");
+                            }
                         }
                     }
                 }
@@ -552,5 +563,47 @@ mod tests {
         let _ = tokio::time::timeout(std::time::Duration::from_millis(200), psyche.run()).await;
         assert_eq!(count_a.load(Ordering::SeqCst), 0);
         assert!(count_b.load(Ordering::SeqCst) > 0);
+    }
+
+    #[tokio::test]
+    async fn llm_calls_run_in_parallel() {
+        use tokio::sync::Barrier;
+
+        #[derive(Clone)]
+        struct BarrierLLM(Arc<Barrier>);
+
+        #[async_trait::async_trait]
+        impl LLMClient for BarrierLLM {
+            async fn chat_stream(
+                &self,
+                _msgs: &[ollama_rs::generation::chat::ChatMessage],
+            ) -> Result<LLMTokenStream, Box<dyn std::error::Error + Send + Sync>> {
+                self.0.wait().await;
+                use futures::stream;
+                Ok(Box::pin(stream::once(async {
+                    Ok("<log></log>".to_string())
+                })))
+            }
+        }
+
+        let barrier = Arc::new(Barrier::new(3));
+        let llm = Arc::new(BarrierLLM(barrier.clone()));
+        let wit = Wit::new(llm.clone()).delay_ms(10);
+        let will = Will::new(llm.clone()).delay_ms(10).motor("log", "count");
+        let psyche = Psyche::new()
+            .sensor(TestSensor)
+            .wit(wit)
+            .will(will)
+            .motor(CountMotor(Arc::new(AtomicUsize::new(0))));
+
+        let run = tokio::spawn(async move {
+            let _ = tokio::time::timeout(std::time::Duration::from_millis(200), psyche.run()).await;
+        });
+
+        tokio::time::timeout(std::time::Duration::from_millis(100), barrier.wait())
+            .await
+            .expect("llm calls did not start in parallel");
+
+        run.await.unwrap();
     }
 }
