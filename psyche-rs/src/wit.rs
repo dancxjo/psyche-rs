@@ -11,7 +11,7 @@ use tracing::{debug, trace};
 use rand::Rng;
 use segtok::segmenter::{SegmentConfig, split_single};
 
-use crate::{Impression, PlainDescribe, Sensation, Sensor};
+use crate::{Impression, PlainDescribe, Sensation, Sensor, render_template};
 
 use crate::llm_client::LLMClient;
 use ollama_rs::generation::chat::ChatMessage;
@@ -203,9 +203,16 @@ where
                             .join("\n");
                         let lf = { last_frame.lock().unwrap().clone() };
                         trace!(?timeline, "preparing prompt");
-                        let prompt = template
-                            .replace("{last_frame}", &lf)
-                            .replace("{template}", &timeline);
+                        #[derive(serde::Serialize)]
+                        struct Ctx<'a> {
+                            last_frame: &'a str,
+                            template: &'a str,
+                        }
+                        let ctx = Ctx { last_frame: &lf, template: &timeline };
+                        let prompt = render_template(&template, &ctx).unwrap_or_else(|e| {
+                            trace!(error=?e, "template render failed");
+                            template.clone()
+                        });
                         debug!(?prompt, "sending LLM prompt");
                         trace!("wit invoking llm");
                         let msgs = vec![ChatMessage::user(prompt)];

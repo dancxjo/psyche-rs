@@ -3,7 +3,7 @@ use futures::{StreamExt, TryStreamExt, stream::BoxStream};
 use tokio::sync::broadcast::Receiver;
 use tokio_stream::wrappers::BroadcastStream;
 
-use psyche_rs::{Sensation, Sensor};
+use psyche_rs::{Sensation, Sensor, render_template};
 
 /// Sensor emitting sensations when the agent hears its own speech.
 /// Each text received is wrapped in a sentence describing the event.
@@ -39,10 +39,18 @@ impl Sensor<String> for HeardSelfSensor {
             .inspect_err(|e| tracing::warn!(error = ?e, "HeardSelfSensor receiver error"))
             .filter_map(|msg| async move { msg.ok() })
             .map(move |text| {
+                #[derive(serde::Serialize)]
+                struct Ctx<'a> {
+                    text: &'a str,
+                }
+                let what = render_template(&template, &Ctx { text: &text }).unwrap_or_else(|e| {
+                    tracing::warn!(error=?e, "template render failed");
+                    template.clone()
+                });
                 vec![Sensation {
                     kind: "self_audio".into(),
                     when: Local::now(),
-                    what: template.replace("{text}", &text),
+                    what,
                     source: None,
                 }]
             })
