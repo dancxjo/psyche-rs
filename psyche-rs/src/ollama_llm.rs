@@ -63,6 +63,8 @@ mod tests {
     use super::*;
     use futures::StreamExt;
     use httpmock::prelude::*;
+    use reqwest::Client;
+    use url::Url;
 
     #[tokio::test]
     async fn yields_all_tokens() {
@@ -78,7 +80,14 @@ mod tests {
             })
             .await;
 
-        let client = Ollama::try_new(server.base_url()).unwrap();
+        let http = Client::builder()
+            .pool_max_idle_per_host(10)
+            .build()
+            .unwrap();
+        let url = Url::parse(&server.base_url()).unwrap();
+        let host = format!("{}://{}", url.scheme(), url.host_str().unwrap());
+        let port = url.port_or_known_default().unwrap();
+        let client = Ollama::new_with_client(host, port, http);
         let llm = OllamaLLM::new(client, "m");
         let msgs = [ChatMessage::user("hi".into())];
         let mut stream = llm.chat_stream(&msgs).await.unwrap();
