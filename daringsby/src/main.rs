@@ -44,8 +44,12 @@ static MOMENT: Lazy<Arc<Mutex<Vec<Impression<Impression<String>>>>>> =
 
 #[derive(Parser)]
 struct Args {
-    #[arg(long = "base-url", default_value = "http://localhost:11434", num_args = 1..)]
-    base_url: Vec<String>,
+    #[arg(long = "quick-url", default_value = "http://localhost:11434")]
+    quick_url: String,
+    #[arg(long = "combob-url", default_value = "http://localhost:11434")]
+    combob_url: String,
+    #[arg(long = "will-url", default_value = "http://localhost:11434")]
+    will_url: String,
     #[arg(long, default_value = "gemma3:27b")]
     model: String,
     /// Host interface for the speech server
@@ -78,36 +82,39 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let args = Args::parse();
     use tokio::sync::mpsc::unbounded_channel;
 
-    let http_client = reqwest::Client::builder()
+    let quick_http = reqwest::Client::builder()
         .pool_max_idle_per_host(10)
         .build()
-        .expect("failed to build reqwest client");
+        .expect("quick http client");
+    let combob_http = reqwest::Client::builder()
+        .pool_max_idle_per_host(10)
+        .build()
+        .expect("combob http client");
+    let will_http = reqwest::Client::builder()
+        .pool_max_idle_per_host(10)
+        .build()
+        .expect("will http client");
 
-    let mut urls = args.base_url.clone();
-    let will_url = if !urls.is_empty() {
-        urls.remove(0)
-    } else {
-        "http://localhost:11434".into()
-    };
-    let will_llm: Arc<dyn LLMClient> = Arc::new(OllamaLLM::new(
-        build_ollama(&http_client, &will_url),
+    let quick_llm: Arc<dyn LLMClient> = Arc::new(OllamaLLM::new(
+        build_ollama(&quick_http, &args.quick_url),
         args.model.clone(),
     ));
-    let wits_llm: Arc<dyn LLMClient> = if urls.is_empty() {
-        will_llm.clone()
-    } else {
-        let clients: Vec<Arc<dyn LLMClient>> = urls
-            .iter()
-            .map(|url| {
-                let cli = build_ollama(&http_client, url);
-                Arc::new(OllamaLLM::new(cli, args.model.clone())) as Arc<dyn LLMClient>
-            })
-            .collect();
-        Arc::new(RoundRobinLLM::new(clients))
-    };
+    let combob_llm: Arc<dyn LLMClient> = Arc::new(OllamaLLM::new(
+        build_ollama(&combob_http, &args.combob_url),
+        args.model.clone(),
+    ));
+    let will_llm: Arc<dyn LLMClient> = Arc::new(OllamaLLM::new(
+        build_ollama(&will_http, &args.will_url),
+        args.model.clone(),
+    ));
+
+    let mouth_http = reqwest::Client::builder()
+        .pool_max_idle_per_host(10)
+        .build()
+        .expect("tts http client");
 
     let mouth = Arc::new(Mouth::new(
-        http_client.clone(),
+        mouth_http,
         args.tts_url.clone(),
         args.language_id,
     ));
@@ -131,10 +138,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         axum::serve(listener, app).await.expect("axum serve failed");
     });
 
-    let mut quick = Wit::new(wits_llm.clone())
+    let mut quick = Wit::new(quick_llm.clone())
         .prompt(QUICK_PROMPT)
         .delay_ms(1000);
-    let mut combob = Combobulator::new(wits_llm.clone())
+    let mut combob = Combobulator::new(combob_llm.clone())
         .prompt(COMBO_PROMPT)
         .delay_ms(1000);
 
@@ -175,24 +182,22 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     #[cfg(feature = "moment-feedback")]
     sensors.push(Box::new(SensationSensor::new(sens_rx)));
 
-    let mut quick_stream = quick.observe(sensors).await;
     let sensor = ImpressionStreamSensor::new(rx);
-    let combo_stream = combob.observe(vec![sensor]).await;
     let logger = Arc::new(LoggingMotor);
     let vision_motor = Arc::new(VisionMotor::new(
         vision_stream.clone(),
-        wits_llm.clone(),
+        quick_llm.clone(),
         look_tx,
     ));
     let canvas_motor = Arc::new(CanvasMotor::new(
         canvas.clone(),
-        wits_llm.clone(),
+        quick_llm.clone(),
         canvas_tx,
     ));
     let svg_motor = Arc::new(SvgMotor::new(svg_tx));
     let recall_motor = Arc::new(RecallMotor::new(
         store.clone(),
-        wits_llm.clone(),
+        quick_llm.clone(),
         recall_tx,
         5,
     ));
@@ -227,11 +232,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     will.register_motor(source_read_motor.as_ref());
     will.register_motor(source_search_motor.as_ref());
     will.register_motor(source_tree_motor.as_ref());
-    let will_stream = will.observe(vec![will_sensor]).await;
-
     let q_instant = INSTANT.clone();
     let store_quick = store.clone();
     tokio::spawn(async move {
+        let mut quick_stream = quick.observe(sensors).await;
         while let Some(imps) = quick_stream.next().await {
             let mut guard = q_instant.lock().await;
             *guard = imps.clone();
@@ -252,35 +256,38 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
     });
 
-    #[cfg(feature = "moment-feedback")]
-    {
-        let moment = MOMENT.clone();
-        tokio::spawn(drive_combo_stream(
-            combo_stream,
-            logger.clone(),
-            sens_tx,
-            moment,
-        ));
-    }
+    let combo_logger = logger.clone();
+    tokio::spawn(async move {
+        let combo_stream = combob.observe(vec![sensor]).await;
+        #[cfg(feature = "moment-feedback")]
+        {
+            let moment = MOMENT.clone();
+            drive_combo_stream(combo_stream, combo_logger.clone(), sens_tx, moment).await;
+        }
+        #[cfg(not(feature = "moment-feedback"))]
+        {
+            drive_combo_stream(combo_stream, combo_logger.clone()).await;
+        }
+    });
 
-    #[cfg(not(feature = "moment-feedback"))]
-    {
-        tokio::spawn(drive_combo_stream(combo_stream, logger.clone()));
-    }
-
-    tokio::spawn(drive_will_stream(
-        will_stream,
-        logger,
-        vision_motor,
-        mouth,
-        canvas_motor,
-        svg_motor,
-        recall_motor,
-        log_memory_motor,
-        source_read_motor,
-        source_search_motor,
-        source_tree_motor,
-    ));
+    let will_logger = logger.clone();
+    tokio::spawn(async move {
+        let will_stream = will.observe(vec![will_sensor]).await;
+        drive_will_stream(
+            will_stream,
+            will_logger,
+            vision_motor,
+            mouth,
+            canvas_motor,
+            svg_motor,
+            recall_motor,
+            log_memory_motor,
+            source_read_motor,
+            source_search_motor,
+            source_tree_motor,
+        )
+        .await;
+    });
 
     shutdown_signal().await;
     std::process::exit(0);

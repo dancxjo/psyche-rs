@@ -46,6 +46,7 @@ pub struct MotorDescription {
 /// A looping controller that turns sensations into motor actions using an LLM.
 pub struct Will<T = serde_json::Value> {
     llm: Arc<dyn LLMClient>,
+    name: String,
     prompt: String,
     delay_ms: u64,
     window_ms: u64,
@@ -59,6 +60,7 @@ pub struct Will<T = serde_json::Value> {
 /// Configuration for spawning a [`Will`] runtime loop.
 struct WillRuntimeConfig<S, T> {
     llm: Arc<dyn LLMClient>,
+    name: String,
     template: String,
     delay: u64,
     window_ms: u64,
@@ -75,6 +77,7 @@ impl<T> Will<T> {
     pub fn new(llm: Arc<dyn LLMClient>) -> Self {
         Self {
             llm,
+            name: "Will".into(),
             prompt: DEFAULT_PROMPT.to_string(),
             delay_ms: 1000,
             window_ms: 60_000,
@@ -84,6 +87,12 @@ impl<T> Will<T> {
             latest_moment: Arc::new(Mutex::new(String::new())),
             thoughts_tx: None,
         }
+    }
+
+    /// Sets the agent name used for logging.
+    pub fn name(mut self, name: impl Into<String>) -> Self {
+        self.name = name.into();
+        self
     }
 
     pub fn prompt(mut self, template: impl Into<String>) -> Self {
@@ -152,6 +161,7 @@ impl<T> Will<T> {
 
         let config = WillRuntimeConfig {
             llm,
+            name: self.name.clone(),
             template,
             delay,
             window_ms,
@@ -175,6 +185,7 @@ impl<T> Will<T> {
     {
         let WillRuntimeConfig {
             llm,
+            name,
             template,
             delay,
             window_ms,
@@ -188,7 +199,7 @@ impl<T> Will<T> {
         } = config;
 
         tokio::spawn(async move {
-            debug!(agent = "Will", "starting Will thread");
+            debug!(agent = %name, "starting Will thread");
             let streams: Vec<_> = sensors.into_iter().map(|mut s| s.stream()).collect();
             let mut sensor_stream = stream::select_all(streams);
             let mut pending: Vec<Sensation<T>> = Vec::new();
@@ -278,7 +289,9 @@ impl<T> Will<T> {
                         let thoughts_tx_clone = thoughts_tx.clone();
                         let start_re_clone = start_re.clone();
                         let attr_re_clone = attr_re.clone();
+                        let name_clone = name.clone();
                         tokio::spawn(async move {
+                            debug!(agent = %name_clone, "LLM call started");
                             match llm_clone.chat_stream(&msgs).await {
                                 Ok(mut stream) => {
                                     let mut buf = String::new();
@@ -399,6 +412,7 @@ impl<T> Will<T> {
                                         }
                                     }
 
+                                    debug!(agent = %name_clone, "LLM call ended");
                                     trace!("will llm stream finished");
                                 }
                                 Err(err) => {
