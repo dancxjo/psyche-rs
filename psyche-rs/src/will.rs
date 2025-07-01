@@ -188,7 +188,7 @@ impl<T> Will<T> {
         } = config;
 
         tokio::spawn(async move {
-            debug!("will runtime started");
+            debug!(agent = "Will", "starting Will thread");
             let streams: Vec<_> = sensors.into_iter().map(|mut s| s.stream()).collect();
             let mut sensor_stream = stream::select_all(streams);
             let mut pending: Vec<Sensation<T>> = Vec::new();
@@ -272,132 +272,140 @@ impl<T> Will<T> {
                         trace!("will invoking llm");
 
                         let msgs = vec![ChatMessage::user(prompt)];
-                        match llm.chat_stream(&msgs).await {
-                            Ok(mut stream) => {
-                                let mut buf = String::new();
-                                let mut state: Option<(String, String, String, tokio::sync::mpsc::UnboundedSender<String>)> = None;
-                                let mut pending_text = String::new();
+                        let llm_clone = llm.clone();
+                        let tx_clone = tx.clone();
+                        let window_clone = window.clone();
+                        let thoughts_tx_clone = thoughts_tx.clone();
+                        let start_re_clone = start_re.clone();
+                        let attr_re_clone = attr_re.clone();
+                        tokio::spawn(async move {
+                            match llm_clone.chat_stream(&msgs).await {
+                                Ok(mut stream) => {
+                                    let mut buf = String::new();
+                                    let mut state: Option<(String, String, String, tokio::sync::mpsc::UnboundedSender<String>)> = None;
+                                    let mut pending_text = String::new();
 
-                                while let Some(Ok(tok)) = stream.next().await {
-                                    trace!(token = %tok, "Will received LLM token");
-                                    buf.push_str(&tok);
+                                    while let Some(Ok(tok)) = stream.next().await {
+                                        trace!(token = %tok, "Will received LLM token");
+                                        buf.push_str(&tok);
 
-                                    loop {
-                                        if let Some((ref _name, ref closing, ref closing_lower, ref tx_body)) = state {
-                                            if let Some(pos) = buf.to_ascii_lowercase().find(closing_lower) {
-                                                if pos > 0 {
-                                                    let prefix = safe_prefix(&buf, pos);
+                                        loop {
+                                            if let Some((ref _name, ref closing, ref closing_lower, ref tx_body)) = state {
+                                                if let Some(pos) = buf.to_ascii_lowercase().find(closing_lower) {
+                                                    if pos > 0 {
+                                                        let prefix = safe_prefix(&buf, pos);
+                                                        let _ = tx_body.send(prefix.to_string());
+                                                    }
+                                                    let drain_len = safe_prefix(&buf, pos + closing.len()).len();
+                                                    buf.drain(..drain_len);
+                                                    state = None;
+                                                    break;
+                                                } else if buf.len() > closing.len() {
+                                                    let send_len = buf.len() - closing.len();
+                                                    let prefix = safe_prefix(&buf, send_len);
                                                     let _ = tx_body.send(prefix.to_string());
-                                                }
-                                                let drain_len = safe_prefix(&buf, pos + closing.len()).len();
-                                                buf.drain(..drain_len);
-                                                state = None;
-                                                break;
-                                            } else if buf.len() > closing.len() {
-                                                let send_len = buf.len() - closing.len();
-                                                let prefix = safe_prefix(&buf, send_len);
-                                                let _ = tx_body.send(prefix.to_string());
-                                                buf.drain(..prefix.len());
-                                                break;
-                                            } else if let Some(caps) = start_re.captures(&buf) {
-                                                if !pending_text.trim().is_empty() {
-                                                    if let Ok(what) = serde_json::from_value::<T>(
-                                                        Value::String(pending_text.trim().to_string()),
-                                                    ) {
-                                                        let sensation = Sensation {
-                                                            kind: "thought".into(),
-                                                            when: chrono::Local::now(),
-                                                            what,
-                                                            source: None,
-                                                        };
-                                                        window.lock().unwrap().push(sensation);
+                                                    buf.drain(..prefix.len());
+                                                    break;
+                                                } else if let Some(caps) = start_re_clone.captures(&buf) {
+                                                    if !pending_text.trim().is_empty() {
+                                                        if let Ok(what) = serde_json::from_value::<T>(
+                                                            Value::String(pending_text.trim().to_string()),
+                                                        ) {
+                                                            let sensation = Sensation {
+                                                                kind: "thought".into(),
+                                                                when: chrono::Local::now(),
+                                                                what,
+                                                                source: None,
+                                                            };
+                                                            window_clone.lock().unwrap().push(sensation);
+                                                        }
+                                                        if let Some(tx) = &thoughts_tx_clone {
+                                                            let s = Sensation {
+                                                                kind: "thought".into(),
+                                                                when: chrono::Local::now(),
+                                                                what: format!("I thought to myself: {}", pending_text.trim()),
+                                                                source: None,
+                                                            };
+                                                            let _ = tx.send(vec![s]);
+                                                        }
+                                                        pending_text.clear();
                                                     }
-                                                    if let Some(tx) = &thoughts_tx {
-                                                        let s = Sensation {
-                                                            kind: "thought".into(),
-                                                            when: chrono::Local::now(),
-                                                            what: format!("I thought to myself: {}", pending_text.trim()),
-                                                            source: None,
-                                                        };
-                                                        let _ = tx.send(vec![s]);
+
+                                                    let tag = caps.get(1).unwrap().as_str().to_ascii_lowercase();
+                                                    let attrs = caps.get(2).map(|m| m.as_str()).unwrap_or("");
+                                                    let mut map = Map::new();
+                                                    for cap in attr_re_clone.captures_iter(attrs) {
+                                                        map.insert(cap[1].to_string(), Value::String(cap[2].to_string()));
                                                     }
-                                                    pending_text.clear();
+                                                    let closing = format!("</{}>", tag);
+                                                    let closing_lower = closing.to_ascii_lowercase();
+
+                                                    let _ = buf.drain(..caps.get(0).unwrap().end());
+
+                                                    let (btx, brx) = unbounded_channel();
+                                                    let action = Action::new(tag.clone(), Value::Object(map.clone()), UnboundedReceiverStream::new(brx).boxed());
+                                                    let intention = Intention::to(action).assign(tag.clone());
+
+                                                    debug!(motor_name = %tag, "Will assigned motor on intention");
+                                                    debug!(?intention, "Will built intention");
+
+                                                    let val = serde_json::to_value(&intention).unwrap();
+                                                    let what = serde_json::from_value(val).unwrap_or_default();
+                                                    window_clone.lock().unwrap().push(Sensation {
+                                                        kind: "intention".into(),
+                                                        when: chrono::Local::now(),
+                                                        what,
+                                                        source: None,
+                                                    });
+
+                                                    let _ = tx_clone.send(vec![intention]);
+                                                    state = Some((tag, closing, closing_lower, btx));
+                                                } else if let Some(idx) = buf.find('<') {
+                                                    let prefix = safe_prefix(&buf, idx);
+                                                    pending_text.push_str(prefix);
+                                                    buf.drain(..prefix.len());
+                                                    break;
+                                                } else {
+                                                    if !buf.is_empty() {
+                                                        pending_text.push_str(&buf);
+                                                    }
+                                                    buf.clear();
+                                                    break;
                                                 }
-
-                                                let tag = caps.get(1).unwrap().as_str().to_ascii_lowercase();
-                                                let attrs = caps.get(2).map(|m| m.as_str()).unwrap_or("");
-                                                let mut map = Map::new();
-                                                for cap in attr_re.captures_iter(attrs) {
-                                                    map.insert(cap[1].to_string(), Value::String(cap[2].to_string()));
-                                                }
-                                                let closing = format!("</{}>", tag);
-                                                let closing_lower = closing.to_ascii_lowercase();
-
-                                                let _ = buf.drain(..caps.get(0).unwrap().end());
-
-                                                let (btx, brx) = unbounded_channel();
-                                                let action = Action::new(tag.clone(), Value::Object(map.clone()), UnboundedReceiverStream::new(brx).boxed());
-                                                let intention = Intention::to(action).assign(tag.clone());
-
-                                                debug!(motor_name = %tag, "Will assigned motor on intention");
-                                                debug!(?intention, "Will built intention");
-
-                                                let val = serde_json::to_value(&intention).unwrap();
-                                                let what = serde_json::from_value(val).unwrap_or_default();
-                                                window.lock().unwrap().push(Sensation {
-                                                    kind: "intention".into(),
-                                                    when: chrono::Local::now(),
-                                                    what,
-                                                    source: None,
-                                                });
-
-                                                let _ = tx.send(vec![intention]);
-                                                state = Some((tag, closing, closing_lower, btx));
-                                            } else if let Some(idx) = buf.find('<') {
-                                                let prefix = safe_prefix(&buf, idx);
-                                                pending_text.push_str(prefix);
-                                                buf.drain(..prefix.len());
-                                                break;
-                                            } else {
-                                                if !buf.is_empty() {
-                                                    pending_text.push_str(&buf);
-                                                }
-                                                buf.clear();
-                                                break;
                                             }
                                         }
                                     }
-                                }
 
-                                if !pending_text.trim().is_empty() {
-                                    if let Ok(what) = serde_json::from_value::<T>(
-                                        Value::String(pending_text.trim().to_string()),
-                                    ) {
-                                        let sensation = Sensation {
-                                            kind: "thought".into(),
-                                            when: chrono::Local::now(),
-                                            what,
-                                            source: None,
-                                        };
-                                        window.lock().unwrap().push(sensation);
+                                    if !pending_text.trim().is_empty() {
+                                        if let Ok(what) = serde_json::from_value::<T>(
+                                            Value::String(pending_text.trim().to_string()),
+                                        ) {
+                                            let sensation = Sensation {
+                                                kind: "thought".into(),
+                                                when: chrono::Local::now(),
+                                                what,
+                                                source: None,
+                                            };
+                                            window_clone.lock().unwrap().push(sensation);
+                                        }
+                                        if let Some(tx) = &thoughts_tx_clone {
+                                            let s = Sensation {
+                                                kind: "thought".into(),
+                                                when: chrono::Local::now(),
+                                                what: format!("I thought to myself: {}", pending_text.trim()),
+                                                source: None,
+                                            };
+                                            let _ = tx.send(vec![s]);
+                                        }
                                     }
-                                    if let Some(tx) = &thoughts_tx {
-                                        let s = Sensation {
-                                            kind: "thought".into(),
-                                            when: chrono::Local::now(),
-                                            what: format!("I thought to myself: {}", pending_text.trim()),
-                                            source: None,
-                                        };
-                                        let _ = tx.send(vec![s]);
-                                    }
-                                }
 
-                                trace!("will llm stream finished");
+                                    trace!("will llm stream finished");
+                                }
+                                Err(err) => {
+                                    error!(?err, "llm streaming failed");
+                                }
                             }
-                            Err(err) => {
-                                error!(?err, "llm streaming failed");
-                            }
-                        }
+                        });
                     }
                 }
             }
