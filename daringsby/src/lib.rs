@@ -39,6 +39,15 @@ pub mod svg_motor;
 pub mod vision_motor;
 pub mod vision_sensor;
 
+pub mod args;
+
+pub mod llm_helpers;
+pub mod motor_helpers;
+pub mod mouth_helpers;
+pub mod runtime_helpers;
+pub mod sensor_helpers;
+pub mod server_helpers;
+
 pub mod logger;
 pub mod motors;
 pub mod sensors;
