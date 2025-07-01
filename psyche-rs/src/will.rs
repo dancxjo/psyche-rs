@@ -11,7 +11,7 @@ use tracing::{debug, error, trace, warn};
 use regex::Regex;
 
 use crate::llm_client::LLMClient;
-use crate::{Action, Intention, Motor, PlainDescribe, Sensation, Sensor};
+use crate::{Action, Intention, Motor, PlainDescribe, Sensation, Sensor, render_template};
 use ollama_rs::generation::chat::ChatMessage;
 use serde_json::{Map, Value};
 
@@ -257,11 +257,23 @@ impl<T> Will<T> {
                         *latest_instant_store.lock().unwrap() = last_instant.clone();
                         *latest_moment_store.lock().unwrap() = last_moment.clone();
 
-                        let prompt = template
-                            .replace("{situation}", &situation)
-                            .replace("{motors}", &motor_text)
-                            .replace("{latest_instant}", &last_instant)
-                            .replace("{latest_moment}", &last_moment);
+                        #[derive(serde::Serialize)]
+                        struct Ctx<'a> {
+                            situation: &'a str,
+                            motors: &'a str,
+                            latest_instant: &'a str,
+                            latest_moment: &'a str,
+                        }
+                        let ctx = Ctx {
+                            situation: &situation,
+                            motors: &motor_text,
+                            latest_instant: &last_instant,
+                            latest_moment: &last_moment,
+                        };
+                        let prompt = render_template(&template, &ctx).unwrap_or_else(|e| {
+                            warn!(error=?e, "template render failed");
+                            template.clone()
+                        });
 
                         debug!(%prompt, "Will generated prompt");
                         trace!("will invoking llm");
