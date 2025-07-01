@@ -28,6 +28,7 @@ use psyche_rs::{ActionResult, Completion, Intention, Motor, MotorError};
 /// let _ = mouth.subscribe();
 /// ```
 pub struct Mouth {
+    /// HTTP client used for all TTS requests.
     client: reqwest::Client,
     base_url: String,
     language_id: Option<String>,
@@ -43,8 +44,12 @@ impl Default for Mouth {
         let (text_tx, _) = broadcast::channel(64);
         let (segment_tx, _) = broadcast::channel(64);
         let queue = Arc::new(TokioMutex::new(()));
+        let client = reqwest::Client::builder()
+            .pool_max_idle_per_host(10)
+            .build()
+            .expect("failed to build reqwest client");
         Self {
-            client: reqwest::Client::new(),
+            client,
             base_url: "http://localhost:5002".into(),
             language_id: None,
             tx,
@@ -56,14 +61,18 @@ impl Default for Mouth {
 }
 
 impl Mouth {
-    /// Creates a mouth with the given base URL and optional language.
-    pub fn new(base_url: impl Into<String>, language_id: Option<String>) -> Self {
+    /// Creates a mouth with the given HTTP client, base URL and optional language.
+    pub fn new(
+        client: reqwest::Client,
+        base_url: impl Into<String>,
+        language_id: Option<String>,
+    ) -> Self {
         let (tx, _) = broadcast::channel(64);
         let (text_tx, _) = broadcast::channel(64);
         let (segment_tx, _) = broadcast::channel(64);
         let queue = Arc::new(TokioMutex::new(()));
         Self {
-            client: reqwest::Client::new(),
+            client,
             base_url: base_url.into(),
             language_id,
             tx,
@@ -339,7 +348,11 @@ mod tests {
                 then.status(200).body(wav2.clone());
             })
             .await;
-        let mouth = Mouth::new(server.url(""), None);
+        let client = reqwest::Client::builder()
+            .pool_max_idle_per_host(10)
+            .build()
+            .unwrap();
+        let mouth = Mouth::new(client, server.url(""), None);
         let mut rx = mouth.subscribe();
         let body = stream::once(async { "Hello world. How are you?".to_string() }).boxed();
         let mut map = Map::new();
@@ -377,7 +390,11 @@ mod tests {
             })
             .await;
 
-        let mouth = Mouth::new(server.url(""), Some("en".into()));
+        let client = reqwest::Client::builder()
+            .pool_max_idle_per_host(10)
+            .build()
+            .unwrap();
+        let mouth = Mouth::new(client, server.url(""), Some("en".into()));
         let mut rx = mouth.subscribe();
         let body = stream::once(async { "Hi.".to_string() }).boxed();
         let mut map = Map::new();
@@ -418,7 +435,11 @@ mod tests {
                 then.status(200).body(wav_bytes.clone());
             })
             .await;
-        let mouth = Mouth::new(server.url(""), None);
+        let client = reqwest::Client::builder()
+            .pool_max_idle_per_host(10)
+            .build()
+            .unwrap();
+        let mouth = Mouth::new(client, server.url(""), None);
         let mut rx = mouth.subscribe();
         let body = stream::once(async { "Hi.".to_string() }).boxed();
         let action = Action::new("say", Map::new().into(), body);
@@ -460,7 +481,11 @@ mod tests {
             })
             .await;
 
-        let mouth = Mouth::new(server.url(""), None);
+        let client = reqwest::Client::builder()
+            .pool_max_idle_per_host(10)
+            .build()
+            .unwrap();
+        let mouth = Mouth::new(client, server.url(""), None);
         let mut seg_rx = mouth.subscribe_segments();
         let body = stream::once(async { "Hi.".to_string() }).boxed();
         let action = Action::new("say", Map::new().into(), body);
@@ -481,7 +506,11 @@ mod tests {
                 then.status(200).body(Vec::new());
             })
             .await;
-        let mouth = Mouth::new(server.url(""), None);
+        let client = reqwest::Client::builder()
+            .pool_max_idle_per_host(10)
+            .build()
+            .unwrap();
+        let mouth = Mouth::new(client, server.url(""), None);
         let body = stream::once(async { "Hi.".to_string() }).boxed();
         let action = Action::new("say", Map::new().into(), body);
         let intention = Intention::to(action).assign("say");
