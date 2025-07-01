@@ -1,7 +1,7 @@
 use std::sync::{Arc, Mutex};
 
 use futures::{
-    StreamExt,
+    FutureExt, StreamExt,
     stream::{self, BoxStream},
 };
 use tokio::sync::mpsc::unbounded_channel;
@@ -87,6 +87,7 @@ struct WillRuntimeConfig<S, T> {
     thoughts_tx: Option<tokio::sync::mpsc::UnboundedSender<Vec<Sensation<String>>>>,
     sensors: Vec<S>,
     tx: tokio::sync::mpsc::UnboundedSender<Vec<Intention>>,
+    abort: Option<tokio::sync::oneshot::Receiver<()>>,
 }
 
 impl<T> Will<T> {
@@ -164,36 +165,44 @@ impl<T> Will<T> {
         T: Clone + Default + Send + 'static + serde::Serialize + for<'de> serde::Deserialize<'de>,
         S: Sensor<T> + Send + 'static,
     {
-        let (tx, rx) = unbounded_channel();
-        let llm = self.llm.clone();
-        let template = self.prompt.clone();
-        let delay = self.delay_ms;
-        let window_ms = self.window_ms;
-        let window = self.window.clone();
-        let motors = self.motors.clone();
-        let latest_instant_store = self.latest_instant.clone();
-        let latest_moment_store = self.latest_moment.clone();
-        let thoughts_tx = self.thoughts_tx.clone();
+        self.observe_with_abort(sensors, None).await
+    }
 
+    /// Observe sensors and allow abortion via the provided channel.
+    pub async fn observe_with_abort<S>(
+        &mut self,
+        sensors: Vec<S>,
+        abort: Option<tokio::sync::oneshot::Receiver<()>>,
+    ) -> BoxStream<'static, Vec<Intention>>
+    where
+        T: Clone + Default + Send + 'static + serde::Serialize + for<'de> serde::Deserialize<'de>,
+        S: Sensor<T> + Send + 'static,
+    {
+        let (tx, rx) = unbounded_channel();
         let config = WillRuntimeConfig {
-            llm,
+            llm: self.llm.clone(),
             name: self.name.clone(),
-            template,
-            delay,
-            window_ms,
-            window,
-            motors,
-            latest_instant_store,
-            latest_moment_store,
-            thoughts_tx,
+            template: self.prompt.clone(),
+            delay: self.delay_ms,
+            window_ms: self.window_ms,
+            window: self.window.clone(),
+            motors: self.motors.clone(),
+            latest_instant_store: self.latest_instant.clone(),
+            latest_moment_store: self.latest_moment.clone(),
+            thoughts_tx: self.thoughts_tx.clone(),
             sensors,
             tx: tx.clone(),
+            abort,
         };
         Self::spawn_runtime(config);
 
         UnboundedReceiverStream::new(rx).boxed()
     }
 
+    /// Spawns the async runtime driving Will's perception and decision loop.
+    ///
+    /// The returned task listens for shutdown signals or an optional abort
+    /// channel and ensures any in-flight LLM stream is aborted before exiting.
     fn spawn_runtime<S>(config: WillRuntimeConfig<S, T>) -> tokio::task::JoinHandle<()>
     where
         T: Clone + Default + Send + 'static + serde::Serialize + for<'de> serde::Deserialize<'de>,
@@ -212,6 +221,7 @@ impl<T> Will<T> {
             thoughts_tx,
             sensors,
             tx,
+            mut abort,
         } = config;
 
         tokio::spawn(async move {
@@ -219,12 +229,29 @@ impl<T> Will<T> {
             let streams: Vec<_> = sensors.into_iter().map(|mut s| s.stream()).collect();
             let mut sensor_stream = stream::select_all(streams);
             let mut pending: Vec<Sensation<T>> = Vec::new();
+            let mut llm_handle: Option<tokio::task::JoinHandle<()>> = None;
 
             let start_re = Regex::new(r"^<([a-zA-Z0-9_]+)([^>]*)>").unwrap();
             let attr_re = Regex::new(r#"([a-zA-Z0-9_]+)="([^"]*)""#).unwrap();
 
             loop {
                 tokio::select! {
+                    _ = async {
+                        if let Some(rx) = &mut abort {
+                            let _ = rx.await;
+                        } else {
+                            futures::future::pending::<()>().await;
+                        }
+                    } => {
+                        if let Some(h) = llm_handle.take() { h.abort(); }
+                        debug!(agent=%name, "Will runtime aborted");
+                        break;
+                    }
+                    _ = crate::shutdown_signal() => {
+                        if let Some(h) = llm_handle.take() { h.abort(); }
+                        debug!(agent=%name, "Will runtime shutting down");
+                        break;
+                    }
                     Some(batch) = sensor_stream.next() => {
                         trace!(count = batch.len(), "sensations received");
                         pending.extend(batch);
@@ -306,17 +333,36 @@ impl<T> Will<T> {
                         let start_re_clone = start_re.clone();
                         let attr_re_clone = attr_re.clone();
                         let name_clone = name.clone();
-                        tokio::spawn(async move {
+                        if let Some(h) = llm_handle.take() { h.abort(); }
+                        llm_handle = Some(tokio::spawn(async move {
                             debug!(agent = %name_clone, "LLM call started");
                             match llm_clone.chat_stream(&msgs).await {
                                 Ok(mut stream) => {
                                     let mut buf = String::new();
                                     let mut state: Option<(String, String, String, tokio::sync::mpsc::UnboundedSender<String>)> = None;
                                     let mut pending_text = String::new();
+                                    let mut shutdown = Box::pin(crate::shutdown_signal()).fuse();
 
-                                    while let Some(Ok(tok)) = stream.next().await {
-                                        trace!(token = %tok, "Will received LLM token");
-                                        buf.push_str(&tok);
+                                    loop {
+                                        tokio::select! {
+                                            tok = stream.next() => {
+                                                match tok {
+                                                    Some(Ok(tok)) => {
+                                                        trace!(token = %tok, "Will received LLM token");
+                                                        buf.push_str(&tok);
+                                                    }
+                                                    Some(Err(e)) => {
+                                                        error!(?e, "llm token error");
+                                                        break;
+                                                    }
+                                                    None => break,
+                                                }
+                                            }
+                                            _ = &mut shutdown => {
+                                                warn!("Will LLM stream interrupted");
+                                                break;
+                                            }
+                                        }
 
                                         loop {
                                             if let Some((ref _name, ref closing, ref closing_lower, ref tx_body)) = state {
@@ -435,10 +481,14 @@ impl<T> Will<T> {
                                     error!(?err, "llm streaming failed");
                                 }
                             }
-                        });
+                        }));
                     }
                 }
             }
+            if let Some(h) = llm_handle.take() {
+                h.abort();
+            }
+            debug!(agent=%name, "Will thread exiting");
         })
     }
 }
