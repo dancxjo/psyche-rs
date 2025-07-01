@@ -246,10 +246,11 @@ fn persist_impression<T: serde::Serialize>(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{Intention, LLMClient, LLMTokenStream};
+    use crate::Intention;
     use futures::{StreamExt, stream};
     use std::sync::atomic::{AtomicUsize, Ordering};
 
+    #[allow(dead_code)]
     struct TestSensor;
     impl Sensor<String> for TestSensor {
         fn stream(&mut self) -> BoxStream<'static, Vec<Sensation<String>>> {
@@ -263,6 +264,7 @@ mod tests {
         }
     }
 
+    #[allow(dead_code)]
     struct CountMotor(Arc<AtomicUsize>);
     #[async_trait::async_trait]
     impl Motor for CountMotor {

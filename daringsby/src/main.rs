@@ -10,8 +10,8 @@ use futures::{StreamExt, stream};
 use ollama_rs::Ollama;
 use once_cell::sync::Lazy;
 use psyche_rs::{
-    Action, Combobulator, Impression, ImpressionStreamSensor, Intention, LLMClient, Motor,
-    OllamaLLM, RoundRobinLLM, Sensation, SensationSensor, Sensor, Will, Wit, shutdown_signal,
+    Combobulator, Impression, ImpressionStreamSensor, Intention, LLMClient, Motor, OllamaLLM,
+    RoundRobinLLM, Sensation, SensationSensor, Sensor, Will, Wit, shutdown_signal,
 };
 use reqwest::Client;
 use url::Url;
@@ -291,7 +291,7 @@ async fn drive_combo_stream(
     + Unpin
     + Send
     + 'static,
-    logger: Arc<LoggingMotor>,
+    _logger: Arc<LoggingMotor>,
     #[cfg(feature = "moment-feedback")] sens_tx: tokio::sync::mpsc::UnboundedSender<
         Vec<Sensation<String>>,
     >,
@@ -299,7 +299,7 @@ async fn drive_combo_stream(
 ) {
     use futures::StreamExt;
 
-    while let Some(imps) = combo_stream.next().await {
+    while let Some(_imps) = combo_stream.next().await {
         #[cfg(feature = "moment-feedback")]
         {
             let mut guard = moment.lock().await;
