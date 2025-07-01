@@ -5,7 +5,10 @@ use futures::stream::BoxStream;
 use crate::{Impression, LLMClient, Sensor, Wit};
 
 /// Default prompt text for [`Combobulator`].
-const DEFAULT_PROMPT: &str = include_str!("prompts/combobulator_prompt.txt");
+///
+/// Narrative prompt text should be supplied by the application using this
+/// library. This placeholder keeps the API backwards compatible.
+const DEFAULT_PROMPT: &str = "";
 
 /// Second order wit that summarizes impressions from another wit.
 ///
@@ -134,7 +137,7 @@ mod tests {
         let llm = Arc::new(StaticLLM {
             reply: "meta".into(),
         });
-        let mut comb = Combobulator::new(llm).delay_ms(10);
+        let mut comb = Combobulator::new(llm).prompt("{template}").delay_ms(10);
         let sensor = TestSensor;
         let mut stream = comb.observe(vec![sensor]).await;
         let impressions = stream.next().await.unwrap();
@@ -145,7 +148,7 @@ mod tests {
     #[tokio::test]
     async fn timeline_collects_inputs() {
         let llm = Arc::new(StaticLLM { reply: "ok".into() });
-        let mut comb = Combobulator::new(llm).delay_ms(10);
+        let mut comb = Combobulator::new(llm).prompt("{template}").delay_ms(10);
         let sensor = TwoBatch;
         let mut stream = comb.observe(vec![sensor]).await;
         let _ = stream.next().await;

@@ -17,7 +17,10 @@ use crate::llm_client::LLMClient;
 use ollama_rs::generation::chat::ChatMessage;
 
 /// Default prompt text for [`Wit`].
-const DEFAULT_PROMPT: &str = include_str!("prompts/wit_prompt.txt");
+///
+/// The actual narrative prompt should be provided by the caller and kept
+/// outside of this crate.
+const DEFAULT_PROMPT: &str = "";
 
 /// A looping prompt witness that summarizes sensed experiences using an LLM.
 #[derive(Clone)]
@@ -358,7 +361,7 @@ mod tests {
         let llm = Arc::new(StaticLLM {
             reply: "It was fun! I loved it. Let's do it again?".into(),
         });
-        let mut wit = Wit::new(llm).delay_ms(10);
+        let mut wit = Wit::new(llm).prompt("{template}").delay_ms(10);
         let sensor = TestSensor;
         let mut stream = wit.observe(vec![sensor]).await;
         let impressions = stream.next().await.unwrap();
@@ -386,7 +389,7 @@ mod tests {
 
         let calls = Arc::new(AtomicUsize::new(0));
         let llm = Arc::new(CountLLM(calls.clone()));
-        let mut wit = Wit::new(llm).delay_ms(10);
+        let mut wit = Wit::new(llm).prompt("{template}").delay_ms(10);
         let sensor = TestSensor;
         let mut stream = wit.observe(vec![sensor]).await;
         let _ = stream.next().await.unwrap();
@@ -397,7 +400,10 @@ mod tests {
     #[tokio::test]
     async fn window_discards_old_sensations() {
         let llm = Arc::new(StaticLLM { reply: "ok".into() });
-        let mut wit = Wit::new(llm).delay_ms(10).window_ms(30);
+        let mut wit = Wit::new(llm)
+            .prompt("{template}")
+            .delay_ms(10)
+            .window_ms(30);
 
         struct TwoEventSensor;
 
@@ -493,7 +499,7 @@ mod tests {
     #[tokio::test]
     async fn timeline_uses_local_time_and_has_fallback() {
         let llm = Arc::new(StaticLLM { reply: "".into() });
-        let mut wit = Wit::new(llm).delay_ms(10);
+        let mut wit = Wit::new(llm).prompt("{template}").delay_ms(10);
         let sensor = TestSensor;
         let mut stream = wit.observe(vec![sensor]).await;
         let impressions = stream.next().await.unwrap();

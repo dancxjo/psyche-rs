@@ -15,7 +15,11 @@ use crate::{Action, Intention, Motor, PlainDescribe, Sensation, Sensor, render_t
 use ollama_rs::generation::chat::ChatMessage;
 use serde_json::{Map, Value};
 
-const DEFAULT_PROMPT: &str = include_str!("prompts/will_prompt.txt");
+/// Placeholder prompt text for [`Will`].
+///
+/// Applications should provide their own narrative prompt text when
+/// constructing a [`Will`] instance.
+const DEFAULT_PROMPT: &str = "";
 
 /// Returns a prefix of `s` that fits within `max_bytes` without splitting UTF-8
 /// characters.
