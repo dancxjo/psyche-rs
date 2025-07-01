@@ -297,8 +297,7 @@ async fn drive_combo_stream(
     >,
     #[cfg(feature = "moment-feedback")] moment: Arc<Mutex<Vec<Impression<Impression<String>>>>>,
 ) {
-    use futures::{StreamExt, stream};
-    use serde_json::Value;
+    use futures::StreamExt;
 
     while let Some(imps) = combo_stream.next().await {
         #[cfg(feature = "moment-feedback")]
@@ -317,16 +316,8 @@ async fn drive_combo_stream(
                 .collect();
             let _ = sens_tx.send(sensed);
         }
-        for imp in imps {
-            let text = imp.how.clone();
-            let body = stream::once(async move { text }).boxed();
-            let action = Action::new("log", Value::Null, body);
-            let intention = Intention::to(action).assign("log");
-            logger
-                .perform(intention)
-                .await
-                .expect("logging motor failed");
-        }
+        // Logging is now handled exclusively by the Will. The combo stream only
+        // surfaces impressions without directly invoking the log motor.
     }
 }
 

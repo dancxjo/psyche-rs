@@ -157,6 +157,7 @@ where
         } = config;
 
         tokio::spawn(async move {
+            debug!(agent = "Wit", "starting Wit thread");
             if jitter > 0 {
                 tokio::time::sleep(std::time::Duration::from_millis(jitter)).await;
             }
