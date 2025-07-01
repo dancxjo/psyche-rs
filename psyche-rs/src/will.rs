@@ -36,6 +36,22 @@ pub fn safe_prefix(s: &str, max_bytes: usize) -> &str {
     &s[..end]
 }
 
+/// Returns `true` if `output` contains any valid XML motor action tag.
+/// Tag names are matched using the provided `motors` list and compared
+/// case-insensitively.
+pub fn contains_motor_action(output: &str, motors: &[MotorDescription]) -> bool {
+    if motors.is_empty() {
+        return false;
+    }
+    let names = motors
+        .iter()
+        .map(|m| regex::escape(&m.name.to_ascii_lowercase()))
+        .collect::<Vec<_>>()
+        .join("|");
+    let re = Regex::new(&format!(r"<({})[^>]*>", names)).expect("valid regex");
+    re.is_match(&output.to_ascii_lowercase())
+}
+
 /// Description of an available motor.
 #[derive(Clone)]
 pub struct MotorDescription {
@@ -424,5 +440,21 @@ impl<T> Will<T> {
                 }
             }
         })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn detects_motor_tag() {
+        let motors = vec![MotorDescription {
+            name: "say".into(),
+            description: "".into(),
+        }];
+        let out = "Thinking <say mood=\"happy\">hi</say>";
+        assert!(contains_motor_action(out, &motors));
+        assert!(!contains_motor_action("no tag here", &motors));
     }
 }
