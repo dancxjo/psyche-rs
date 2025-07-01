@@ -13,6 +13,8 @@ use psyche_rs::{
     Action, Combobulator, Impression, ImpressionStreamSensor, Intention, LLMClient, Motor,
     OllamaLLM, RoundRobinLLM, Sensation, SensationSensor, Sensor, Will, Wit,
 };
+use reqwest::Client;
+use url::Url;
 
 use chrono::Utc;
 #[cfg(feature = "development-status-sensor")]
@@ -63,11 +65,23 @@ struct Args {
     speaker_id: String,
 }
 
+fn build_ollama(client: &Client, base: &str) -> Ollama {
+    let url = Url::parse(base).expect("invalid base url");
+    let host = format!("{}://{}", url.scheme(), url.host_str().expect("no host"));
+    let port = url.port_or_known_default().expect("no port");
+    Ollama::new_with_client(host, port, client.clone())
+}
+
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     logger::init();
     let args = Args::parse();
     use tokio::sync::mpsc::unbounded_channel;
+
+    let http_client = reqwest::Client::builder()
+        .pool_max_idle_per_host(10)
+        .build()
+        .expect("failed to build reqwest client");
 
     let mut urls = args.base_url.clone();
     let will_url = if !urls.is_empty() {
@@ -76,7 +90,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         "http://localhost:11434".into()
     };
     let will_llm: Arc<dyn LLMClient> = Arc::new(OllamaLLM::new(
-        Ollama::try_new(&will_url).expect("failed to create Ollama client"),
+        build_ollama(&http_client, &will_url),
         args.model.clone(),
     ));
     let wits_llm: Arc<dyn LLMClient> = if urls.is_empty() {
@@ -85,7 +99,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         let clients: Vec<Arc<dyn LLMClient>> = urls
             .iter()
             .map(|url| {
-                let cli = Ollama::try_new(url).expect("failed to create Ollama client");
+                let cli = build_ollama(&http_client, url);
                 Arc::new(OllamaLLM::new(cli, args.model.clone())) as Arc<dyn LLMClient>
             })
             .collect();
