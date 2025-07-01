@@ -11,7 +11,12 @@ use daringsby::{
     sensor_helpers::build_sensors,
     server_helpers::run_server,
 };
-use psyche_rs::{InMemoryStore, shutdown_signal};
+use futures::StreamExt;
+use psyche_rs::{
+    Combobulator, Impression, ImpressionStreamSensor, InMemoryStore, Motor, Sensor, Will, Wit,
+    shutdown_signal,
+};
+use tokio::sync::mpsc::unbounded_channel;
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -32,7 +37,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let server_handle = run_server(stream.clone(), vision.clone(), canvas.clone(), &args).await;
 
     let store = Arc::new(InMemoryStore::new());
-    let (_motors, _map) = build_motors(
+    let (_motors, motor_map) = build_motors(
         &llms,
         mouth.clone(),
         vision.clone(),
@@ -40,11 +45,96 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         store.clone(),
     );
 
-    let _sensors = build_sensors(stream.clone());
+    let sensors = build_sensors(stream.clone());
 
-    // spawn wits and will as before (omitted for brevity)
+    let (instant_tx, instant_rx) = unbounded_channel();
+    let quick = Wit::new(llms.quick.clone()).prompt(include_str!("quick_prompt.txt"));
+    let quick_task = tokio::spawn(run_quick(quick, sensors, instant_tx));
 
-    shutdown_signal().await;
+    let quick_sensor = ImpressionStreamSensor::new(instant_rx);
+    let (situ_tx, situ_rx) = unbounded_channel();
+    let combob =
+        Combobulator::new(llms.combob.clone()).prompt(include_str!("combobulator_prompt.txt"));
+    let combob_task = tokio::spawn(run_combobulator(
+        combob,
+        vec![Box::new(quick_sensor)],
+        situ_tx,
+    ));
+
+    let combo_sensor = ImpressionStreamSensor::new(situ_rx);
+    let will = Will::new(llms.will.clone()).prompt(include_str!("will_prompt.txt"));
+    let will_task = tokio::spawn(run_will(
+        will,
+        vec![Box::new(combo_sensor)],
+        motor_map.clone(),
+    ));
+
+    tokio::select! {
+        res = quick_task => {
+            tracing::error!("Quick exited unexpectedly: {:?}", res);
+        },
+        res = combob_task => {
+            tracing::error!("Combobulator exited unexpectedly: {:?}", res);
+        },
+        res = will_task => {
+            tracing::error!("Will exited unexpectedly: {:?}", res);
+        },
+        _ = shutdown_signal() => {
+            tracing::info!("Shutdown signal received");
+        }
+    }
+
     server_handle.abort();
     Ok(())
+}
+
+async fn run_quick(
+    mut quick: Wit<String>,
+    sensors: Vec<Box<dyn Sensor<String> + Send>>,
+    tx: tokio::sync::mpsc::UnboundedSender<Vec<Impression<String>>>,
+) {
+    let mut stream = quick.observe(sensors).await;
+    while let Some(batch) = stream.next().await {
+        if tx.send(batch).is_err() {
+            break;
+        }
+    }
+}
+
+async fn run_combobulator(
+    mut combob: Combobulator<String>,
+    sensors: Vec<Box<dyn Sensor<Impression<String>> + Send>>,
+    tx: tokio::sync::mpsc::UnboundedSender<Vec<Impression<Impression<String>>>>,
+) {
+    let mut stream = combob.observe(sensors).await;
+    while let Some(batch) = stream.next().await {
+        if tx.send(batch).is_err() {
+            break;
+        }
+    }
+}
+
+async fn run_will(
+    mut will: Will<Impression<Impression<String>>>,
+    sensors: Vec<Box<dyn Sensor<Impression<Impression<String>>> + Send>>,
+    motors: std::collections::HashMap<String, Arc<dyn Motor>>,
+) {
+    for m in motors.values() {
+        will.register_motor(m.as_ref());
+    }
+    let mut stream = will.observe(sensors).await;
+    while let Some(ints) = stream.next().await {
+        for intent in ints {
+            if let Some(motor) = motors.get(&intent.assigned_motor) {
+                let motor = motor.clone();
+                tokio::spawn(async move {
+                    if let Err(e) = motor.perform(intent).await {
+                        tracing::warn!(error=?e, "motor failed");
+                    }
+                });
+            } else {
+                tracing::warn!(motor=?intent.assigned_motor, "unknown motor");
+            }
+        }
+    }
 }
