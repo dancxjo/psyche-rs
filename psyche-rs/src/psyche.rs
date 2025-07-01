@@ -148,7 +148,7 @@ where
             let stream = wit.observe(sensors_for_wit).await;
             wit_streams.push(stream);
         }
-        let mut merged_wits = stream::select_all(wit_streams);
+        let merged_wits = stream::select_all(wit_streams);
 
         let will = self
             .will
@@ -163,7 +163,7 @@ where
             .map(|s| SharedSensor::new(s.clone()))
             .collect();
         let stream = will.observe(sensors_for_will).await;
-        let mut merged_wills = stream::select_all(vec![stream]);
+        let merged_wills = stream::select_all(vec![stream]);
 
         use crate::psyche_event::PsycheEvent;
         let mut merged = stream::select(

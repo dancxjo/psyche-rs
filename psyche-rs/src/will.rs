@@ -227,14 +227,7 @@ impl<T> Will<T> {
 
                         trace!(snapshot_len = snapshot.len(), "Will captured snapshot");
 
-                        let situation = snapshot
-                            .iter()
-                            .map(|s| {
-                                let what = s.to_plain();
-                                format!("{} {} {}", s.when.format("%Y-%m-%d %H:%M:%S"), s.kind, what)
-                            })
-                            .collect::<Vec<_>>()
-                            .join("\n");
+                        let situation = crate::build_timeline(&window);
 
                         let motor_text = motors
                             .iter()
