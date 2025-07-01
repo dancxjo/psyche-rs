@@ -130,7 +130,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .merge(vision_stream.clone().router())
         .merge(canvas.clone().router());
     let addr: SocketAddr = format!("{}:{}", args.host, args.port).parse()?;
-    tokio::spawn(async move {
+    let server_handle = tokio::spawn(async move {
         tracing::info!(%addr, "serving speech stream");
         let listener = tokio::net::TcpListener::bind(addr)
             .await
@@ -205,15 +205,15 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let source_read_motor = Arc::new(SourceReadMotor::new(read_tx));
     let source_search_motor = Arc::new(SourceSearchMotor::new(search_tx));
     let source_tree_motor = Arc::new(SourceTreeMotor::new(tree_tx));
-    {
+    let canvas_handle = {
         let canvas = canvas.clone();
         tokio::spawn(async move {
             let mut rx = svg_rx;
             while let Some(svg) = rx.recv().await {
                 canvas.broadcast_svg(svg);
             }
-        });
-    }
+        })
+    };
     let _speaker_id = args.speaker_id.clone();
 
     let (will_tx, will_rx) = unbounded_channel::<Vec<Impression<String>>>();
@@ -234,7 +234,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     will.register_motor(source_tree_motor.as_ref());
     let q_instant = INSTANT.clone();
     let store_quick = store.clone();
-    tokio::spawn(async move {
+    let quick_handle = tokio::spawn(async move {
         let mut quick_stream = quick.observe(sensors).await;
         while let Some(imps) = quick_stream.next().await {
             let mut guard = q_instant.lock().await;
@@ -257,7 +257,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     });
 
     let combo_logger = logger.clone();
-    tokio::spawn(async move {
+    let combo_handle = tokio::spawn(async move {
         let combo_stream = combob.observe(vec![sensor]).await;
         #[cfg(feature = "moment-feedback")]
         {
@@ -271,7 +271,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     });
 
     let will_logger = logger.clone();
-    tokio::spawn(async move {
+    let will_handle = tokio::spawn(async move {
         let will_stream = will.observe(vec![will_sensor]).await;
         drive_will_stream(
             will_stream,
@@ -290,6 +290,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     });
 
     shutdown_signal().await;
+    tracing::debug!("abort running tasks");
+    server_handle.abort();
+    canvas_handle.abort();
+    quick_handle.abort();
+    combo_handle.abort();
+    will_handle.abort();
     std::process::exit(0);
 }
 

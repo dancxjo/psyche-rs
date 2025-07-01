@@ -35,3 +35,5 @@
 - When adding new sensors or motors, be sure to register them in `daringsby/src/main.rs`
   and extend the dispatch logic in `drive_will_stream`.
 - Comment out or ignore tests that consistently hang for over 60s.
+- When spawning long-running tasks, keep the `JoinHandle` and abort it on
+  shutdown to ensure HTTP connections close quickly.
