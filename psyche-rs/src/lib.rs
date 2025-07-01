@@ -8,6 +8,7 @@ mod combobulator;
 mod fair_llm;
 mod impression;
 mod llm_client;
+mod llm_pool;
 mod memory_sensor;
 mod memory_store;
 mod motor;
@@ -37,6 +38,7 @@ pub use cluster_analyzer::ClusterAnalyzer;
 pub use combobulator::Combobulator;
 pub use fair_llm::FairLLM;
 pub use impression::Impression;
+pub use llm_pool::LLMPool;
 pub use memory_sensor::MemorySensor;
 pub use memory_store::{InMemoryStore, MemoryStore, StoredImpression, StoredSensation};
 pub use motor::{
