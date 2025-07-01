@@ -50,8 +50,14 @@ struct Args {
     combob_url: String,
     #[arg(long = "will-url", default_value = "http://localhost:11434")]
     will_url: String,
-    #[arg(long, default_value = "gemma3:27b")]
-    model: String,
+    #[arg(long = "quick-model", default_value = "gemma3:27b")]
+    quick_model: String,
+    #[arg(long = "combob-model", default_value = "gemma3:27b")]
+    combob_model: String,
+    #[arg(long = "will-model", default_value = "gemma3:27b")]
+    will_model: String,
+    #[arg(long = "memory-model", default_value = "gemma3:27b")]
+    memory_model: String,
     /// Host interface for the speech server
     #[arg(long, default_value = "0.0.0.0")]
     host: String,
@@ -97,15 +103,19 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let quick_llm: Arc<dyn LLMClient> = Arc::new(OllamaLLM::new(
         build_ollama(&quick_http, &args.quick_url),
-        args.model.clone(),
+        args.quick_model.clone(),
     ));
     let combob_llm: Arc<dyn LLMClient> = Arc::new(OllamaLLM::new(
         build_ollama(&combob_http, &args.combob_url),
-        args.model.clone(),
+        args.combob_model.clone(),
     ));
     let will_llm: Arc<dyn LLMClient> = Arc::new(OllamaLLM::new(
         build_ollama(&will_http, &args.will_url),
-        args.model.clone(),
+        args.will_model.clone(),
+    ));
+    let memory_llm: Arc<dyn LLMClient> = Arc::new(OllamaLLM::new(
+        build_ollama(&quick_http, &args.quick_url),
+        args.memory_model.clone(),
     ));
 
     let mouth_http = reqwest::Client::builder()
@@ -197,7 +207,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let svg_motor = Arc::new(SvgMotor::new(svg_tx));
     let recall_motor = Arc::new(RecallMotor::new(
         store.clone(),
-        quick_llm.clone(),
+        memory_llm.clone(),
         recall_tx,
         5,
     ));
