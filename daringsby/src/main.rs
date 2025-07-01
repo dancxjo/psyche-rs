@@ -106,7 +106,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         Arc::new(RoundRobinLLM::new(clients))
     };
 
-    let mouth = Arc::new(Mouth::new(args.tts_url.clone(), args.language_id));
+    let mouth = Arc::new(Mouth::new(
+        http_client.clone(),
+        args.tts_url.clone(),
+        args.language_id,
+    ));
     let audio_rx = mouth.subscribe();
     let text_rx = mouth.subscribe_text();
     let segment_rx = mouth.subscribe_segments();
