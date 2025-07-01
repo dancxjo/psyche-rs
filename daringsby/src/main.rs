@@ -11,7 +11,7 @@ use ollama_rs::Ollama;
 use once_cell::sync::Lazy;
 use psyche_rs::{
     Combobulator, Impression, ImpressionStreamSensor, Intention, LLMClient, Motor, OllamaLLM,
-    RoundRobinLLM, Sensation, SensationSensor, Sensor, Will, Wit, shutdown_signal,
+    Sensation, SensationSensor, Sensor, Will, Wit, shutdown_signal,
 };
 use reqwest::Client;
 use url::Url;
