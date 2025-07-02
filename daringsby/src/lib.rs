@@ -4,6 +4,8 @@ pub mod canvas_motor;
 pub mod canvas_stream;
 #[cfg(feature = "development-status-sensor")]
 pub mod development_status;
+#[cfg(all(feature = "heard-self-sensor", feature = "heard-user-sensor"))]
+pub mod ear;
 #[cfg(feature = "heard-self-sensor")]
 pub mod heard_self_sensor;
 #[cfg(feature = "heard-user-sensor")]
