@@ -52,6 +52,7 @@ impl Sensor<String> for HeardSelfSensor {
                     when: Local::now(),
                     what,
                     source: None,
+                    kind: String::from("heard_self"), // Replace with the correct type/value as needed
                 }]
             })
             .boxed()
