@@ -39,6 +39,7 @@ pub use abort_guard::AbortGuard;
 pub use cluster_analyzer::ClusterAnalyzer;
 pub use combobulator::Combobulator;
 pub use fair_llm::FairLLM;
+pub use fair_llm::spawn_fair_llm_task;
 pub use impression::Impression;
 pub use memory_sensor::MemorySensor;
 pub use memory_store::{InMemoryStore, MemoryStore, StoredImpression, StoredSensation};

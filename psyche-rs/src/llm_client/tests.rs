@@ -1,4 +1,4 @@
-use crate::{spawn_llm_task, FairLLM, LLMClient, RoundRobinLLM, LLMTokenStream};
+use crate::{spawn_llm_task, spawn_fair_llm_task, FairLLM, LLMClient, RoundRobinLLM, LLMTokenStream};
 use async_trait::async_trait;
 use futures::{StreamExt, stream};
 use ollama_rs::generation::chat::ChatMessage;
@@ -144,4 +144,12 @@ async fn spawn_llm_task_collects_tokens() {
     let handle = spawn_llm_task(llm, vec![ChatMessage::user("hi".into())]).await;
     let text = handle.await.unwrap().unwrap();
     assert_eq!(text.trim(), "hello world");
+}
+
+#[tokio::test]
+async fn spawn_fair_llm_task_collects_tokens() {
+    let llm = Arc::new(FairLLM::new(crate::test_helpers::StaticLLM::new("hi"), 1));
+    let handle = spawn_fair_llm_task(llm, vec![ChatMessage::user("hello".into())]).await;
+    let text = handle.await.unwrap().unwrap();
+    assert_eq!(text.trim(), "hi");
 }
