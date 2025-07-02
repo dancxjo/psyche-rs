@@ -73,38 +73,29 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut combob_task = Some(combob_task);
     let mut will_task = Some(will_task);
 
+    let mut quick = quick_task.take().unwrap();
+    let mut combob = combob_task.take().unwrap();
+    let mut will = will_task.take().unwrap();
+
     tokio::select! {
-        res = async {
-            tokio::try_join!(
-                quick_task.take().unwrap(),
-                combob_task.take().unwrap(),
-                will_task.take().unwrap()
-            )
-        } => {
-            match res {
-                Ok(_) => tracing::info!("tasks completed"),
-                Err(e) => tracing::error!(error=?e, "task failed"),
-            }
-        },
         _ = shutdown_signal() => {
             tracing::info!("Shutdown signal received");
+            quick.abort();
+            combob.abort();
+            will.abort();
+            tracing::info!("Tasks aborted");
+        }
+        res = async { tokio::try_join!(&mut quick, &mut combob, &mut will) } => {
+            match res {
+                Ok(_) => tracing::info!("All tasks completed successfully"),
+                Err(e) => tracing::error!(error=?e, "A task failed"),
+            }
         }
     }
 
-    if let Some(handle) = quick_task.take() {
-        handle.abort();
-        tracing::info!("quick task aborted");
-    }
-    if let Some(handle) = combob_task.take() {
-        handle.abort();
-        tracing::info!("combobulator task aborted");
-    }
-    if let Some(handle) = will_task.take() {
-        handle.abort();
-        tracing::info!("will task aborted");
-    }
-
     server_handle.abort();
+    let _ = server_handle.await;
+    tracing::info!("Server aborted");
     Ok(())
 }
 
