@@ -81,7 +81,7 @@ function startVideo() {
   });
 }
 
-function segmentDone() {
+function nextPendingText() {
   pendingText = texts.shift() || null;
 }
 
@@ -141,10 +141,10 @@ function play() {
   const pcm = queue.shift();
   if (pcm.length === 0) {
     playing = false;
-    segmentDone();
     play();
     return;
   }
+  nextPendingText();
   const wav = pcmToWav(pcm);
   const blob = new Blob([wav], { type: 'audio/wav' });
   const url = URL.createObjectURL(blob);
