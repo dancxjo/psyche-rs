@@ -69,19 +69,39 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         motor_map.clone(),
     ));
 
+    let mut quick_task = Some(quick_task);
+    let mut combob_task = Some(combob_task);
+    let mut will_task = Some(will_task);
+
     tokio::select! {
-        res = quick_task => {
-            tracing::error!("Quick exited unexpectedly: {:?}", res);
-        },
-        res = combob_task => {
-            tracing::error!("Combobulator exited unexpectedly: {:?}", res);
-        },
-        res = will_task => {
-            tracing::error!("Will exited unexpectedly: {:?}", res);
+        res = async {
+            tokio::try_join!(
+                quick_task.take().unwrap(),
+                combob_task.take().unwrap(),
+                will_task.take().unwrap()
+            )
+        } => {
+            match res {
+                Ok(_) => tracing::info!("tasks completed"),
+                Err(e) => tracing::error!(error=?e, "task failed"),
+            }
         },
         _ = shutdown_signal() => {
             tracing::info!("Shutdown signal received");
         }
+    }
+
+    if let Some(handle) = quick_task.take() {
+        handle.abort();
+        tracing::info!("quick task aborted");
+    }
+    if let Some(handle) = combob_task.take() {
+        handle.abort();
+        tracing::info!("combobulator task aborted");
+    }
+    if let Some(handle) = will_task.take() {
+        handle.abort();
+        tracing::info!("will task aborted");
     }
 
     server_handle.abort();
