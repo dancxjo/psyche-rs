@@ -207,11 +207,44 @@ impl<T> Will<T> {
     }
 
     /// Returns `true` if `output` contains any valid motor action tag.
+    ///
+    /// The check is performed by parsing `output` as XML using [`quick_xml`].
+    /// Element names are compared case-insensitively against the known motor
+    /// list.
     pub fn contains_motor_action(&self, output: &str) -> bool {
-        let re = self
-            .motor_regex
-            .get_or_init(|| build_motor_regex(&self.motors));
-        re.is_match(output)
+        use quick_xml::Reader;
+        use quick_xml::events::Event;
+
+        let names: std::collections::HashSet<String> = self
+            .motors
+            .iter()
+            .map(|m| m.name.to_ascii_lowercase())
+            .collect();
+
+        let mut reader = Reader::from_str(output);
+        reader.trim_text(true);
+        let mut buf = Vec::new();
+
+        loop {
+            let before = reader.buffer_position();
+            match reader.read_event_into(&mut buf) {
+                Ok(Event::Start(e)) | Ok(Event::Empty(e)) => {
+                    let after = reader.buffer_position();
+                    if output[before..after].contains('>') {
+                        if let Ok(tag) = std::str::from_utf8(e.name().as_ref()) {
+                            if names.contains(&tag.to_ascii_lowercase()) {
+                                return true;
+                            }
+                        }
+                    }
+                }
+                Ok(Event::Eof) => break,
+                Err(_) => break,
+                _ => {}
+            }
+            buf.clear();
+        }
+        false
     }
 
     pub async fn observe<S>(&mut self, sensors: Vec<S>) -> BoxStream<'static, Vec<Intention>>
@@ -446,20 +479,58 @@ mod tests {
 
     #[test]
     fn detects_motor_tag() {
+        // Given a Will with a "say" motor
         let llm = Arc::new(StaticLLM::new(""));
         let mut will = Will::<serde_json::Value>::new(llm);
         will = will.motor("say", "say words");
+
+        // When the output contains a <say> tag
         let out = "Thinking <say mood=\"happy\">hi</say>";
+
+        // Then the tag is detected
         assert!(will.contains_motor_action(out));
         assert!(!will.contains_motor_action("no tag here"));
     }
 
     #[test]
-    fn regex_is_case_insensitive() {
+    fn tag_names_are_case_insensitive() {
+        // Given a Will with a "Write" motor
         let llm = Arc::new(StaticLLM::new(""));
         let will = Will::<serde_json::Value>::new(llm).motor("Write", "");
+
+        // Then mixed case tags are still detected
         assert!(will.contains_motor_action("<write/>"));
         assert!(will.contains_motor_action("<WRITE></WRITE>"));
+    }
+
+    #[test]
+    fn ignores_unknown_tags() {
+        // Given a Will with a single motor
+        let llm = Arc::new(StaticLLM::new(""));
+        let will = Will::<serde_json::Value>::new(llm).motor("say", "");
+
+        // When the output contains an unknown element
+        assert!(!will.contains_motor_action("<unknown/>"));
+    }
+
+    #[test]
+    fn handles_self_closing_tags() {
+        // Given a Will with a "draw" motor
+        let llm = Arc::new(StaticLLM::new(""));
+        let will = Will::<serde_json::Value>::new(llm).motor("draw", "");
+
+        // Then self closing tags are detected
+        assert!(will.contains_motor_action("<draw/>"));
+    }
+
+    #[test]
+    fn invalid_xml_is_ignored() {
+        // Given a Will with a "say" motor
+        let llm = Arc::new(StaticLLM::new(""));
+        let will = Will::<serde_json::Value>::new(llm).motor("say", "");
+
+        // When the xml is malformed no motor should be detected
+        assert!(!will.contains_motor_action("<say"));
     }
 
     struct DummyMotor;
