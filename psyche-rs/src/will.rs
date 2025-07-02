@@ -199,6 +199,16 @@ impl<T> Will<T> {
         &self.motor_text
     }
 
+    /// Access the underlying sensation window.
+    pub fn window_arc(&self) -> Arc<Mutex<Vec<Sensation<T>>>> {
+        self.window.clone()
+    }
+
+    /// Latest instant recorded by this Will.
+    pub fn latest_instant_arc(&self) -> Arc<Mutex<String>> {
+        self.latest_instant.clone()
+    }
+
     pub fn timeline(&self) -> String
     where
         T: serde::Serialize + Clone,

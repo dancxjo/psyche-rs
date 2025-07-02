@@ -6,6 +6,7 @@
 mod abort_guard;
 mod cluster_analyzer;
 mod combobulator;
+mod conversation;
 mod fair_llm;
 mod impression;
 mod llm_client;
@@ -31,6 +32,7 @@ mod template;
 pub mod test_helpers;
 pub mod text_util;
 mod timeline;
+mod voice;
 mod will;
 mod wit;
 
@@ -39,6 +41,7 @@ pub use crate::ollama_llm::OllamaLLM;
 pub use abort_guard::AbortGuard;
 pub use cluster_analyzer::ClusterAnalyzer;
 pub use combobulator::Combobulator;
+pub use conversation::Conversation;
 pub use fair_llm::FairLLM;
 pub use fair_llm::spawn_fair_llm_task;
 pub use impression::Impression;
@@ -60,6 +63,7 @@ pub use sensor_util::ImpressionStreamSensor;
 pub use shutdown::shutdown_signal;
 pub use template::render_template;
 pub use timeline::build_timeline;
+pub use voice::Voice;
 pub use will::{MotorDescription, Will, safe_prefix};
 pub use wit::Wit;
 
