@@ -7,6 +7,8 @@ use futures::{
 };
 use tracing::{debug, info, trace, warn};
 
+use crate::Intention;
+
 #[cfg(test)]
 use crate::{ActionResult, MotorError};
 use crate::{
@@ -70,9 +72,11 @@ impl<T> Sensor<T> for SharedSensor<T> {
 /// ```
 pub struct Psyche<T = serde_json::Value> {
     sensors: Vec<Arc<Mutex<dyn Sensor<T> + Send>>>,
+    ears: Vec<Arc<Mutex<dyn Sensor<String> + Send>>>,
     motors: Vec<Arc<dyn Motor + Send + Sync>>,
     wits: Vec<Wit<T>>,
     will: Option<Will<T>>,
+    voice: Option<crate::Voice>,
     store: Option<Arc<dyn MemoryStore + Send + Sync>>,
 }
 
@@ -84,9 +88,11 @@ where
     pub fn new() -> Self {
         Self {
             sensors: Vec::new(),
+            ears: Vec::new(),
             motors: Vec::new(),
             wits: Vec::new(),
             will: None,
+            voice: None,
             store: None,
         }
     }
@@ -94,6 +100,12 @@ where
     /// Add a sensor to the psyche.
     pub fn sensor(mut self, sensor: impl Sensor<T> + Send + 'static) -> Self {
         self.sensors.push(Arc::new(Mutex::new(sensor)));
+        self
+    }
+
+    /// Add an ear sensor used by [`Voice`].
+    pub fn ear(mut self, sensor: impl Sensor<String> + Send + 'static) -> Self {
+        self.ears.push(Arc::new(Mutex::new(sensor)));
         self
     }
 
@@ -112,6 +124,12 @@ where
     /// Add a will to the psyche.
     pub fn will(mut self, will: Will<T>) -> Self {
         self.will = Some(will);
+        self
+    }
+
+    /// Add a voice to the psyche.
+    pub fn voice(mut self, voice: crate::Voice) -> Self {
+        self.voice = Some(voice);
         self
     }
 
@@ -164,7 +182,20 @@ where
             .map(|s| SharedSensor::new(s.clone()))
             .collect();
         let stream = will.observe(sensors_for_will).await;
-        let merged_wills = stream::select_all(vec![stream]);
+        let mut intention_streams: Vec<BoxStream<'static, Vec<Intention>>> = vec![stream];
+
+        if let Some(voice) = &self.voice {
+            if let Some(sensor) = self.ears.first() {
+                let ear = SharedSensor::new(sensor.clone());
+                let window = will.window_arc();
+                let get_situation = Arc::new(move || crate::build_timeline(&window));
+                let latest = will.latest_instant_arc();
+                let get_instant = Arc::new(move || latest.lock().unwrap().clone());
+                let vstream = voice.observe(ear, get_situation, get_instant).await;
+                intention_streams.push(vstream);
+            }
+        }
+        let merged_wills = stream::select_all(intention_streams);
 
         use crate::psyche_event::PsycheEvent;
         let mut merged = stream::select(
