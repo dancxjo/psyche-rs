@@ -8,6 +8,7 @@ use tokio::sync::mpsc::unbounded_channel;
 use tokio_stream::wrappers::UnboundedReceiverStream;
 use tracing::{debug, error, trace, warn};
 
+use once_cell::sync::OnceCell;
 use regex::Regex;
 
 use crate::llm_client::LLMClient;
@@ -42,20 +43,19 @@ pub fn safe_prefix(s: &str, max_bytes: usize) -> &str {
     &s[..end]
 }
 
-/// Returns `true` if `output` contains any valid XML motor action tag.
-/// Tag names are matched using the provided `motors` list and compared
-/// case-insensitively.
-pub fn contains_motor_action(output: &str, motors: &[MotorDescription]) -> bool {
+/// Build a case-insensitive [`Regex`] matching any of the provided motor names
+/// as an opening XML tag.
+pub fn build_motor_regex(motors: &[MotorDescription]) -> Regex {
     if motors.is_empty() {
-        return false;
+        // Match nothing when no motors are registered.
+        return Regex::new("$^").expect("valid regex");
     }
     let names = motors
         .iter()
-        .map(|m| regex::escape(&m.name.to_ascii_lowercase()))
+        .map(|m| regex::escape(&m.name))
         .collect::<Vec<_>>()
         .join("|");
-    let re = Regex::new(&format!(r"<({})[^>]*>", names)).expect("valid regex");
-    re.is_match(&output.to_ascii_lowercase())
+    Regex::new(&format!(r"(?i)<(?:{})[^>]*>", names)).expect("valid regex")
 }
 
 /// Description of an available motor.
@@ -74,6 +74,7 @@ pub struct Will<T = serde_json::Value> {
     window_ms: u64,
     window: Arc<Mutex<Vec<Sensation<T>>>>,
     motors: Vec<MotorDescription>,
+    motor_regex: OnceCell<Regex>,
     latest_instant: Arc<Mutex<String>>,
     latest_moment: Arc<Mutex<String>>,
     thoughts_tx: Option<tokio::sync::mpsc::UnboundedSender<Vec<Sensation<String>>>>,
@@ -106,6 +107,7 @@ impl<T> Will<T> {
             window_ms: 60_000,
             window: Arc::new(Mutex::new(Vec::new())),
             motors: Vec::new(),
+            motor_regex: OnceCell::new(),
             latest_instant: Arc::new(Mutex::new(String::new())),
             latest_moment: Arc::new(Mutex::new(String::new())),
             thoughts_tx: None,
@@ -146,6 +148,7 @@ impl<T> Will<T> {
             name: name.into(),
             description: description.into(),
         });
+        let _ = self.motor_regex.take();
         debug!(motor_name = %self.motors.last().unwrap().name, "Will registered motor");
         self
     }
@@ -155,6 +158,7 @@ impl<T> Will<T> {
             name: motor.name().to_string(),
             description: motor.description().to_string(),
         });
+        let _ = self.motor_regex.take();
         debug!(motor_name = %motor.name(), "Will registered motor");
         self
     }
@@ -164,6 +168,14 @@ impl<T> Will<T> {
         T: serde::Serialize + Clone,
     {
         crate::build_timeline(&self.window)
+    }
+
+    /// Returns `true` if `output` contains any valid motor action tag.
+    pub fn contains_motor_action(&self, output: &str) -> bool {
+        let re = self
+            .motor_regex
+            .get_or_init(|| build_motor_regex(&self.motors));
+        re.is_match(output)
     }
 
     pub async fn observe<S>(&mut self, sensors: Vec<S>) -> BoxStream<'static, Vec<Intention>>
@@ -365,15 +377,24 @@ impl<T> Will<T> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::test_helpers::StaticLLM;
+    use std::sync::Arc;
 
     #[test]
     fn detects_motor_tag() {
-        let motors = vec![MotorDescription {
-            name: "say".into(),
-            description: "".into(),
-        }];
+        let llm = Arc::new(StaticLLM::new(""));
+        let mut will = Will::<serde_json::Value>::new(llm);
+        will = will.motor("say", "say words");
         let out = "Thinking <say mood=\"happy\">hi</say>";
-        assert!(contains_motor_action(out, &motors));
-        assert!(!contains_motor_action("no tag here", &motors));
+        assert!(will.contains_motor_action(out));
+        assert!(!will.contains_motor_action("no tag here"));
+    }
+
+    #[test]
+    fn regex_is_case_insensitive() {
+        let llm = Arc::new(StaticLLM::new(""));
+        let will = Will::<serde_json::Value>::new(llm).motor("Write", "");
+        assert!(will.contains_motor_action("<write/>"));
+        assert!(will.contains_motor_action("<WRITE></WRITE>"));
     }
 }
