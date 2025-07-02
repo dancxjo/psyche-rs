@@ -4,6 +4,7 @@ use reqwest::blocking::Client;
 use serde::Deserialize;
 use serde_json::json;
 use std::collections::HashMap;
+use tracing::{debug, error};
 
 /// Memory store backed by Neo4j for graph storage and Qdrant for vector search.
 ///
@@ -37,6 +38,7 @@ impl NeoQdrantMemoryStore {
     }
 
     fn post_neo(&self, query: &str, params: serde_json::Value) -> anyhow::Result<()> {
+        debug!(?query, "posting cypher");
         let payload = json!({"statements":[{"statement": query, "parameters": params}]});
         let resp = self
             .client
@@ -48,13 +50,17 @@ impl NeoQdrantMemoryStore {
         if resp.status().is_success() {
             Ok(())
         } else {
-            Err(anyhow!("neo4j error: {}", resp.text().unwrap_or_default()))
+            let status = resp.status();
+            let body = resp.text().unwrap_or_default();
+            error!(status = %status, %body, "neo4j error");
+            Err(anyhow!("neo4j error: {}", body))
         }
     }
 }
 
 impl MemoryStore for NeoQdrantMemoryStore {
     fn store_sensation(&self, sensation: &StoredSensation) -> anyhow::Result<()> {
+        debug!(id = %sensation.id, "store sensation");
         let query = "MERGE (s:Sensation {uuid: $id}) SET s.kind=$kind, s.when=datetime($when), s.data=$data";
         let params = json!({
             "id": sensation.id,
@@ -66,6 +72,7 @@ impl MemoryStore for NeoQdrantMemoryStore {
     }
 
     fn store_impression(&self, impression: &StoredImpression) -> anyhow::Result<()> {
+        debug!(id = %impression.id, "store impression");
         let query = r#"
 MERGE (i:Impression {uuid:$id})
 SET i.kind=$kind, i.when=datetime($when), i.how=$how, i.summary_of=$imps
@@ -93,6 +100,7 @@ MERGE (i)-[:HAS_SENSATION]->(s)
             }]
         });
         let url = format!("{}/collections/impressions/points", self.qdrant_url);
+        debug!(url = %url, "storing embedding to qdrant");
         let resp = self
             .client
             .put(url)
@@ -102,7 +110,10 @@ MERGE (i)-[:HAS_SENSATION]->(s)
         if resp.status().is_success() {
             Ok(())
         } else {
-            Err(anyhow!("qdrant error: {}", resp.text().unwrap_or_default()))
+            let status = resp.status();
+            let body = resp.text().unwrap_or_default();
+            error!(status = %status, %body, "qdrant error");
+            Err(anyhow!("qdrant error: {}", body))
         }
     }
 
@@ -112,6 +123,7 @@ MERGE (i)-[:HAS_SENSATION]->(s)
         stage: &str,
         detail: &str,
     ) -> anyhow::Result<()> {
+        debug!(impression_id, stage, "add lifecycle stage");
         let query = r#"
 MATCH (i:Impression {uuid:$id})
 MERGE (l:Lifecycle {uuid: $id || ':' || $stage})
@@ -131,6 +143,7 @@ MERGE (i)-[:HAS_STAGE]->(l)
         query_how: &str,
         top_k: usize,
     ) -> anyhow::Result<Vec<StoredImpression>> {
+        debug!(?query_how, top_k, "retrieve related impressions");
         let vector = Self::embed(query_how);
         let qbody = json!({"vector": vector, "limit": top_k});
         let url = format!("{}/collections/impressions/points/search", self.qdrant_url);
@@ -141,10 +154,10 @@ MERGE (i)-[:HAS_STAGE]->(l)
             .send()
             .context("qdrant search failed")?;
         if !resp.status().is_success() {
-            return Err(anyhow!(
-                "qdrant search error: {}",
-                resp.text().unwrap_or_default()
-            ));
+            let status = resp.status();
+            let body = resp.text().unwrap_or_default();
+            error!(status = %status, %body, "qdrant search error");
+            return Err(anyhow!("qdrant search error: {}", body));
         }
         #[derive(Deserialize)]
         struct SearchRes {
@@ -170,7 +183,10 @@ MERGE (i)-[:HAS_STAGE]->(l)
             .send()
             .context("neo4j retrieve failed")?;
         if !resp.status().is_success() {
-            return Err(anyhow!("neo4j error: {}", resp.text().unwrap_or_default()));
+            let status = resp.status();
+            let body = resp.text().unwrap_or_default();
+            error!(status = %status, %body, "neo4j error");
+            return Err(anyhow!("neo4j error: {}", body));
         }
         #[derive(Deserialize)]
         struct NeoRes {
@@ -195,6 +211,7 @@ MERGE (i)-[:HAS_STAGE]->(l)
     }
 
     fn fetch_recent_impressions(&self, limit: usize) -> anyhow::Result<Vec<StoredImpression>> {
+        debug!(limit, "fetch recent impressions");
         let query = "MATCH (i:Impression) RETURN i ORDER BY i.when DESC LIMIT $limit";
         let params = json!({"limit": limit});
         let payload = json!({"statements":[{"statement":query, "parameters":params}]});
@@ -206,7 +223,10 @@ MERGE (i)-[:HAS_STAGE]->(l)
             .send()
             .context("neo4j recent failed")?;
         if !resp.status().is_success() {
-            return Err(anyhow!("neo4j error: {}", resp.text().unwrap_or_default()));
+            let status = resp.status();
+            let body = resp.text().unwrap_or_default();
+            error!(status = %status, %body, "neo4j error");
+            return Err(anyhow!("neo4j error: {}", body));
         }
         #[derive(Deserialize)]
         struct Res {
@@ -238,6 +258,7 @@ MERGE (i)-[:HAS_STAGE]->(l)
         Vec<StoredSensation>,
         HashMap<String, String>,
     )> {
+        debug!(impression_id, "load full impression");
         let query = r#"
 MATCH (i:Impression {uuid:$id})
 OPTIONAL MATCH (i)-[:HAS_SENSATION]->(s:Sensation)
@@ -254,7 +275,10 @@ RETURN i, collect(DISTINCT s) AS sens, collect(DISTINCT l) AS stages
             .send()
             .context("neo4j load full failed")?;
         if !resp.status().is_success() {
-            return Err(anyhow!("neo4j error: {}", resp.text().unwrap_or_default()));
+            let status = resp.status();
+            let body = resp.text().unwrap_or_default();
+            error!(status = %status, %body, "neo4j error");
+            return Err(anyhow!("neo4j error: {}", body));
         }
         #[derive(Deserialize)]
         struct R {
@@ -373,5 +397,40 @@ mod tests {
         let _ = store.retrieve_related_impressions("hi", 3);
         assert_eq!(q_mock.hits(), 1);
         assert_eq!(neo_mock.hits(), 0);
+    }
+
+    #[test]
+    fn store_impression_error_propagates() {
+        let neo = MockServer::start();
+        let qdrant = MockServer::start();
+
+        let _neo_mock = neo.mock(|when, then| {
+            when.method(POST);
+            then.status(200);
+        });
+        let q_mock = qdrant.mock(|when, then| {
+            when.method(PUT);
+            then.status(500);
+        });
+
+        let store = NeoQdrantMemoryStore::new(neo.url(""), "u", "p", qdrant.url(""));
+        let sens = StoredSensation {
+            id: "s".into(),
+            kind: "t".into(),
+            when: Utc::now(),
+            data: "{}".into(),
+        };
+        store.store_sensation(&sens).unwrap();
+
+        let imp = StoredImpression {
+            id: "i".into(),
+            kind: "Instant".into(),
+            when: Utc::now(),
+            how: "hi".into(),
+            sensation_ids: vec!["s".into()],
+            impression_ids: Vec::new(),
+        };
+        assert!(store.store_impression(&imp).is_err());
+        assert_eq!(q_mock.hits(), 1);
     }
 }
