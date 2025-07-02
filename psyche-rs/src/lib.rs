@@ -10,7 +10,6 @@ mod fair_llm;
 mod impression;
 mod llm_client;
 mod llm_parser;
-mod llm_pool;
 mod memory_sensor;
 mod memory_store;
 mod motor;
@@ -34,14 +33,14 @@ mod timeline;
 mod will;
 mod wit;
 
-pub use crate::llm_client::{LLMClient, LLMTokenStream};
+pub use crate::llm_client::{LLMClient, LLMTokenStream, spawn_llm_task};
 pub use crate::ollama_llm::OllamaLLM;
 pub use abort_guard::AbortGuard;
 pub use cluster_analyzer::ClusterAnalyzer;
 pub use combobulator::Combobulator;
 pub use fair_llm::FairLLM;
+pub use fair_llm::spawn_fair_llm_task;
 pub use impression::Impression;
-pub use llm_pool::LLMPool;
 pub use memory_sensor::MemorySensor;
 pub use memory_store::{InMemoryStore, MemoryStore, StoredImpression, StoredSensation};
 pub use motor::{

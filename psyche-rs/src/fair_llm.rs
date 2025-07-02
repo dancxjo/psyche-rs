@@ -1,6 +1,7 @@
 use std::sync::Arc;
 
 use async_trait::async_trait;
+use futures::StreamExt;
 use tokio::sync::Semaphore;
 
 use crate::llm_client::{LLMClient, LLMTokenStream};
@@ -54,4 +55,48 @@ where
             }
         }
     }
+}
+
+/// Spawn a task that collects the entire response from a [`FairLLM`].
+///
+/// # Examples
+/// ```
+/// use std::sync::Arc;
+/// use async_trait::async_trait;
+/// use futures::stream;
+/// use psyche_rs::{FairLLM, spawn_fair_llm_task, LLMClient};
+/// use ollama_rs::generation::chat::ChatMessage;
+/// #[derive(Clone)]
+/// struct Dummy;
+/// #[async_trait]
+/// impl LLMClient for Dummy {
+///     async fn chat_stream(
+///         &self,
+///         _msgs: &[ChatMessage],
+///     ) -> Result<psyche_rs::LLMTokenStream, Box<dyn std::error::Error + Send + Sync>> {
+///         Ok(Box::pin(stream::once(async { Ok("hi".to_string()) })))
+///     }
+/// }
+/// # tokio_test::block_on(async {
+/// let llm = Arc::new(FairLLM::new(Dummy, 1));
+/// let handle = spawn_fair_llm_task(llm, vec![ChatMessage::user("hi".into())]).await;
+/// let text = handle.await.unwrap().unwrap();
+/// assert_eq!(text.trim(), "hi");
+/// # });
+/// ```
+pub async fn spawn_fair_llm_task<C>(
+    llm: Arc<FairLLM<C>>,
+    msgs: Vec<ChatMessage>,
+) -> tokio::task::JoinHandle<Result<String, Box<dyn std::error::Error + Send + Sync>>>
+where
+    C: LLMClient + Send + Sync + 'static,
+{
+    tokio::spawn(async move {
+        let mut stream = llm.chat_stream(&msgs).await?;
+        let mut out = String::new();
+        while let Some(tok) = stream.next().await {
+            out.push_str(&tok?);
+        }
+        Ok(out)
+    })
 }

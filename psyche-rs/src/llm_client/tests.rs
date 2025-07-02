@@ -1,4 +1,4 @@
-use crate::{FairLLM, LLMClient, RoundRobinLLM, LLMTokenStream, LLMPool};
+use crate::{spawn_llm_task, spawn_fair_llm_task, FairLLM, LLMClient, RoundRobinLLM, LLMTokenStream};
 use async_trait::async_trait;
 use futures::{StreamExt, stream};
 use ollama_rs::generation::chat::ChatMessage;
@@ -137,30 +137,19 @@ async fn fair_llm_processes_in_request_order() {
     let _ = futures::join!(f1, f2);
     assert!(start.elapsed() >= std::time::Duration::from_millis(100));
 }
+
 #[tokio::test]
-async fn llm_pool_uses_round_robin_urls() {
-    let log = Arc::new(Mutex::new(Vec::new()));
-    #[derive(Clone)]
-    struct RecUrl {
-        id: usize,
-        log: Arc<Mutex<Vec<usize>>>,
-    }
-    #[async_trait::async_trait]
-    impl LLMClient for RecUrl {
-        async fn chat_stream(
-            &self,
-            _msgs: &[ChatMessage],
-        ) -> Result<LLMTokenStream, Box<dyn std::error::Error + Send + Sync>> {
-            self.log.lock().unwrap().push(self.id);
-            Ok(Box::pin(stream::empty()))
-        }
-    }
-    let c1 = Arc::new(RecUrl { id: 1, log: log.clone() });
-    let c2 = Arc::new(RecUrl { id: 2, log: log.clone() });
-    let pool = RoundRobinLLM::new(vec![c1.clone(), c2.clone()]);
-    let llm_pool = LLMPool::from_round_robin(pool);
-    llm_pool.chat_stream(&[]).await.unwrap().next().await;
-    llm_pool.chat_stream(&[]).await.unwrap().next().await;
-    let l = log.lock().unwrap();
-    assert_eq!(l.as_slice(), &[1, 2]);
+async fn spawn_llm_task_collects_tokens() {
+    let llm = Arc::new(crate::test_helpers::StaticLLM::new("hello world"));
+    let handle = spawn_llm_task(llm, vec![ChatMessage::user("hi".into())]).await;
+    let text = handle.await.unwrap().unwrap();
+    assert_eq!(text.trim(), "hello world");
+}
+
+#[tokio::test]
+async fn spawn_fair_llm_task_collects_tokens() {
+    let llm = Arc::new(FairLLM::new(crate::test_helpers::StaticLLM::new("hi"), 1));
+    let handle = spawn_fair_llm_task(llm, vec![ChatMessage::user("hello".into())]).await;
+    let text = handle.await.unwrap().unwrap();
+    assert_eq!(text.trim(), "hi");
 }
