@@ -2,20 +2,22 @@ use clap::Parser;
 use daringsby::args::Args;
 use std::sync::Arc;
 
+use daringsby::memory_helpers::persist_impression;
 use daringsby::{CanvasStream, VisionSensor};
 use daringsby::{
     llm_helpers::build_ollama_clients,
     logger,
     motor_helpers::{LLMClients, build_motors},
     mouth_helpers::build_mouth,
-    sensor_helpers::build_sensors,
+    sensor_helpers::{build_ear, build_sensors},
     server_helpers::run_server,
 };
 use futures::StreamExt;
 use futures::stream::BoxStream;
+use psyche_rs::MemoryStore;
 use psyche_rs::{
-    Combobulator, Impression, ImpressionStreamSensor, InMemoryStore, Motor, Sensor, Will, Wit,
-    shutdown_signal,
+    Combobulator, Impression, ImpressionStreamSensor, InMemoryStore, Motor, MotorExecutor, Sensor,
+    Voice, Will, Wit, shutdown_signal,
 };
 use tokio::sync::mpsc::unbounded_channel;
 
@@ -31,6 +33,45 @@ async fn run_sensor_loop<I>(
         }
     }
     tracing::info!("{} task finished", name);
+}
+
+async fn run_impression_loop<T: serde::Serialize + Clone + Send + 'static>(
+    mut stream: BoxStream<'static, Vec<Impression<T>>>,
+    tx: tokio::sync::mpsc::UnboundedSender<Vec<Impression<T>>>,
+    store: Arc<dyn MemoryStore + Send + Sync>,
+    kind: &'static str,
+    name: &str,
+) {
+    tracing::debug!("{} task started", name);
+    while let Some(batch) = stream.next().await {
+        for imp in &batch {
+            if let Err(e) = persist_impression(store.as_ref(), imp, kind) {
+                tracing::warn!(error=?e, "persist failed");
+            }
+        }
+        if tx.send(batch).is_err() {
+            break;
+        }
+    }
+    tracing::info!("{} task finished", name);
+}
+
+async fn run_voice(
+    voice: Voice,
+    ear: daringsby::Ear,
+    get_situation: Arc<dyn Fn() -> String + Send + Sync>,
+    get_instant: Arc<dyn Fn() -> String + Send + Sync>,
+    executor: Arc<MotorExecutor>,
+) {
+    let stream = voice.observe(ear, get_situation, get_instant).await;
+    let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
+    tokio::spawn(run_sensor_loop(stream, tx, "voice"));
+    while let Some(ints) = rx.recv().await {
+        for intent in ints {
+            executor.spawn_intention(intent);
+        }
+    }
+    tracing::info!("voice task finished");
 }
 
 #[tokio::main]
@@ -52,19 +93,33 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let server_handle = run_server(stream.clone(), vision.clone(), canvas.clone(), &args).await;
 
     let store = Arc::new(InMemoryStore::new());
-    let (_motors, motor_map) = build_motors(
+    let (motors, _motor_map) = build_motors(
         &llms,
         mouth.clone(),
         vision.clone(),
         canvas.clone(),
         store.clone(),
     );
+    let motors_send: Vec<Arc<dyn Motor + Send + Sync>> = motors
+        .iter()
+        .cloned()
+        .map(|m| m as Arc<dyn Motor + Send + Sync>)
+        .collect();
+    let executor = Arc::new(MotorExecutor::new(
+        motors_send.clone(),
+        4,
+        16,
+        Some(store.clone()),
+    ));
 
     let sensors = build_sensors(stream.clone());
+    let ear = build_ear(stream.clone());
+    let voice =
+        Voice::new(llms.quick.clone(), 10).system_prompt(include_str!("prompts/voice_prompt.txt"));
 
     let (instant_tx, instant_rx) = unbounded_channel();
     let quick = Wit::new(llms.quick.clone()).prompt(include_str!("prompts/quick_prompt.txt"));
-    let quick_task = tokio::spawn(run_quick(quick, sensors, instant_tx));
+    let quick_task = tokio::spawn(run_quick(quick, sensors, instant_tx, store.clone()));
 
     let quick_sensor = ImpressionStreamSensor::new(instant_rx);
     let (situ_tx, situ_rx) = unbounded_channel();
@@ -74,19 +129,34 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         combob,
         vec![Box::new(quick_sensor)],
         situ_tx,
+        store.clone(),
     ));
 
     let combo_sensor = ImpressionStreamSensor::new(situ_rx);
-    let will = Will::new(llms.will.clone()).prompt(include_str!("prompts/will_prompt.txt"));
+    let mut will = Will::new(llms.will.clone()).prompt(include_str!("prompts/will_prompt.txt"));
+    let window = will.window_arc();
+    let latest = will.latest_instant_arc();
     let will_task = tokio::spawn(run_will(
         will,
         vec![Box::new(combo_sensor)],
-        motor_map.clone(),
+        executor.clone(),
+        motors_send.clone(),
+    ));
+
+    let get_situation = Arc::new(move || psyche_rs::build_timeline(&window));
+    let get_instant = Arc::new(move || latest.lock().unwrap().clone());
+    let voice_task = tokio::spawn(run_voice(
+        voice,
+        ear,
+        get_situation,
+        get_instant,
+        executor.clone(),
     ));
 
     let mut quick = Some(quick_task);
     let mut combob = Some(combob_task);
     let mut will = Some(will_task);
+    let mut voice_handle = Some(voice_task);
 
     tokio::select! {
         _ = shutdown_signal() => {
@@ -94,6 +164,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             if let Some(h) = quick.take() { h.abort(); }
             if let Some(h) = combob.take() { h.abort(); }
             if let Some(h) = will.take() { h.abort(); }
+            if let Some(h) = voice_handle.take() { h.abort(); }
             tracing::info!("Tasks aborted");
         }
         res = async {
@@ -101,6 +172,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 quick.take().unwrap(),
                 combob.take().unwrap(),
                 will.take().unwrap(),
+                voice_handle.take().unwrap(),
             )
         } => {
             match res {
@@ -120,71 +192,40 @@ async fn run_quick(
     mut quick: Wit<String>,
     sensors: Vec<Box<dyn Sensor<String> + Send>>,
     tx: tokio::sync::mpsc::UnboundedSender<Vec<Impression<String>>>,
+    store: Arc<dyn MemoryStore + Send + Sync>,
 ) {
     let stream = quick.observe(sensors).await;
-    run_sensor_loop(stream, tx, "quick").await;
+    run_impression_loop(stream, tx, store, "Instant", "quick").await;
 }
 
 async fn run_combobulator(
     mut combob: Combobulator<String>,
     sensors: Vec<Box<dyn Sensor<Impression<String>> + Send>>,
     tx: tokio::sync::mpsc::UnboundedSender<Vec<Impression<Impression<String>>>>,
+    store: Arc<dyn MemoryStore + Send + Sync>,
 ) {
     let stream = combob.observe(sensors).await;
-    run_sensor_loop(stream, tx, "combobulator").await;
+    run_impression_loop(stream, tx, store, "Moment", "combobulator").await;
 }
 
 async fn run_will(
     mut will: Will<Impression<Impression<String>>>,
     sensors: Vec<Box<dyn Sensor<Impression<Impression<String>>> + Send>>,
-    motors: Arc<std::collections::HashMap<String, Arc<dyn Motor>>>,
+    executor: Arc<MotorExecutor>,
+    motors: Vec<Arc<dyn Motor + Send + Sync>>,
 ) {
     tracing::debug!("will task started");
-    for m in motors.values() {
+    for m in &motors {
         will.register_motor(m.as_ref());
     }
     let stream = will.observe(sensors).await;
     let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
     tokio::spawn(run_sensor_loop(stream, tx, "will"));
 
-    let (intent_tx, intent_rx) = tokio::sync::mpsc::channel::<psyche_rs::Intention>(100);
-    let intent_rx = Arc::new(tokio::sync::Mutex::new(intent_rx));
-
-    const WORKERS: usize = 4;
-    for i in 0..WORKERS {
-        let motors = motors.clone();
-        let rx = intent_rx.clone();
-        tokio::spawn(async move {
-            tracing::debug!(worker = i, "motor worker started");
-            loop {
-                let opt = {
-                    let mut guard = rx.lock().await;
-                    guard.recv().await
-                };
-                match opt {
-                    Some(intention) => {
-                        if let Some(motor) = motors.get(&intention.assigned_motor) {
-                            if let Err(e) = motor.perform(intention).await {
-                                tracing::warn!(error=?e, "motor failed");
-                            }
-                        } else {
-                            tracing::warn!(motor=?intention.assigned_motor, "unknown motor");
-                        }
-                    }
-                    None => break,
-                }
-            }
-            tracing::info!(worker = i, "motor worker finished");
-        });
-    }
-
     while let Some(ints) = rx.recv().await {
         for intent in ints {
-            if intent_tx.send(intent).await.is_err() {
-                break;
-            }
+            executor.spawn_intention(intent);
         }
     }
-    drop(intent_tx);
     tracing::info!("will task finished");
 }

@@ -31,6 +31,7 @@ bytes = "1"
 axum = { version = "0.7", features = ["macros", "ws"] }
 hound = "3"
 base64 = "0.21"
+anyhow = "1"
 
 [dev-dependencies]
 httpmock = "0.7"
