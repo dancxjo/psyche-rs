@@ -114,16 +114,20 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let sensors = build_sensors(stream.clone());
     let ear = build_ear(stream.clone());
-    let voice =
-        Voice::new(llms.quick.clone(), 10).system_prompt(include_str!("prompts/voice_prompt.txt"));
+    let voice = Voice::new(llms.quick.clone(), 10)
+        .name("Voice")
+        .system_prompt(include_str!("prompts/voice_prompt.txt"));
 
     let (instant_tx, instant_rx) = unbounded_channel();
-    let quick = Wit::new(llms.quick.clone()).prompt(include_str!("prompts/quick_prompt.txt"));
+    let quick = Wit::new(llms.quick.clone())
+        .name("Quick")
+        .prompt(include_str!("prompts/quick_prompt.txt"));
     let quick_task = tokio::spawn(run_quick(quick, sensors, instant_tx, store.clone()));
 
     let quick_sensor = ImpressionStreamSensor::new(instant_rx);
     let (situ_tx, situ_rx) = unbounded_channel();
     let combob = Combobulator::new(llms.combob.clone())
+        .name("Combobulator")
         .prompt(include_str!("prompts/combobulator_prompt.txt"));
     let combob_task = tokio::spawn(run_combobulator(
         combob,
@@ -133,7 +137,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     ));
 
     let combo_sensor = ImpressionStreamSensor::new(situ_rx);
-    let mut will = Will::new(llms.will.clone()).prompt(include_str!("prompts/will_prompt.txt"));
+    let will = Will::new(llms.will.clone())
+        .name("Will")
+        .prompt(include_str!("prompts/will_prompt.txt"));
     let window = will.window_arc();
     let latest = will.latest_instant_arc();
     let will_task = tokio::spawn(run_will(

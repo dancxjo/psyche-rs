@@ -37,6 +37,12 @@ impl<T> Combobulator<T> {
         }
     }
 
+    /// Sets the agent name used for logging.
+    pub fn name(mut self, name: impl Into<String>) -> Self {
+        self.wit = self.wit.name(name);
+        self
+    }
+
     /// Overrides the prompt template.
     pub fn prompt(mut self, template: impl Into<String>) -> Self {
         self.wit = self.wit.prompt(template);
@@ -76,6 +82,12 @@ impl<T: Clone> Combobulator<T> {
     /// Mutable variant of [`prompt`].
     pub fn set_prompt(&mut self, template: impl Into<String>) -> &mut Self {
         self.wit = self.wit.clone().prompt(template);
+        self
+    }
+
+    /// Mutable variant of [`name`].
+    pub fn set_name(&mut self, name: impl Into<String>) -> &mut Self {
+        self.wit = self.wit.clone().name(name);
         self
     }
 
