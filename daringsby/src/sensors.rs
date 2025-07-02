@@ -6,6 +6,8 @@
 /// ```
 #[cfg(feature = "development-status-sensor")]
 pub use crate::development_status::DevelopmentStatus;
+#[cfg(all(feature = "heard-self-sensor", feature = "heard-user-sensor"))]
+pub use crate::ear::Ear;
 #[cfg(feature = "heard-self-sensor")]
 pub use crate::heard_self_sensor::HeardSelfSensor;
 #[cfg(feature = "heard-user-sensor")]
