@@ -135,14 +135,15 @@ impl Voice {
                                 )
                                 .await;
                             });
-
                             let mut buf = String::new();
+                            let mut reply = String::new();
                             while let Some(tok) = llm_stream.next().await {
                                 match tok {
                                     Ok(t) => {
                                         trace!(agent=%name, %t, "voice llm token");
                                         if !t.contains('<') && !t.contains('>') {
                                             buf.push_str(&t);
+                                            reply.push_str(&t);
                                         }
                                         let _ = tok_tx.send(Ok(t));
 

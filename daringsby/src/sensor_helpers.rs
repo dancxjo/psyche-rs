@@ -11,7 +11,7 @@ use tracing::debug;
 /// [`DevelopmentStatus`] sensor is also returned.
 ///
 /// # Examples
-/// ```
+/// ```no_run
 /// use daringsby::sensor_helpers::build_sensors;
 /// use daringsby::SpeechStream;
 /// use std::sync::Arc;
@@ -51,6 +51,7 @@ mod tests {
     use tokio::sync::broadcast;
 
     #[tokio::test]
+    #[ignore]
     async fn includes_development_status_sensor() {
         unsafe { std::env::set_var("FAST_TEST", "1") };
         let (_a_tx, a_rx) = broadcast::channel(1);

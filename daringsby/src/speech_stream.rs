@@ -27,6 +27,7 @@ use tracing::{error, warn};
 pub struct SpeechStream {
     tts_rx: Arc<Mutex<Receiver<Bytes>>>,
     text_rx: Arc<Mutex<Receiver<String>>>,
+    text_tx: Sender<String>,
     segment_rx: Arc<Mutex<Receiver<SpeechSegment>>>,
     heard_tx: Sender<String>,
     user_tx: Sender<String>,
@@ -41,13 +42,25 @@ impl SpeechStream {
     ) -> Self {
         let (heard_tx, _) = broadcast::channel(32);
         let (user_tx, _) = broadcast::channel(32);
-        Self {
+        let (text_tx, text_rx_out) = broadcast::channel(32);
+        let stream = Self {
             tts_rx: Arc::new(Mutex::new(audio_rx)),
-            text_rx: Arc::new(Mutex::new(text_rx)),
+            text_rx: Arc::new(Mutex::new(text_rx_out)),
+            text_tx: text_tx.clone(),
             segment_rx: Arc::new(Mutex::new(segment_rx)),
-            heard_tx,
+            heard_tx: heard_tx.clone(),
             user_tx,
-        }
+        };
+
+        tokio::spawn(async move {
+            let mut src = text_rx;
+            while let Ok(t) = src.recv().await {
+                let _ = text_tx.send(t.clone());
+                let _ = heard_tx.send(t);
+            }
+        });
+
+        stream
     }
 
     /// Build an [`axum::Router`] exposing the WebSocket streaming routes.
@@ -339,5 +352,24 @@ mod tests {
         ws.send(WsMessage::Text("hi".into())).await.unwrap();
         let msg = rx_user.recv().await.unwrap();
         assert_eq!(msg, "hi");
+    }
+
+    /// Text spoken by the mouth is broadcast as heard self.
+    #[tokio::test]
+    async fn forwards_mouth_text_to_heard() {
+        let (_a_tx, a_rx) = broadcast::channel(1);
+        let (t_tx, t_rx) = broadcast::channel(1);
+        let (_s_tx, s_rx) = broadcast::channel(1);
+        let stream = SpeechStream::new(a_rx, t_rx, s_rx);
+        let mut heard = stream.subscribe_heard();
+
+        t_tx.send("hello".to_string()).unwrap();
+
+        let text = tokio::time::timeout(std::time::Duration::from_millis(50), heard.recv())
+            .await
+            .expect("no heard text")
+            .unwrap();
+
+        assert_eq!(text, "hello");
     }
 }
