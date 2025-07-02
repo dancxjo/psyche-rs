@@ -42,3 +42,4 @@
 - When throttling duplicate Will snapshots, hash the serialized snapshot and
   skip LLM calls within `min_llm_interval_ms`; ensure tests cover this logic.
 - Keep `WillRuntimeConfig` in sync with fields used by `Will` runtimes.
+- Log all memory store errors at `error` level.

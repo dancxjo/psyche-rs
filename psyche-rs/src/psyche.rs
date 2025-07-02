@@ -5,7 +5,7 @@ use futures::{
     StreamExt,
     stream::{self, BoxStream},
 };
-use tracing::{debug, info, trace, warn};
+use tracing::{debug, error, info, trace, warn};
 
 use crate::Intention;
 
@@ -241,6 +241,7 @@ fn persist_impression<T: serde::Serialize>(
     imp: &Impression<T>,
     kind: &str,
 ) -> anyhow::Result<()> {
+    debug!("persisting impression");
     let mut sensation_ids = Vec::new();
     for s in &imp.what {
         let sid = uuid::Uuid::new_v4().to_string();
@@ -251,7 +252,10 @@ fn persist_impression<T: serde::Serialize>(
             when: s.when.with_timezone(&Utc),
             data: serde_json::to_string(&s.what)?,
         };
-        store.store_sensation(&stored)?;
+        store.store_sensation(&stored).map_err(|e| {
+            error!(?e, "store_sensation failed");
+            e
+        })?;
     }
     let stored_imp = StoredImpression {
         id: uuid::Uuid::new_v4().to_string(),
@@ -261,7 +265,10 @@ fn persist_impression<T: serde::Serialize>(
         sensation_ids,
         impression_ids: Vec::new(),
     };
-    store.store_impression(&stored_imp)
+    store.store_impression(&stored_imp).map_err(|e| {
+        error!(?e, "store_impression failed");
+        e
+    })
 }
 
 #[cfg(test)]
