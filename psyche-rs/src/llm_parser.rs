@@ -26,6 +26,7 @@ pub async fn drive_llm_stream<T>(
     T: Clone + Default + Send + 'static + serde::Serialize + for<'de> serde::Deserialize<'de>,
 {
     let mut buf = String::new();
+    let mut full_text = String::new();
     let mut state: Option<(String, String, String, UnboundedSender<String>)> = None;
     let mut pending_text = String::new();
     let mut shutdown = Box::pin(crate::shutdown_signal()).fuse();
@@ -37,6 +38,7 @@ pub async fn drive_llm_stream<T>(
                     Some(Ok(tok)) => {
                         trace!(token = %tok, "Will received LLM token");
                         buf.push_str(&tok);
+                        full_text.push_str(&tok);
                     }
                     Some(Err(e)) => {
                         error!(?e, "llm token error");
@@ -62,7 +64,7 @@ pub async fn drive_llm_stream<T>(
     }
 
     flush_pending(&mut pending_text, &window, &thoughts_tx);
-    debug!(agent = %name, "LLM call ended");
+    debug!(agent = %name, %full_text, "LLM call ended");
     trace!("will llm stream finished");
 }
 
