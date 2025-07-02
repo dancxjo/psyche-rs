@@ -73,7 +73,7 @@ pub struct Will<T = serde_json::Value> {
     delay_ms: u64,
     window_ms: u64,
     window: Arc<Mutex<Vec<Sensation<T>>>>,
-    motors: Vec<MotorDescription>,
+    motors: Arc<[MotorDescription]>,
     motor_regex: OnceCell<Regex>,
     latest_instant: Arc<Mutex<String>>,
     latest_moment: Arc<Mutex<String>>,
@@ -88,7 +88,7 @@ struct WillRuntimeConfig<S, T> {
     delay: u64,
     window_ms: u64,
     window: Arc<Mutex<Vec<Sensation<T>>>>,
-    motors: Vec<MotorDescription>,
+    motors: Arc<[MotorDescription]>,
     latest_instant_store: Arc<Mutex<String>>,
     latest_moment_store: Arc<Mutex<String>>,
     thoughts_tx: Option<tokio::sync::mpsc::UnboundedSender<Vec<Sensation<String>>>>,
@@ -106,7 +106,7 @@ impl<T> Will<T> {
             delay_ms: 1000,
             window_ms: 60_000,
             window: Arc::new(Mutex::new(Vec::new())),
-            motors: Vec::new(),
+            motors: Arc::from(Vec::<MotorDescription>::new()),
             motor_regex: OnceCell::new(),
             latest_instant: Arc::new(Mutex::new(String::new())),
             latest_moment: Arc::new(Mutex::new(String::new())),
@@ -144,20 +144,24 @@ impl<T> Will<T> {
     }
 
     pub fn motor(mut self, name: impl Into<String>, description: impl Into<String>) -> Self {
-        self.motors.push(MotorDescription {
+        let mut list: Vec<MotorDescription> = self.motors.as_ref().to_vec();
+        list.push(MotorDescription {
             name: name.into(),
             description: description.into(),
         });
+        self.motors = Arc::from(list);
         let _ = self.motor_regex.take();
         debug!(motor_name = %self.motors.last().unwrap().name, "Will registered motor");
         self
     }
 
     pub fn register_motor(&mut self, motor: &dyn Motor) -> &mut Self {
-        self.motors.push(MotorDescription {
+        let mut list: Vec<MotorDescription> = self.motors.as_ref().to_vec();
+        list.push(MotorDescription {
             name: motor.name().to_string(),
             description: motor.description().to_string(),
         });
+        self.motors = Arc::from(list);
         let _ = self.motor_regex.take();
         debug!(motor_name = %motor.name(), "Will registered motor");
         self
@@ -377,7 +381,7 @@ impl<T> Will<T> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::test_helpers::StaticLLM;
+    use crate::{ActionResult, Intention, MotorError, test_helpers::StaticLLM};
     use std::sync::Arc;
 
     #[test]
@@ -396,5 +400,28 @@ mod tests {
         let will = Will::<serde_json::Value>::new(llm).motor("Write", "");
         assert!(will.contains_motor_action("<write/>"));
         assert!(will.contains_motor_action("<WRITE></WRITE>"));
+    }
+
+    struct DummyMotor;
+    #[async_trait::async_trait]
+    impl Motor for DummyMotor {
+        fn description(&self) -> &'static str {
+            "test"
+        }
+        fn name(&self) -> &'static str {
+            "dum"
+        }
+        async fn perform(&self, _intention: Intention) -> Result<ActionResult, MotorError> {
+            Ok(ActionResult::default())
+        }
+    }
+
+    #[test]
+    fn register_motor_updates_list() {
+        let llm = Arc::new(StaticLLM::new(""));
+        let mut will = Will::<serde_json::Value>::new(llm);
+        let motor = DummyMotor;
+        will.register_motor(&motor);
+        assert!(will.contains_motor_action("<dum></dum>"));
     }
 }
