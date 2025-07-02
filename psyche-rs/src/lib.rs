@@ -13,6 +13,7 @@ mod llm_parser;
 mod memory_sensor;
 mod memory_store;
 mod motor;
+mod motor_executor;
 mod neo_qdrant_store;
 mod ollama_llm;
 mod plain_describe;
@@ -47,6 +48,7 @@ pub use motor::{
     Action, ActionResult, Completion, Intention, Interruption, Motor, MotorError,
     SensorDirectingMotor,
 };
+pub use motor_executor::MotorExecutor;
 pub use neo_qdrant_store::NeoQdrantMemoryStore;
 pub use plain_describe::PlainDescribe;
 pub use psyche::Psyche;

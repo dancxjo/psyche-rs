@@ -157,6 +157,7 @@ where
         for m in self.motors.iter() {
             will.register_motor(m.as_ref());
         }
+        let executor = crate::MotorExecutor::new(self.motors.clone(), 4, 16);
         let sensors_for_will: Vec<_> = self
             .sensors
             .iter()
@@ -194,18 +195,7 @@ where
                             trace!(count = intentions.len(), "psyche received intentions");
                             for intention in intentions {
                                 debug!(?intention, "Psyche received intention");
-                                let target = intention.assigned_motor.clone();
-                                if let Some(motor) = self.motors.iter().find(|m| m.name() == target) {
-                                    debug!(target_motor = %motor.name(), "Psyche matched intention to motor");
-                                    let motor = motor.clone();
-                                    tokio::spawn(async move {
-                                        if let Err(e) = motor.perform(intention).await {
-                                            debug!(?e, "motor action failed");
-                                        }
-                                    });
-                                } else {
-                                    warn!(?intention, "Psyche could not match motor for intention");
-                                }
+                                executor.spawn_intention(intention);
                             }
                         }
                     }
