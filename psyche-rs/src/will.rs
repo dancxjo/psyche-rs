@@ -72,6 +72,8 @@ pub struct Will<T = serde_json::Value> {
     prompt: String,
     delay_ms: u64,
     window_ms: u64,
+    /// Minimum delay between LLM calls when the snapshot is unchanged.
+    min_llm_interval_ms: u64,
     window: Arc<Mutex<Vec<Sensation<T>>>>,
     motors: Arc<[MotorDescription]>,
     motor_regex: OnceCell<Regex>,
@@ -87,6 +89,7 @@ struct WillRuntimeConfig<S, T> {
     template: String,
     delay: u64,
     window_ms: u64,
+    min_llm_interval_ms: u64,
     window: Arc<Mutex<Vec<Sensation<T>>>>,
     motors: Arc<[MotorDescription]>,
     latest_instant_store: Arc<Mutex<String>>,
@@ -105,6 +108,7 @@ impl<T> Will<T> {
             prompt: DEFAULT_PROMPT.to_string(),
             delay_ms: 1000,
             window_ms: 60_000,
+            min_llm_interval_ms: 0,
             window: Arc::new(Mutex::new(Vec::new())),
             motors: Arc::from(Vec::<MotorDescription>::new()),
             motor_regex: OnceCell::new(),
@@ -132,6 +136,12 @@ impl<T> Will<T> {
 
     pub fn window_ms(mut self, ms: u64) -> Self {
         self.window_ms = ms;
+        self
+    }
+
+    /// Sets the minimum interval between LLM calls when the snapshot hasn't changed.
+    pub fn min_llm_interval_ms(mut self, ms: u64) -> Self {
+        self.min_llm_interval_ms = ms;
         self
     }
 
@@ -207,6 +217,7 @@ impl<T> Will<T> {
             template: self.prompt.clone(),
             delay: self.delay_ms,
             window_ms: self.window_ms,
+            min_llm_interval_ms: self.min_llm_interval_ms,
             window: self.window.clone(),
             motors: self.motors.clone(),
             latest_instant_store: self.latest_instant.clone(),
@@ -236,6 +247,7 @@ impl<T> Will<T> {
             template,
             delay,
             window_ms,
+            min_llm_interval_ms,
             window,
             motors,
             latest_instant_store,
@@ -252,6 +264,8 @@ impl<T> Will<T> {
             let mut sensor_stream = stream::select_all(streams);
             let mut pending: Vec<Sensation<T>> = Vec::new();
             let mut llm_handle: Option<AbortGuard> = None;
+            let mut last_hash: Option<Vec<u8>> = None;
+            let mut last_time: Option<std::time::Instant> = None;
 
             loop {
                 tokio::select! {
@@ -298,6 +312,28 @@ impl<T> Will<T> {
                         }
 
                         trace!(snapshot_len = snapshot.len(), "Will captured snapshot");
+
+                        let snapshot_hash = match serde_json::to_vec(&snapshot) {
+                            Ok(bytes) => {
+                                use sha2::{Digest, Sha256};
+                                let mut hasher = Sha256::new();
+                                hasher.update(&bytes);
+                                hasher.finalize().to_vec()
+                            }
+                            Err(e) => {
+                                warn!(error=?e, "snapshot serialization failed");
+                                Vec::new()
+                            }
+                        };
+                        let now = std::time::Instant::now();
+                        if let (Some(h), Some(t)) = (&last_hash, last_time) {
+                            if *h == snapshot_hash && now.duration_since(t) < std::time::Duration::from_millis(min_llm_interval_ms) {
+                                trace!("Will throttling duplicate snapshot");
+                                continue;
+                            }
+                        }
+                        last_hash = Some(snapshot_hash);
+                        last_time = Some(now);
 
                         let situation = build_timeline_from_slice(&snapshot);
 
@@ -381,7 +417,12 @@ impl<T> Will<T> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{ActionResult, Intention, MotorError, test_helpers::StaticLLM};
+    use crate::{
+        ActionResult, Intention, MotorError,
+        llm_client::{LLMClient, LLMTokenStream},
+        test_helpers::StaticLLM,
+    };
+    use ollama_rs::generation::chat::ChatMessage;
     use std::sync::Arc;
 
     #[test]
@@ -423,5 +464,38 @@ mod tests {
         let motor = DummyMotor;
         will.register_motor(&motor);
         assert!(will.contains_motor_action("<dum></dum>"));
+    }
+
+    #[tokio::test]
+    async fn throttles_duplicate_snapshots() {
+        use crate::test_helpers::TestSensor;
+        use std::sync::atomic::{AtomicUsize, Ordering};
+
+        #[derive(Clone)]
+        struct CountLLM(Arc<AtomicUsize>);
+
+        #[async_trait::async_trait]
+        impl LLMClient for CountLLM {
+            async fn chat_stream(
+                &self,
+                _msgs: &[ChatMessage],
+            ) -> Result<LLMTokenStream, Box<dyn std::error::Error + Send + Sync>> {
+                self.0.fetch_add(1, Ordering::SeqCst);
+                Ok(Box::pin(futures::stream::empty()))
+            }
+        }
+
+        let calls = Arc::new(AtomicUsize::new(0));
+        let llm = Arc::new(CountLLM(calls.clone()));
+        let mut will = Will::new(llm)
+            .prompt("{template}")
+            .delay_ms(10)
+            .min_llm_interval_ms(50);
+        let sensor = TestSensor;
+        let (tx, rx) = tokio::sync::oneshot::channel();
+        let _stream = will.observe_with_abort(vec![sensor], Some(rx)).await;
+        tokio::time::sleep(std::time::Duration::from_millis(20)).await;
+        assert_eq!(calls.load(Ordering::SeqCst), 1);
+        let _ = tx.send(());
     }
 }
