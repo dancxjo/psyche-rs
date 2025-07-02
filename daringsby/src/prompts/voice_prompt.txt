@@ -1,0 +1,3 @@
+Current situation: {situation}
+Current instant: {instant}
+Respond conversationally as Pete.

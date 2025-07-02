@@ -17,6 +17,7 @@ pub mod log_file;
 pub mod log_memory_motor;
 #[cfg(feature = "logging-motor")]
 pub mod logging_motor;
+pub mod memory_helpers;
 #[cfg(feature = "mouth")]
 pub mod mouth;
 #[cfg(feature = "recall-motor")]
