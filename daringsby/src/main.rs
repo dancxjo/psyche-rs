@@ -12,11 +12,26 @@ use daringsby::{
     server_helpers::run_server,
 };
 use futures::StreamExt;
+use futures::stream::BoxStream;
 use psyche_rs::{
     Combobulator, Impression, ImpressionStreamSensor, InMemoryStore, Motor, Sensor, Will, Wit,
     shutdown_signal,
 };
 use tokio::sync::mpsc::unbounded_channel;
+
+async fn run_sensor_loop<I>(
+    mut stream: BoxStream<'static, Vec<I>>,
+    tx: tokio::sync::mpsc::UnboundedSender<Vec<I>>,
+    name: &str,
+) {
+    tracing::debug!("{} task started", name);
+    while let Some(batch) = stream.next().await {
+        if tx.send(batch).is_err() {
+            break;
+        }
+    }
+    tracing::info!("{} task finished", name);
+}
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -69,23 +84,25 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         motor_map.clone(),
     ));
 
-    let mut quick_task = Some(quick_task);
-    let mut combob_task = Some(combob_task);
-    let mut will_task = Some(will_task);
-
-    let mut quick = quick_task.take().unwrap();
-    let mut combob = combob_task.take().unwrap();
-    let mut will = will_task.take().unwrap();
+    let mut quick = Some(quick_task);
+    let mut combob = Some(combob_task);
+    let mut will = Some(will_task);
 
     tokio::select! {
         _ = shutdown_signal() => {
             tracing::info!("Shutdown signal received");
-            quick.abort();
-            combob.abort();
-            will.abort();
+            if let Some(h) = quick.take() { h.abort(); }
+            if let Some(h) = combob.take() { h.abort(); }
+            if let Some(h) = will.take() { h.abort(); }
             tracing::info!("Tasks aborted");
         }
-        res = async { tokio::try_join!(&mut quick, &mut combob, &mut will) } => {
+        res = async {
+            tokio::try_join!(
+                quick.take().unwrap(),
+                combob.take().unwrap(),
+                will.take().unwrap(),
+            )
+        } => {
             match res {
                 Ok(_) => tracing::info!("All tasks completed successfully"),
                 Err(e) => tracing::error!(error=?e, "A task failed"),
@@ -104,12 +121,8 @@ async fn run_quick(
     sensors: Vec<Box<dyn Sensor<String> + Send>>,
     tx: tokio::sync::mpsc::UnboundedSender<Vec<Impression<String>>>,
 ) {
-    let mut stream = quick.observe(sensors).await;
-    while let Some(batch) = stream.next().await {
-        if tx.send(batch).is_err() {
-            break;
-        }
-    }
+    let stream = quick.observe(sensors).await;
+    run_sensor_loop(stream, tx, "quick").await;
 }
 
 async fn run_combobulator(
@@ -117,35 +130,61 @@ async fn run_combobulator(
     sensors: Vec<Box<dyn Sensor<Impression<String>> + Send>>,
     tx: tokio::sync::mpsc::UnboundedSender<Vec<Impression<Impression<String>>>>,
 ) {
-    let mut stream = combob.observe(sensors).await;
-    while let Some(batch) = stream.next().await {
-        if tx.send(batch).is_err() {
-            break;
-        }
-    }
+    let stream = combob.observe(sensors).await;
+    run_sensor_loop(stream, tx, "combobulator").await;
 }
 
 async fn run_will(
     mut will: Will<Impression<Impression<String>>>,
     sensors: Vec<Box<dyn Sensor<Impression<Impression<String>>> + Send>>,
-    motors: std::collections::HashMap<String, Arc<dyn Motor>>,
+    motors: Arc<std::collections::HashMap<String, Arc<dyn Motor>>>,
 ) {
+    tracing::debug!("will task started");
     for m in motors.values() {
         will.register_motor(m.as_ref());
     }
-    let mut stream = will.observe(sensors).await;
-    while let Some(ints) = stream.next().await {
-        for intent in ints {
-            if let Some(motor) = motors.get(&intent.assigned_motor) {
-                let motor = motor.clone();
-                tokio::spawn(async move {
-                    if let Err(e) = motor.perform(intent).await {
-                        tracing::warn!(error=?e, "motor failed");
+    let stream = will.observe(sensors).await;
+    let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
+    tokio::spawn(run_sensor_loop(stream, tx, "will"));
+
+    let (intent_tx, intent_rx) = tokio::sync::mpsc::channel::<psyche_rs::Intention>(100);
+    let intent_rx = Arc::new(tokio::sync::Mutex::new(intent_rx));
+
+    const WORKERS: usize = 4;
+    for i in 0..WORKERS {
+        let motors = motors.clone();
+        let rx = intent_rx.clone();
+        tokio::spawn(async move {
+            tracing::debug!(worker = i, "motor worker started");
+            loop {
+                let opt = {
+                    let mut guard = rx.lock().await;
+                    guard.recv().await
+                };
+                match opt {
+                    Some(intention) => {
+                        if let Some(motor) = motors.get(&intention.assigned_motor) {
+                            if let Err(e) = motor.perform(intention).await {
+                                tracing::warn!(error=?e, "motor failed");
+                            }
+                        } else {
+                            tracing::warn!(motor=?intention.assigned_motor, "unknown motor");
+                        }
                     }
-                });
-            } else {
-                tracing::warn!(motor=?intent.assigned_motor, "unknown motor");
+                    None => break,
+                }
+            }
+            tracing::info!(worker = i, "motor worker finished");
+        });
+    }
+
+    while let Some(ints) = rx.recv().await {
+        for intent in ints {
+            if intent_tx.send(intent).await.is_err() {
+                break;
             }
         }
     }
+    drop(intent_tx);
+    tracing::info!("will task finished");
 }

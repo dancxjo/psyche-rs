@@ -22,7 +22,7 @@ pub fn build_motors(
     vision: Arc<VisionSensor>,
     canvas: Arc<CanvasStream>,
     store: Arc<InMemoryStore>,
-) -> (Vec<Arc<dyn Motor>>, HashMap<String, Arc<dyn Motor>>) {
+) -> (Vec<Arc<dyn Motor>>, Arc<HashMap<String, Arc<dyn Motor>>>) {
     use tokio::sync::mpsc::unbounded_channel;
 
     let (look_tx, _look_rx) = unbounded_channel::<Vec<Sensation<String>>>();
@@ -80,5 +80,5 @@ pub fn build_motors(
 
     let _ = svg_rx; // keep channel alive
 
-    (motors, map)
+    (motors, Arc::new(map))
 }
