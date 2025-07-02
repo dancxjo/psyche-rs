@@ -20,6 +20,7 @@
 - Use `httpmock` for HTTP-based tests to avoid external network dependencies.
 - Keep `.rs` files focused. Create a new source file for each new type and split
   large modules like `lib.rs` into smaller pieces.
+- Provide mutable `set_*` variants when adding builder methods to wrappers.
 - Use the `LLMClient` trait for streaming LLM interactions.
 - Avoid streaming silence frames when audio is not playing.
 - Format `Impression` values using their `how` string when included in prompts

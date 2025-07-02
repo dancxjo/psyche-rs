@@ -223,7 +223,7 @@ where
                         let last_frame_clone = last_frame.clone();
                         let name_clone = name.clone();
                         tokio::spawn(async move {
-                            debug!(agent = %name_clone, "LLM call started");
+                            debug!(agent = %name_clone, "LLM request START");
                             match llm_clone.chat_stream(&msgs).await {
                                 Ok(mut stream) => {
                                     let mut text = String::new();

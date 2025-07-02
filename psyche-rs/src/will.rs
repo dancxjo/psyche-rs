@@ -449,7 +449,7 @@ impl<T> Will<T> {
                         let name_clone = name.clone();
                         if let Some(h) = llm_handle.take() { drop(h); }
                         llm_handle = Some(AbortGuard::new(tokio::spawn(async move {
-                            debug!(agent = %name_clone, "LLM call started");
+                            debug!(agent = %name_clone, "LLM request START");
                             match llm_clone.chat_stream(&msgs).await {
                                 Ok(stream) => {
                                     crate::llm_parser::drive_llm_stream(
