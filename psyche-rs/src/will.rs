@@ -76,6 +76,8 @@ pub struct Will<T = serde_json::Value> {
     min_llm_interval_ms: u64,
     window: Arc<Mutex<Vec<Sensation<T>>>>,
     motors: Arc<[MotorDescription]>,
+    /// Precomputed list of motor descriptions formatted as lines.
+    motor_text: String,
     motor_regex: OnceCell<Regex>,
     latest_instant: Arc<Mutex<String>>,
     latest_moment: Arc<Mutex<String>>,
@@ -91,7 +93,7 @@ struct WillRuntimeConfig<S, T> {
     window_ms: u64,
     min_llm_interval_ms: u64,
     window: Arc<Mutex<Vec<Sensation<T>>>>,
-    motors: Arc<[MotorDescription]>,
+    motor_text: String,
     latest_instant_store: Arc<Mutex<String>>,
     latest_moment_store: Arc<Mutex<String>>,
     thoughts_tx: Option<tokio::sync::mpsc::UnboundedSender<Vec<Sensation<String>>>>,
@@ -111,6 +113,7 @@ impl<T> Will<T> {
             min_llm_interval_ms: 0,
             window: Arc::new(Mutex::new(Vec::new())),
             motors: Arc::from(Vec::<MotorDescription>::new()),
+            motor_text: String::new(),
             motor_regex: OnceCell::new(),
             latest_instant: Arc::new(Mutex::new(String::new())),
             latest_moment: Arc::new(Mutex::new(String::new())),
@@ -160,6 +163,7 @@ impl<T> Will<T> {
             description: description.into(),
         });
         self.motors = Arc::from(list);
+        self.rebuild_motor_text();
         let _ = self.motor_regex.take();
         debug!(motor_name = %self.motors.last().unwrap().name, "Will registered motor");
         self
@@ -172,9 +176,27 @@ impl<T> Will<T> {
             description: motor.description().to_string(),
         });
         self.motors = Arc::from(list);
+        self.rebuild_motor_text();
         let _ = self.motor_regex.take();
         debug!(motor_name = %motor.name(), "Will registered motor");
         self
+    }
+
+    /// Recompute the joined motor description string.
+    fn rebuild_motor_text(&mut self) {
+        self.motor_text = self
+            .motors
+            .iter()
+            .map(|m| format!("{}: {}", m.name, m.description))
+            .collect::<Vec<_>>()
+            .join("\n");
+    }
+
+    /// Returns the cached motor description list.
+    ///
+    /// Each line is formatted as `"name: description"`.
+    pub fn motor_text(&self) -> &str {
+        &self.motor_text
     }
 
     pub fn timeline(&self) -> String
@@ -219,7 +241,7 @@ impl<T> Will<T> {
             window_ms: self.window_ms,
             min_llm_interval_ms: self.min_llm_interval_ms,
             window: self.window.clone(),
-            motors: self.motors.clone(),
+            motor_text: self.motor_text.clone(),
             latest_instant_store: self.latest_instant.clone(),
             latest_moment_store: self.latest_moment.clone(),
             thoughts_tx: self.thoughts_tx.clone(),
@@ -249,13 +271,14 @@ impl<T> Will<T> {
             window_ms,
             min_llm_interval_ms,
             window,
-            motors,
+            motor_text,
             latest_instant_store,
             latest_moment_store,
             thoughts_tx,
             sensors,
             tx,
             mut abort,
+            ..
         } = config;
 
         tokio::spawn(async move {
@@ -337,11 +360,7 @@ impl<T> Will<T> {
 
                         let situation = build_timeline_from_slice(&snapshot);
 
-                        let motor_text = motors
-                            .iter()
-                            .map(|m| format!("{}: {}", m.name, m.description))
-                            .collect::<Vec<_>>()
-                            .join("\n");
+
 
                         let mut last_instant = String::new();
                         let mut last_moment = String::new();
@@ -464,6 +483,18 @@ mod tests {
         let motor = DummyMotor;
         will.register_motor(&motor);
         assert!(will.contains_motor_action("<dum></dum>"));
+    }
+
+    #[test]
+    fn precomputed_motor_text_updates() {
+        let llm = Arc::new(StaticLLM::new(""));
+        let mut will = Will::<serde_json::Value>::new(llm);
+        assert_eq!(will.motor_text(), "");
+        will = will.motor("say", "speak");
+        assert_eq!(will.motor_text(), "say: speak");
+        let motor = DummyMotor;
+        will.register_motor(&motor);
+        assert_eq!(will.motor_text(), "say: speak\ndum: test");
     }
 
     #[tokio::test]
