@@ -14,7 +14,6 @@
 
 /// Waits for either `Ctrl+C` or `SIGTERM` (on Unix) to be received.
 pub async fn shutdown_signal() {
-    tracing::debug!("awaiting shutdown signal");
     #[cfg(unix)]
     {
         use tokio::signal::unix::{SignalKind, signal};
