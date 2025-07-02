@@ -157,7 +157,7 @@ where
         for m in self.motors.iter() {
             will.register_motor(m.as_ref());
         }
-        let executor = crate::MotorExecutor::new(self.motors.clone(), 4, 16);
+        let executor = crate::MotorExecutor::new(self.motors.clone(), 4, 16, self.store.clone());
         let sensors_for_will: Vec<_> = self
             .sensors
             .iter()

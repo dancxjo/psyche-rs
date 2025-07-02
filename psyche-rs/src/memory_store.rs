@@ -91,6 +91,17 @@ impl InMemoryStore {
     }
 }
 
+#[cfg(test)]
+impl InMemoryStore {
+    pub fn sensation_count(&self) -> usize {
+        self.sensations.lock().unwrap().len()
+    }
+
+    pub fn impression_count(&self) -> usize {
+        self.impressions.lock().unwrap().len()
+    }
+}
+
 impl MemoryStore for InMemoryStore {
     fn store_sensation(&self, sensation: &StoredSensation) -> anyhow::Result<()> {
         self.sensations

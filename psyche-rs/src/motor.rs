@@ -145,6 +145,15 @@ impl Serialize for Intention {
     }
 }
 
+impl std::fmt::Display for Intention {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match serde_json::to_string(self) {
+            Ok(s) => write!(f, "{}", s),
+            Err(_) => Err(std::fmt::Error),
+        }
+    }
+}
+
 /// Metadata describing an interruption to an action.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Interruption {
