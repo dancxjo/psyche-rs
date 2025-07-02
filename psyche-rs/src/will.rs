@@ -1,7 +1,7 @@
 use std::sync::{Arc, Mutex};
 
 use futures::{
-    FutureExt, StreamExt,
+    StreamExt,
     stream::{self, BoxStream},
 };
 use tokio::sync::mpsc::unbounded_channel;
@@ -11,15 +11,17 @@ use tracing::{debug, error, trace, warn};
 use regex::Regex;
 
 use crate::llm_client::LLMClient;
-use crate::{Action, Intention, Motor, PlainDescribe, Sensation, Sensor, render_template};
+use crate::timeline::build_timeline_from_slice;
+use crate::{Intention, Motor, PlainDescribe, Sensation, Sensor, render_template};
 use ollama_rs::generation::chat::ChatMessage;
-use serde_json::{Map, Value};
 
 /// Placeholder prompt text for [`Will`].
 ///
 /// Applications should provide their own narrative prompt text when
 /// constructing a [`Will`] instance.
 const DEFAULT_PROMPT: &str = "";
+/// Maximum number of sensations retained in the window.
+const WINDOW_CAP: usize = 1000;
 
 /// Returns a prefix of `s` that fits within `max_bytes` without splitting UTF-8
 /// characters.
@@ -235,9 +237,6 @@ impl<T> Will<T> {
             let mut pending: Vec<Sensation<T>> = Vec::new();
             let mut llm_handle: Option<tokio::task::JoinHandle<()>> = None;
 
-            let start_re = Regex::new(r"^<([a-zA-Z0-9_]+)([^>]*)>").unwrap();
-            let attr_re = Regex::new(r#"([a-zA-Z0-9_]+)="([^"]*)""#).unwrap();
-
             loop {
                 tokio::select! {
                     _ = async {
@@ -247,12 +246,10 @@ impl<T> Will<T> {
                             futures::future::pending::<()>().await;
                         }
                     } => {
-                        if let Some(h) = llm_handle.take() { h.abort(); }
                         debug!(agent=%name, "Will runtime aborted");
                         break;
                     }
                     _ = crate::shutdown_signal() => {
-                        if let Some(h) = llm_handle.take() { h.abort(); }
                         debug!(agent=%name, "Will runtime shutting down");
                         break;
                     }
@@ -266,15 +263,16 @@ impl<T> Will<T> {
                         }
 
                         trace!("will loop tick");
-                        {
+                        let snapshot = {
                             let mut w = window.lock().unwrap();
                             w.extend(pending.drain(..));
                             let cutoff = chrono::Local::now() - chrono::Duration::milliseconds(window_ms as i64);
                             w.retain(|s| s.when > cutoff);
-                        }
-
-                        let snapshot = {
-                            let w = window.lock().unwrap();
+                            if w.len() > WINDOW_CAP {
+                                let drop = w.len() - WINDOW_CAP;
+                                w.drain(0..drop);
+                                trace!(drop, "Will truncated window");
+                            }
                             w.clone()
                         };
 
@@ -285,7 +283,7 @@ impl<T> Will<T> {
 
                         trace!(snapshot_len = snapshot.len(), "Will captured snapshot");
 
-                        let situation = crate::build_timeline(&window);
+                        let situation = build_timeline_from_slice(&snapshot);
 
                         let motor_text = motors
                             .iter()
@@ -334,152 +332,19 @@ impl<T> Will<T> {
                         let tx_clone = tx.clone();
                         let window_clone = window.clone();
                         let thoughts_tx_clone = thoughts_tx.clone();
-                        let start_re_clone = start_re.clone();
-                        let attr_re_clone = attr_re.clone();
                         let name_clone = name.clone();
                         if let Some(h) = llm_handle.take() { h.abort(); }
                         llm_handle = Some(tokio::spawn(async move {
                             debug!(agent = %name_clone, "LLM call started");
                             match llm_clone.chat_stream(&msgs).await {
-                                Ok(mut stream) => {
-                                    let mut buf = String::new();
-                                    let mut state: Option<(String, String, String, tokio::sync::mpsc::UnboundedSender<String>)> = None;
-                                    let mut pending_text = String::new();
-                                    let mut shutdown = Box::pin(crate::shutdown_signal()).fuse();
-
-                                    loop {
-                                        tokio::select! {
-                                            tok = stream.next() => {
-                                                match tok {
-                                                    Some(Ok(tok)) => {
-                                                        trace!(token = %tok, "Will received LLM token");
-                                                        buf.push_str(&tok);
-                                                    }
-                                                    Some(Err(e)) => {
-                                                        error!(?e, "llm token error");
-                                                        break;
-                                                    }
-                                                    None => break,
-                                                }
-                                            }
-                                            _ = &mut shutdown => {
-                                                warn!("Will LLM stream interrupted");
-                                                break;
-                                            }
-                                        }
-
-                                        loop {
-                                            if let Some((ref _name, ref closing, ref closing_lower, ref tx_body)) = state {
-                                                if let Some(pos) = buf.to_ascii_lowercase().find(closing_lower) {
-                                                    if pos > 0 {
-                                                        let prefix = safe_prefix(&buf, pos);
-                                                        let _ = tx_body.send(prefix.to_string());
-                                                    }
-                                                    let drain_len = safe_prefix(&buf, pos + closing.len()).len();
-                                                    buf.drain(..drain_len);
-                                                    state = None;
-                                                    break;
-                                                } else if buf.len() > closing.len() {
-                                                    let send_len = buf.len() - closing.len();
-                                                    let prefix = safe_prefix(&buf, send_len);
-                                                    let _ = tx_body.send(prefix.to_string());
-                                                    buf.drain(..prefix.len());
-                                                    break;
-                                                } else if let Some(caps) = start_re_clone.captures(&buf) {
-                                                    if !pending_text.trim().is_empty() {
-                                                        if let Ok(what) = serde_json::from_value::<T>(
-                                                            Value::String(pending_text.trim().to_string()),
-                                                        ) {
-                                                            let sensation = Sensation {
-                                                                kind: "thought".into(),
-                                                                when: chrono::Local::now(),
-                                                                what,
-                                                                source: None,
-                                                            };
-                                                            window_clone.lock().unwrap().push(sensation);
-                                                        }
-                                                        if let Some(tx) = &thoughts_tx_clone {
-                                                            let s = Sensation {
-                                                                kind: "thought".into(),
-                                                                when: chrono::Local::now(),
-                                                                what: format!("I thought to myself: {}", pending_text.trim()),
-                                                                source: None,
-                                                            };
-                                                            let _ = tx.send(vec![s]);
-                                                        }
-                                                        pending_text.clear();
-                                                    }
-
-                                                    let tag = caps.get(1).unwrap().as_str().to_ascii_lowercase();
-                                                    let attrs = caps.get(2).map(|m| m.as_str()).unwrap_or("");
-                                                    let mut map = Map::new();
-                                                    for cap in attr_re_clone.captures_iter(attrs) {
-                                                        map.insert(cap[1].to_string(), Value::String(cap[2].to_string()));
-                                                    }
-                                                    let closing = format!("</{}>", tag);
-                                                    let closing_lower = closing.to_ascii_lowercase();
-
-                                                    let _ = buf.drain(..caps.get(0).unwrap().end());
-
-                                                    let (btx, brx) = unbounded_channel();
-                                                    let action = Action::new(tag.clone(), Value::Object(map.clone()), UnboundedReceiverStream::new(brx).boxed());
-                                                    let intention = Intention::to(action).assign(tag.clone());
-
-                                                    debug!(motor_name = %tag, "Will assigned motor on intention");
-                                                    debug!(?intention, "Will built intention");
-
-                                                    let val = serde_json::to_value(&intention).unwrap();
-                                                    let what = serde_json::from_value(val).unwrap_or_default();
-                                                    window_clone.lock().unwrap().push(Sensation {
-                                                        kind: "intention".into(),
-                                                        when: chrono::Local::now(),
-                                                        what,
-                                                        source: None,
-                                                    });
-
-                                                    let _ = tx_clone.send(vec![intention]);
-                                                    state = Some((tag, closing, closing_lower, btx));
-                                                } else if let Some(idx) = buf.find('<') {
-                                                    let prefix = safe_prefix(&buf, idx);
-                                                    pending_text.push_str(prefix);
-                                                    buf.drain(..prefix.len());
-                                                    break;
-                                                } else {
-                                                    if !buf.is_empty() {
-                                                        pending_text.push_str(&buf);
-                                                    }
-                                                    buf.clear();
-                                                    break;
-                                                }
-                                            }
-                                        }
-                                    }
-
-                                    if !pending_text.trim().is_empty() {
-                                        if let Ok(what) = serde_json::from_value::<T>(
-                                            Value::String(pending_text.trim().to_string()),
-                                        ) {
-                                            let sensation = Sensation {
-                                                kind: "thought".into(),
-                                                when: chrono::Local::now(),
-                                                what,
-                                                source: None,
-                                            };
-                                            window_clone.lock().unwrap().push(sensation);
-                                        }
-                                        if let Some(tx) = &thoughts_tx_clone {
-                                            let s = Sensation {
-                                                kind: "thought".into(),
-                                                when: chrono::Local::now(),
-                                                what: format!("I thought to myself: {}", pending_text.trim()),
-                                                source: None,
-                                            };
-                                            let _ = tx.send(vec![s]);
-                                        }
-                                    }
-
-                                    debug!(agent = %name_clone, "LLM call ended");
-                                    trace!("will llm stream finished");
+                                Ok(stream) => {
+                                    crate::llm_parser::drive_llm_stream(
+                                        &name_clone,
+                                        stream,
+                                        window_clone,
+                                        tx_clone,
+                                        thoughts_tx_clone,
+                                    ).await;
                                 }
                                 Err(err) => {
                                     error!(?err, "llm streaming failed");

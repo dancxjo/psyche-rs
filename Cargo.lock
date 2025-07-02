@@ -1959,6 +1959,7 @@ dependencies = [
  "futures",
  "httpmock",
  "ollama-rs",
+ "once_cell",
  "rand",
  "regex",
  "reqwest",
