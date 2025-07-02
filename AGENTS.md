@@ -10,6 +10,7 @@
 - Run `cargo fmt` before committing changes.
 - Instrument code with tracing logs at appropriate levels.
 - Emit `trace` level logs for all LLM prompts and streaming token events.
+- Log the complete response from every LLM call at `debug` level.
 - When implementing test memory stores that persist `Memory::Of`, clone the inner
   value before saving to prevent panics when cloning.
 - Ensure every async call is awaited unless intentionally detached with
