@@ -48,7 +48,7 @@ impl Sensor<String> for HeardSelfSensor {
                     template.clone()
                 });
                 vec![Sensation {
-                    kind: "heard.self".into(),
+                    kind: "self_audio".into(),
                     when: Local::now(),
                     what,
                     source: None,

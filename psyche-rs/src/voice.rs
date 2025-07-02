@@ -206,8 +206,6 @@ impl Voice {
                                 }
                             }
                             drop(tok_tx);
-                            debug!(agent=%name, %reply, "llm full response");
-                            convo.lock().unwrap().push_assistant(&reply);
                         }
                         Err(e) => {
                             warn!(?e, "voice llm failed");
