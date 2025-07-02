@@ -13,7 +13,7 @@ use regex::Regex;
 
 use crate::llm_client::LLMClient;
 use crate::timeline::build_timeline_from_slice;
-use crate::{Intention, Motor, PlainDescribe, Sensation, Sensor, render_template};
+use crate::{AbortGuard, Intention, Motor, PlainDescribe, Sensation, Sensor, render_template};
 use ollama_rs::generation::chat::ChatMessage;
 
 /// Placeholder prompt text for [`Will`].
@@ -251,7 +251,7 @@ impl<T> Will<T> {
             let streams: Vec<_> = sensors.into_iter().map(|mut s| s.stream()).collect();
             let mut sensor_stream = stream::select_all(streams);
             let mut pending: Vec<Sensation<T>> = Vec::new();
-            let mut llm_handle: Option<tokio::task::JoinHandle<()>> = None;
+            let mut llm_handle: Option<AbortGuard> = None;
 
             loop {
                 tokio::select! {
@@ -349,8 +349,8 @@ impl<T> Will<T> {
                         let window_clone = window.clone();
                         let thoughts_tx_clone = thoughts_tx.clone();
                         let name_clone = name.clone();
-                        if let Some(h) = llm_handle.take() { h.abort(); }
-                        llm_handle = Some(tokio::spawn(async move {
+                        if let Some(h) = llm_handle.take() { drop(h); }
+                        llm_handle = Some(AbortGuard::new(tokio::spawn(async move {
                             debug!(agent = %name_clone, "LLM call started");
                             match llm_clone.chat_stream(&msgs).await {
                                 Ok(stream) => {
@@ -366,12 +366,12 @@ impl<T> Will<T> {
                                     error!(?err, "llm streaming failed");
                                 }
                             }
-                        }));
+                        })));
                     }
                 }
             }
             if let Some(h) = llm_handle.take() {
-                h.abort();
+                drop(h);
             }
             debug!(agent=%name, "Will thread exiting");
         })
