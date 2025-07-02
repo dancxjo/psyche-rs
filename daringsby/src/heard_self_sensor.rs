@@ -48,7 +48,6 @@ impl Sensor<String> for HeardSelfSensor {
                     template.clone()
                 });
                 vec![Sensation {
-                    kind: "utterance.spoken".into(),
                     when: Local::now(),
                     what,
                     source: None,
@@ -74,7 +73,6 @@ mod tests {
         let mut stream = sensor.stream();
         let batch = stream.next().await.unwrap();
         assert_eq!(batch[0].what, "I heard myself say out loud: \"Hello\"");
-        assert_eq!(batch[0].kind, "utterance.spoken");
         assert!(batch[0].when >= start && batch[0].when <= Local::now());
     }
 

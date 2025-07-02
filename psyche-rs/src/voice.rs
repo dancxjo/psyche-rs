@@ -90,7 +90,7 @@ impl Voice {
             let mut pending: VecDeque<String> = VecDeque::new();
             while let Some(batch) = stream.next().await {
                 for s in batch {
-                    if s.kind == "utterance.spoken" {
+                    if s.kind == "self_audio" {
                         if let Some(sent) = pending.pop_front() {
                             convo.lock().unwrap().push_assistant(&sent);
                         }
