@@ -37,3 +37,5 @@
 - Comment out or ignore tests that consistently hang for over 60s.
 - When spawning long-running tasks, keep the `JoinHandle` and abort it on
   shutdown to ensure HTTP connections close quickly.
+- When throttling duplicate Will snapshots, hash the serialized snapshot and
+  skip LLM calls within `min_llm_interval_ms`; ensure tests cover this logic.
