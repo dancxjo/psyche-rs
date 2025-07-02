@@ -234,6 +234,7 @@ where
                                     if text.trim().is_empty() {
                                         text = "No meaningful observation was made.".to_string();
                                     }
+                                    debug!(agent = %name_clone, %text, "llm full response");
                                     *last_frame_clone.lock().unwrap() = text.clone();
                                     let impressions: Vec<Impression<T>> = split_single(&text, SegmentConfig::default())
                                         .into_iter()

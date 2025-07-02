@@ -84,6 +84,7 @@ impl<M: MemoryStore, C: LLMClient> ClusterAnalyzer<M, C> {
                 tracing::trace!(%tok, "summary_token");
                 out.push_str(&tok);
             }
+            tracing::debug!(%out, "llm full response");
             let summary = StoredImpression {
                 id: uuid::Uuid::new_v4().to_string(),
                 kind: "Summary".into(),

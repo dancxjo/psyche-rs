@@ -97,6 +97,7 @@ where
         while let Some(tok) = stream.next().await {
             out.push_str(&tok?);
         }
+        tracing::debug!(%out, "llm full response");
         Ok(out)
     })
 }
