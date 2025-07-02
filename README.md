@@ -60,17 +60,13 @@ Pete is not merely a robot, nor a chatbot. He is:
 ```bash
 cargo build --release
 cargo run -- \
-  --quick-url http://localhost:11434 \
-  --combob-url http://localhost:11434 \
-  --will-url http://localhost:11434 \
+  --base-url http://localhost:11434 \
   --tts-url http://localhost:5002
 ````
 
 Available options (see `main.rs`):
 
-* `--quick-url`: Ollama URL for Quick (default: `http://localhost:11434`)
-* `--combob-url`: Ollama URL for Combobulator (default: `http://localhost:11434`)
-* `--will-url`: Ollama URL for Will (default: `http://localhost:11434`)
+* `--base-url`: Ollama base URL. Repeat to add more servers (default: `http://localhost:11434`)
 * `--quick-model`: Model used for Quick tasks (default: `gemma3:27b`)
 * `--combob-model`: Model used for Combobulator tasks (default: `gemma3:27b`)
 * `--will-model`: Model used for Will tasks (default: `gemma3:27b`)

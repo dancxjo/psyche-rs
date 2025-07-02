@@ -1,5 +1,5 @@
 use crate::args::Args;
-use psyche_rs::{LLMClient, OllamaLLM};
+use psyche_rs::{FairLLM, LLMClient, OllamaLLM, RoundRobinLLM};
 use reqwest::Client;
 use std::sync::Arc;
 use url::Url;
@@ -11,6 +11,22 @@ fn build_ollama(client: &Client, base: &str) -> ollama_rs::Ollama {
     ollama_rs::Ollama::new_with_client(host, port, client.clone())
 }
 
+fn build_pool(base_urls: &[String], model: &str) -> Arc<dyn LLMClient> {
+    let clients: Vec<Arc<dyn LLMClient>> = base_urls
+        .iter()
+        .map(|base| {
+            let http = Client::builder()
+                .pool_max_idle_per_host(10)
+                .build()
+                .expect("ollama http client");
+            Arc::new(OllamaLLM::new(build_ollama(&http, base), model.to_string()))
+                as Arc<dyn LLMClient>
+        })
+        .collect();
+    let rr = RoundRobinLLM::new(clients);
+    Arc::new(FairLLM::new(rr, base_urls.len())) as Arc<dyn LLMClient>
+}
+
 /// Build all Ollama LLM clients.
 pub fn build_ollama_clients(
     args: &Args,
@@ -20,35 +36,10 @@ pub fn build_ollama_clients(
     Arc<dyn LLMClient>,
     Arc<dyn LLMClient>,
 ) {
-    let quick_http = Client::builder()
-        .pool_max_idle_per_host(10)
-        .build()
-        .expect("quick http client");
-    let combob_http = Client::builder()
-        .pool_max_idle_per_host(10)
-        .build()
-        .expect("combob http client");
-    let will_http = Client::builder()
-        .pool_max_idle_per_host(10)
-        .build()
-        .expect("will http client");
-
-    let quick_llm: Arc<dyn LLMClient> = Arc::new(OllamaLLM::new(
-        build_ollama(&quick_http, &args.quick_url),
-        args.quick_model.clone(),
-    ));
-    let combob_llm: Arc<dyn LLMClient> = Arc::new(OllamaLLM::new(
-        build_ollama(&combob_http, &args.combob_url),
-        args.combob_model.clone(),
-    ));
-    let will_llm: Arc<dyn LLMClient> = Arc::new(OllamaLLM::new(
-        build_ollama(&will_http, &args.will_url),
-        args.will_model.clone(),
-    ));
-    let memory_llm: Arc<dyn LLMClient> = Arc::new(OllamaLLM::new(
-        build_ollama(&quick_http, &args.quick_url),
-        args.memory_model.clone(),
-    ));
+    let quick_llm = build_pool(&args.base_url, &args.quick_model);
+    let combob_llm = build_pool(&args.base_url, &args.combob_model);
+    let will_llm = build_pool(&args.base_url, &args.will_model);
+    let memory_llm = build_pool(&args.base_url, &args.memory_model);
 
     (quick_llm, combob_llm, will_llm, memory_llm)
 }
