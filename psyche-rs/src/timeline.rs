@@ -33,7 +33,16 @@ pub fn build_timeline<T>(window: &Arc<Mutex<Vec<Sensation<T>>>>) -> String
 where
     T: Serialize + Clone,
 {
-    let mut sensations = window.lock().unwrap().clone();
+    let sensations = window.lock().unwrap().clone();
+    build_timeline_from_slice(&sensations)
+}
+
+/// Builds a textual timeline from a snapshot of sensations.
+pub fn build_timeline_from_slice<T>(snapshot: &[Sensation<T>]) -> String
+where
+    T: Serialize + Clone,
+{
+    let mut sensations = snapshot.to_vec();
     sensations.sort_by_key(|s| s.when);
     sensations.dedup_by(|a, b| {
         if a.kind != b.kind {
@@ -83,5 +92,9 @@ mod tests {
         let lines: Vec<_> = tl.lines().collect();
         assert_eq!(lines.len(), 1);
         assert!(lines[0].contains("\"hi\""));
+
+        let snapshot = win.lock().unwrap().clone();
+        let tl2 = build_timeline_from_slice(&snapshot);
+        assert_eq!(tl, tl2);
     }
 }

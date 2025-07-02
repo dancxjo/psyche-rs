@@ -8,6 +8,7 @@ mod combobulator;
 mod fair_llm;
 mod impression;
 mod llm_client;
+mod llm_parser;
 mod llm_pool;
 mod memory_sensor;
 mod memory_store;
