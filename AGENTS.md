@@ -27,6 +27,7 @@
     stream data chunked.
 - Use `src/test_helpers.rs` for shared test utilities like `StaticLLM`,
   `TestSensor` and `TwoBatch`.
+- Doc tests must not depend on modules behind `#[cfg(test)]`.
 - Avoid panicking when sensors are reused; prefer returning an empty stream or
   clearly documenting single-use behavior.
 - When modifying canvas-related code, run `cargo test --workspace` to verify
