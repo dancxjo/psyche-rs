@@ -5,8 +5,10 @@ use tokio_stream::wrappers::BroadcastStream;
 
 use psyche_rs::{Sensation, Sensor, render_template};
 
-/// Sensor emitting sensations when the agent hears a user speaking.
-/// Each text received is wrapped in a sentence describing the event.
+/// Sensor emitting sensations when the agent hears an interlocutor speaking.
+/// Each utterance is passed through as-is by default so the voice receives
+/// clean chat messages. A custom template may be provided if narrative phrasing
+/// is desired.
 pub struct HeardUserSensor {
     rx: Option<Receiver<String>>,
     template: String,
@@ -15,7 +17,7 @@ pub struct HeardUserSensor {
 impl HeardUserSensor {
     /// Create a new sensor from the given broadcast receiver.
     pub fn new(rx: Receiver<String>) -> Self {
-        Self::with_template(rx, "I heard the user say: \"{text}\"")
+        Self::with_template(rx, "{text}")
     }
 
     /// Create a sensor with a custom phrase template.
@@ -47,7 +49,7 @@ impl Sensor<String> for HeardUserSensor {
                     template.clone()
                 });
                 vec![Sensation {
-                    kind: "user_audio".into(),
+                    kind: "interlocutor_audio".into(),
                     when: Local::now(),
                     what,
                     source: None,
@@ -72,19 +74,19 @@ mod tests {
         let start = Local::now();
         let mut stream = sensor.stream();
         let batch = stream.next().await.unwrap();
-        assert_eq!(batch[0].what, "I heard the user say: \"Hello\"");
-        assert_eq!(batch[0].kind, "user_audio");
+        assert_eq!(batch[0].what, "Hello");
+        assert_eq!(batch[0].kind, "interlocutor_audio");
         assert!(batch[0].when >= start && batch[0].when <= Local::now());
     }
 
     #[tokio::test]
     async fn custom_template_is_used() {
         let (tx, rx) = broadcast::channel(4);
-        let mut sensor = HeardUserSensor::with_template(rx, "user said {text}");
+        let mut sensor = HeardUserSensor::with_template(rx, "interlocutor said {text}");
         tx.send("Yo".into()).unwrap();
         drop(tx);
         let mut stream = sensor.stream();
         let batch = stream.next().await.unwrap();
-        assert_eq!(batch[0].what, "user said Yo");
+        assert_eq!(batch[0].what, "interlocutor said Yo");
     }
 }

@@ -44,3 +44,6 @@
   skip LLM calls within `min_llm_interval_ms`; ensure tests cover this logic.
 - Keep `WillRuntimeConfig` in sync with fields used by `Will` runtimes.
 - Log all memory store errors at `error` level.
+- Refer to external speakers as "my interlocutor" in prompts and logs.
+- Pass interlocutor utterances to the voice module as plain text without
+  wrapping them in narrative phrasing.
