@@ -4,11 +4,17 @@ use futures::TryStreamExt;
 use ollama_rs::{
     Ollama,
     generation::chat::{ChatMessage, ChatMessageResponseStream, request::ChatMessageRequest},
+    models::ModelOptions,
 };
+use rand::Rng;
 
 /// Build a chat request for the given model and messages.
 fn build_request(model: &str, messages: &[ChatMessage]) -> ChatMessageRequest {
+    let mut rng = rand::thread_rng();
+    let temperature = rng.gen_range(0.5..=1.0);
+    tracing::trace!(%temperature, "llm temperature");
     ChatMessageRequest::new(model.to_string(), messages.to_vec())
+        .options(ModelOptions::default().temperature(temperature))
 }
 
 /// Map an Ollama response stream into an [`LLMTokenStream`].
