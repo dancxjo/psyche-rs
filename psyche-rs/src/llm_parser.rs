@@ -64,7 +64,8 @@ pub async fn drive_llm_stream<T>(
     }
 
     flush_pending(&mut pending_text, &window, &thoughts_tx);
-    debug!(agent = %name, %full_text, "LLM call ended");
+    debug!(agent = %name, %full_text, "llm full response");
+    debug!(agent = %name, "LLM call ended");
     trace!("will llm stream finished");
 }
 
