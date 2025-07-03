@@ -63,6 +63,7 @@ heartbeat-sensor = []
 self-discovery-sensor = []
 source-discovery-sensor = []
 moment-feedback = []
+single-wit = []
 default = [
     "logging-motor",
     "vision",
@@ -80,4 +81,5 @@ default = [
     "heard-self-sensor",
     "heard-user-sensor",
     "heartbeat-sensor",
+    "single-wit",
 ]
