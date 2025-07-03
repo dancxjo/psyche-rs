@@ -115,6 +115,7 @@ impl Voice {
                     trace!(agent=%name, %system_prompt, "voice system prompt");
                     let mut msgs = convo.lock().unwrap().tail();
                     msgs.insert(0, ChatMessage::system(system_prompt));
+                    trace!(agent=%name, ?msgs, "voice llm messages");
                     debug!(agent=%name, "LLM request START");
                     match llm.chat_stream(&msgs).await {
                         Ok(mut llm_stream) => {
