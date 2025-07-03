@@ -16,6 +16,10 @@ pub trait LLMClient: Send + Sync {
         &self,
         messages: &[ChatMessage],
     ) -> Result<LLMTokenStream, Box<dyn std::error::Error + Send + Sync>>;
+
+    /// Generate an embedding vector for the provided text.
+    async fn embed(&self, text: &str)
+    -> Result<Vec<f32>, Box<dyn std::error::Error + Send + Sync>>;
 }
 
 /// Spawn a task that collects the entire response from `llm` into a `String`.
@@ -36,6 +40,12 @@ pub trait LLMClient: Send + Sync {
 ///         _: &[ChatMessage],
 ///     ) -> Result<psyche_rs::LLMTokenStream, Box<dyn std::error::Error + Send + Sync>> {
 ///         Ok(Box::pin(stream::once(async { Ok("hello ".to_string()) })))
+///     }
+///     async fn embed(
+///         &self,
+///         _text: &str,
+///     ) -> Result<Vec<f32>, Box<dyn std::error::Error + Send + Sync>> {
+///         Ok(vec![0.0])
 ///     }
 /// }
 /// # tokio_test::block_on(async {

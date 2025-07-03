@@ -33,6 +33,12 @@ use crate::canvas_stream::CanvasStream;
 ///             let stream = async_stream::stream! { yield Ok(String::new()) };
 ///             Ok(Box::pin(stream))
 ///         }
+///         async fn embed(
+///             &self,
+///             _text: &str,
+///         ) -> Result<Vec<f32>, Box<dyn std::error::Error + Send + Sync>> {
+///             Ok(vec![0.0])
+///         }
 ///     }
 ///     let llm = Arc::new(DummyLLM);
 ///     let (tx, _rx) = unbounded_channel();

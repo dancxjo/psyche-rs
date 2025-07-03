@@ -16,6 +16,13 @@ impl LLMClient for DummyLLM {
         };
         Ok(Box::pin(stream))
     }
+
+    async fn embed(
+        &self,
+        _text: &str,
+    ) -> Result<Vec<f32>, Box<dyn std::error::Error + Send + Sync>> {
+        Ok(vec![0.0])
+    }
 }
 
 #[tokio::test]

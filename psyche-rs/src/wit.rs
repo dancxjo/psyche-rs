@@ -93,6 +93,12 @@ impl<T> Wit<T> {
     ///     ) -> Result<psyche_rs::LLMTokenStream, Box<dyn std::error::Error + Send + Sync>> {
     ///         Ok(Box::pin(futures::stream::empty()))
     ///     }
+    ///     async fn embed(
+    ///         &self,
+    ///         _text: &str,
+    ///     ) -> Result<Vec<f32>, Box<dyn std::error::Error + Send + Sync>> {
+    ///         Ok(vec![0.0])
+    ///     }
     /// }
     ///
     /// let llm = Arc::new(DummyLLM);
@@ -341,6 +347,13 @@ mod tests {
             let stream = stream::iter(words.into_iter().map(Result::Ok));
             Ok(Box::pin(stream))
         }
+
+        async fn embed(
+            &self,
+            _text: &str,
+        ) -> Result<Vec<f32>, Box<dyn std::error::Error + Send + Sync>> {
+            Ok(vec![0.0])
+        }
     }
 
     struct TestSensor;
@@ -385,6 +398,13 @@ mod tests {
             ) -> Result<LLMTokenStream, Box<dyn std::error::Error + Send + Sync>> {
                 self.0.fetch_add(1, Ordering::SeqCst);
                 Ok(Box::pin(stream::once(async { Ok("done".to_string()) })))
+            }
+
+            async fn embed(
+                &self,
+                _text: &str,
+            ) -> Result<Vec<f32>, Box<dyn std::error::Error + Send + Sync>> {
+                Ok(vec![0.0])
             }
         }
 
@@ -456,6 +476,13 @@ mod tests {
             ) -> Result<LLMTokenStream, Box<dyn std::error::Error + Send + Sync>> {
                 self.prompts.lock().unwrap().push(msgs[0].content.clone());
                 Ok(Box::pin(stream::once(async { Ok("frame".to_string()) })))
+            }
+
+            async fn embed(
+                &self,
+                _text: &str,
+            ) -> Result<Vec<f32>, Box<dyn std::error::Error + Send + Sync>> {
+                Ok(vec![0.0])
             }
         }
 
