@@ -95,6 +95,9 @@ fn parse_buffer<T>(
                 let _ = tx_body.send(prefix.to_string());
                 buf.drain(..prefix.len());
                 break;
+            } else {
+                // Wait for more data before deciding if the closing tag starts
+                break;
             }
         }
 
@@ -198,5 +201,31 @@ fn flush_pending<T>(
             source: None,
         };
         let _ = tx.send(vec![s]);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use futures::stream;
+
+    #[tokio::test]
+    async fn stream_bodies_include_initial_chunks() {
+        let tokens = vec![
+            Ok("<log>".to_string()),
+            Ok("he".to_string()),
+            Ok("llo".to_string()),
+            Ok("</log>".to_string()),
+        ];
+        let stream = Box::pin(stream::iter(tokens));
+        let window = Arc::new(Mutex::new(Vec::<Sensation<String>>::new()));
+        let (tx, mut rx) = unbounded_channel();
+
+        drive_llm_stream("test", stream, window.clone(), tx, None).await;
+        let mut intentions = rx.recv().await.expect("intentions");
+        assert_eq!(intentions.len(), 1);
+        let mut action = intentions.pop().unwrap().action;
+        let text = action.collect_text().await;
+        assert_eq!(text, "hello");
     }
 }
