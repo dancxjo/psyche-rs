@@ -59,6 +59,12 @@ impl<T> Sensor<T> for SharedSensor<T> {
 ///     ) -> Result<LLMTokenStream, Box<dyn std::error::Error + Send + Sync>> {
 ///         Ok(Box::pin(stream::empty()))
 ///     }
+///     async fn embed(
+///         &self,
+///         _text: &str,
+///     ) -> Result<Vec<f32>, Box<dyn std::error::Error + Send + Sync>> {
+///         Ok(vec![0.0])
+///     }
 /// }
 /// struct DummySensor;
 /// impl Sensor<String> for DummySensor {
@@ -329,6 +335,13 @@ mod tests {
                 let tokens = vec!["<log>".to_string(), "hi".to_string(), "</log>".to_string()];
                 Ok(Box::pin(stream::iter(tokens.into_iter().map(Ok))))
             }
+
+            async fn embed(
+                &self,
+                _text: &str,
+            ) -> Result<Vec<f32>, Box<dyn std::error::Error + Send + Sync>> {
+                Ok(vec![0.0])
+            }
         }
 
         let count = Arc::new(AtomicUsize::new(0));
@@ -358,6 +371,13 @@ mod tests {
                 use futures::stream;
                 let tokens = vec!["<log>".to_string(), "hi".to_string(), "</log>".to_string()];
                 Ok(Box::pin(stream::iter(tokens.into_iter().map(Ok))))
+            }
+
+            async fn embed(
+                &self,
+                _text: &str,
+            ) -> Result<Vec<f32>, Box<dyn std::error::Error + Send + Sync>> {
+                Ok(vec![0.0])
             }
         }
 
@@ -398,6 +418,13 @@ mod tests {
                     "</log>".to_string(),
                 ];
                 Ok(Box::pin(stream::iter(tokens.into_iter().map(Ok))))
+            }
+
+            async fn embed(
+                &self,
+                _text: &str,
+            ) -> Result<Vec<f32>, Box<dyn std::error::Error + Send + Sync>> {
+                Ok(vec![0.0])
             }
         }
 
@@ -472,6 +499,13 @@ mod tests {
                 ];
                 Ok(Box::pin(stream::iter(toks.into_iter().map(Ok))))
             }
+
+            async fn embed(
+                &self,
+                _text: &str,
+            ) -> Result<Vec<f32>, Box<dyn std::error::Error + Send + Sync>> {
+                Ok(vec![0.0])
+            }
         }
 
         struct DummySensor;
@@ -540,6 +574,13 @@ mod tests {
                 let toks = vec!["<a>".to_string(), "hi".to_string(), "</a>".to_string()];
                 Ok(Box::pin(stream::iter(toks.into_iter().map(Ok))))
             }
+
+            async fn embed(
+                &self,
+                _text: &str,
+            ) -> Result<Vec<f32>, Box<dyn std::error::Error + Send + Sync>> {
+                Ok(vec![0.0])
+            }
         }
 
         #[derive(Clone)]
@@ -554,6 +595,13 @@ mod tests {
                 use futures::stream;
                 let toks = vec!["<b>".to_string(), "bye".to_string(), "</b>".to_string()];
                 Ok(Box::pin(stream::iter(toks.into_iter().map(Ok))))
+            }
+
+            async fn embed(
+                &self,
+                _text: &str,
+            ) -> Result<Vec<f32>, Box<dyn std::error::Error + Send + Sync>> {
+                Ok(vec![0.0])
             }
         }
 
@@ -624,6 +672,14 @@ mod tests {
                 Ok(Box::pin(stream::once(async {
                     Ok("<log></log>".to_string())
                 })))
+            }
+
+            async fn embed(
+                &self,
+                _text: &str,
+            ) -> Result<Vec<f32>, Box<dyn std::error::Error + Send + Sync>> {
+                self.0.wait().await;
+                Ok(vec![0.0])
             }
         }
 

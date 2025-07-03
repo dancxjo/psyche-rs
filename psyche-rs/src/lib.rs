@@ -107,6 +107,13 @@ mod tests {
                     Ok("ping event".to_string())
                 })))
             }
+
+            async fn embed(
+                &self,
+                _text: &str,
+            ) -> Result<Vec<f32>, Box<dyn std::error::Error + Send + Sync>> {
+                Ok(vec![0.0])
+            }
         }
 
         let llm = Arc::new(StaticLLM);
@@ -149,6 +156,13 @@ mod tests {
                 Ok(Box::pin(stream::once(async {
                     Ok("ping event".to_string())
                 })))
+            }
+
+            async fn embed(
+                &self,
+                _text: &str,
+            ) -> Result<Vec<f32>, Box<dyn std::error::Error + Send + Sync>> {
+                Ok(vec![0.0])
             }
         }
 

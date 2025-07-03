@@ -17,6 +17,14 @@ pub struct Args {
     pub will_model: String,
     #[arg(long = "memory-model", default_value = "gemma3:27b")]
     pub memory_model: String,
+    #[arg(long, default_value = "http://localhost:7474")]
+    pub neo4j_url: String,
+    #[arg(long, default_value = "neo4j")]
+    pub neo4j_user: String,
+    #[arg(long, default_value = "password")]
+    pub neo4j_pass: String,
+    #[arg(long, default_value = "http://localhost:6333")]
+    pub qdrant_url: String,
     #[arg(long, default_value = "0.0.0.0")]
     pub host: String,
     #[arg(long, default_value_t = 3000)]

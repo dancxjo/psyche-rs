@@ -595,6 +595,13 @@ mod tests {
                 self.0.fetch_add(1, Ordering::SeqCst);
                 Ok(Box::pin(futures::stream::empty()))
             }
+
+            async fn embed(
+                &self,
+                _text: &str,
+            ) -> Result<Vec<f32>, Box<dyn std::error::Error + Send + Sync>> {
+                Ok(vec![0.0])
+            }
         }
 
         let calls = Arc::new(AtomicUsize::new(0));

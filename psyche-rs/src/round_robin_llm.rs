@@ -28,6 +28,9 @@ use ollama_rs::generation::chat::ChatMessage;
 /// #   async fn chat_stream(&self, _: &[ChatMessage]) -> Result<psyche_rs::LLMTokenStream, Box<dyn Error + Send + Sync>> {
 /// #       Ok(Box::pin(stream::empty()))
 /// #   }
+/// #   async fn embed(&self, _text: &str) -> Result<Vec<f32>, Box<dyn Error + Send + Sync>> {
+/// #       Ok(vec![0.0])
+/// #   }
 /// # }
 /// let c1 = Arc::new(Dummy);
 /// let pool = RoundRobinLLM::new(vec![c1]);
@@ -66,6 +69,23 @@ impl LLMClient for RoundRobinLLM {
             let client = self.pick();
             match client.chat_stream(messages).await {
                 Ok(stream) => return Ok(stream),
+                Err(e) => {
+                    tracing::warn!(error = ?e, "llm client failed, trying next");
+                }
+            }
+        }
+        Err(Box::new(std::io::Error::other("all llm clients failed")))
+    }
+
+    async fn embed(
+        &self,
+        text: &str,
+    ) -> Result<Vec<f32>, Box<dyn std::error::Error + Send + Sync>> {
+        let len = self.clients.len();
+        for _ in 0..len {
+            let client = self.pick();
+            match client.embed(text).await {
+                Ok(vec) => return Ok(vec),
                 Err(e) => {
                     tracing::warn!(error = ?e, "llm client failed, trying next");
                 }

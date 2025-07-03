@@ -62,6 +62,21 @@ impl LLMClient for OllamaLLM {
         let stream = self.client.send_chat_messages_stream(req).await?;
         Ok(map_stream(stream))
     }
+
+    async fn embed(
+        &self,
+        text: &str,
+    ) -> Result<Vec<f32>, Box<dyn std::error::Error + Send + Sync>> {
+        use ollama_rs::generation::embeddings::request::GenerateEmbeddingsRequest;
+        let res = self
+            .client
+            .generate_embeddings(GenerateEmbeddingsRequest::new(
+                self.model.clone(),
+                text.into(),
+            ))
+            .await?;
+        Ok(res.embeddings.into_iter().next().unwrap_or_default())
+    }
 }
 
 #[cfg(test)]

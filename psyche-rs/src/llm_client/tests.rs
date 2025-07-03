@@ -19,6 +19,13 @@ impl LLMClient for RecordLLM {
         self.log.lock().unwrap().push(self.id);
         Ok(Box::pin(stream::empty()))
     }
+
+    async fn embed(
+        &self,
+        _text: &str,
+    ) -> Result<Vec<f32>, Box<dyn std::error::Error + Send + Sync>> {
+        Ok(vec![self.id as f32])
+    }
 }
 
 #[derive(Clone)]
@@ -30,6 +37,16 @@ impl LLMClient for FailingLLM {
         &self,
         _msgs: &[ChatMessage],
     ) -> Result<LLMTokenStream, Box<dyn std::error::Error + Send + Sync>> {
+        Err(Box::new(std::io::Error::new(
+            std::io::ErrorKind::Other,
+            "fail",
+        )))
+    }
+
+    async fn embed(
+        &self,
+        _text: &str,
+    ) -> Result<Vec<f32>, Box<dyn std::error::Error + Send + Sync>> {
         Err(Box::new(std::io::Error::new(
             std::io::ErrorKind::Other,
             "fail",
@@ -54,6 +71,14 @@ impl LLMClient for DelayLLM {
             Ok::<_, Box<dyn std::error::Error + Send + Sync>>("done".into())
         });
         Ok(Box::pin(s))
+    }
+
+    async fn embed(
+        &self,
+        _text: &str,
+    ) -> Result<Vec<f32>, Box<dyn std::error::Error + Send + Sync>> {
+        tokio::time::sleep(std::time::Duration::from_millis(self.delay)).await;
+        Ok(vec![0.0])
     }
 }
 

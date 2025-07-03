@@ -16,8 +16,8 @@ use futures::StreamExt;
 use futures::stream::BoxStream;
 use psyche_rs::MemoryStore;
 use psyche_rs::{
-    Combobulator, Impression, ImpressionStreamSensor, InMemoryStore, Motor, MotorExecutor, Sensor,
-    Voice, Will, Wit, shutdown_signal,
+    Combobulator, Impression, ImpressionStreamSensor, Motor, MotorExecutor, NeoQdrantMemoryStore,
+    Sensor, Voice, Will, Wit, shutdown_signal,
 };
 use tokio::sync::mpsc::unbounded_channel;
 
@@ -92,7 +92,13 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let canvas = Arc::new(CanvasStream::default());
     let server_handle = run_server(stream.clone(), vision.clone(), canvas.clone(), &args).await;
 
-    let store = Arc::new(InMemoryStore::new());
+    let store = Arc::new(NeoQdrantMemoryStore::new(
+        &args.neo4j_url,
+        &args.neo4j_user,
+        &args.neo4j_pass,
+        &args.qdrant_url,
+        llms.memory.clone(),
+    ));
     let (motors, _motor_map) = build_motors(
         &llms,
         mouth.clone(),

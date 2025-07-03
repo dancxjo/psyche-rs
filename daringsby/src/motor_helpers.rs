@@ -2,7 +2,7 @@ use crate::{
     CanvasMotor, CanvasStream, LogMemoryMotor, LoggingMotor, Mouth, RecallMotor, SourceReadMotor,
     SourceSearchMotor, SourceTreeMotor, SvgMotor, VisionMotor, VisionSensor,
 };
-use psyche_rs::{InMemoryStore, LLMClient, Motor, Sensation};
+use psyche_rs::{LLMClient, MemoryStore, Motor, Sensation};
 use std::{collections::HashMap, sync::Arc};
 
 /// Container for the four LLM clients used by Daringsby.
@@ -21,7 +21,7 @@ pub fn build_motors(
     mouth: Arc<Mouth>,
     vision: Arc<VisionSensor>,
     canvas: Arc<CanvasStream>,
-    store: Arc<InMemoryStore>,
+    store: Arc<dyn MemoryStore + Send + Sync>,
 ) -> (Vec<Arc<dyn Motor>>, Arc<HashMap<String, Arc<dyn Motor>>>) {
     use tokio::sync::mpsc::unbounded_channel;
 

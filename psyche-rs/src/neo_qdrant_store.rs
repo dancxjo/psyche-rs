@@ -1,3 +1,4 @@
+use crate::llm_client::LLMClient;
 use crate::memory_store::{MemoryStore, StoredImpression, StoredSensation};
 use anyhow::{Context, anyhow};
 use reqwest::blocking::Client;
@@ -15,6 +16,7 @@ pub struct NeoQdrantMemoryStore {
     neo_user: String,
     neo_pass: String,
     qdrant_url: String,
+    llm: std::sync::Arc<dyn LLMClient>,
 }
 
 impl NeoQdrantMemoryStore {
@@ -23,6 +25,7 @@ impl NeoQdrantMemoryStore {
         neo_user: impl Into<String>,
         neo_pass: impl Into<String>,
         qdrant_url: impl Into<String>,
+        llm: std::sync::Arc<dyn LLMClient>,
     ) -> Self {
         Self {
             client: Client::new(),
@@ -30,11 +33,8 @@ impl NeoQdrantMemoryStore {
             neo_user: neo_user.into(),
             neo_pass: neo_pass.into(),
             qdrant_url: qdrant_url.into(),
+            llm,
         }
-    }
-
-    fn embed(text: &str) -> Vec<f32> {
-        text.bytes().map(|b| b as f32 / 255.0).collect()
     }
 
     fn post_neo(&self, query: &str, params: serde_json::Value) -> anyhow::Result<()> {
@@ -91,7 +91,13 @@ MERGE (i)-[:HAS_SENSATION]->(s)
         });
         self.post_neo(query, params)?;
 
-        let vector = Self::embed(&impression.how);
+        let vector = match tokio::runtime::Handle::try_current() {
+            Ok(h) => h.block_on(self.llm.embed(&impression.how)),
+            Err(_) => tokio::runtime::Runtime::new()
+                .expect("rt")
+                .block_on(self.llm.embed(&impression.how)),
+        };
+        let vector = vector.map_err(|e| anyhow!(e))?;
         let qbody = json!({
             "points": [{
                 "id": impression.id,
@@ -144,7 +150,13 @@ MERGE (i)-[:HAS_STAGE]->(l)
         top_k: usize,
     ) -> anyhow::Result<Vec<StoredImpression>> {
         debug!(?query_how, top_k, "retrieve related impressions");
-        let vector = Self::embed(query_how);
+        let vector = match tokio::runtime::Handle::try_current() {
+            Ok(h) => h.block_on(self.llm.embed(query_how)),
+            Err(_) => tokio::runtime::Runtime::new()
+                .expect("rt")
+                .block_on(self.llm.embed(query_how)),
+        };
+        let vector = vector.map_err(|e| anyhow!(e))?;
         let qbody = json!({"vector": vector, "limit": top_k});
         let url = format!("{}/collections/impressions/points/search", self.qdrant_url);
         let resp = self
@@ -317,6 +329,7 @@ RETURN i, collect(DISTINCT s) AS sens, collect(DISTINCT l) AS stages
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::test_helpers::StaticLLM;
     use chrono::Utc;
     use httpmock::prelude::*;
     use serde_json::json;
@@ -335,7 +348,8 @@ mod tests {
             then.status(200);
         });
 
-        let store = NeoQdrantMemoryStore::new(neo.url(""), "user", "pass", qdrant.url(""));
+        let llm = std::sync::Arc::new(StaticLLM::new(""));
+        let store = NeoQdrantMemoryStore::new(neo.url(""), "user", "pass", qdrant.url(""), llm);
 
         let sens = StoredSensation {
             id: "s1".into(),
@@ -371,7 +385,8 @@ mod tests {
             }));
         });
 
-        let store = NeoQdrantMemoryStore::new(neo.url(""), "u", "p", qdrant.url(""));
+        let llm = std::sync::Arc::new(StaticLLM::new(""));
+        let store = NeoQdrantMemoryStore::new(neo.url(""), "u", "p", qdrant.url(""), llm);
         let _ = store.fetch_recent_impressions(5);
         assert_eq!(neo_mock.hits(), 1);
     }
@@ -393,7 +408,8 @@ mod tests {
             }));
         });
 
-        let store = NeoQdrantMemoryStore::new(neo.url(""), "u", "p", qdrant.url(""));
+        let llm = std::sync::Arc::new(StaticLLM::new(""));
+        let store = NeoQdrantMemoryStore::new(neo.url(""), "u", "p", qdrant.url(""), llm);
         let _ = store.retrieve_related_impressions("hi", 3);
         assert_eq!(q_mock.hits(), 1);
         assert_eq!(neo_mock.hits(), 0);
@@ -413,7 +429,8 @@ mod tests {
             then.status(500);
         });
 
-        let store = NeoQdrantMemoryStore::new(neo.url(""), "u", "p", qdrant.url(""));
+        let llm = std::sync::Arc::new(StaticLLM::new(""));
+        let store = NeoQdrantMemoryStore::new(neo.url(""), "u", "p", qdrant.url(""), llm);
         let sens = StoredSensation {
             id: "s".into(),
             kind: "t".into(),

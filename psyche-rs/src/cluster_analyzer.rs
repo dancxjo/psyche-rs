@@ -24,6 +24,12 @@ use std::sync::Arc;
 ///         let stream = futures::stream::once(async { Ok("echo".to_string()) });
 ///         Ok(Box::pin(stream))
 ///     }
+///     async fn embed(
+///         &self,
+///         _t: &str,
+///     ) -> Result<Vec<f32>, Box<dyn std::error::Error + Send + Sync>> {
+///         Ok(vec![0.0])
+///     }
 /// }
 /// let store = InMemoryStore::new();
 /// let llm = Arc::new(EchoLLM);
@@ -121,6 +127,13 @@ mod tests {
         {
             let reply = self.reply.clone();
             Ok(Box::pin(stream::once(async move { Ok(reply) })))
+        }
+
+        async fn embed(
+            &self,
+            _text: &str,
+        ) -> Result<Vec<f32>, Box<dyn std::error::Error + Send + Sync + 'static>> {
+            Ok(vec![0.0])
         }
     }
 

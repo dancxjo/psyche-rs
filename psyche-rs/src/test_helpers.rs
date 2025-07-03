@@ -32,6 +32,13 @@ impl LLMClient for StaticLLM {
         let s = stream::iter(words.into_iter().map(Result::Ok));
         Ok(Box::pin(s))
     }
+
+    async fn embed(
+        &self,
+        _text: &str,
+    ) -> Result<Vec<f32>, Box<dyn std::error::Error + Send + Sync>> {
+        Ok(vec![0.0])
+    }
 }
 
 /// Simple sensor yielding a single [`Impression<String>`].
