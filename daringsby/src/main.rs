@@ -124,36 +124,87 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .name("Voice")
         .system_prompt(include_str!("prompts/voice_prompt.txt"));
 
-    let (instant_tx, instant_rx) = unbounded_channel();
-    let quick = Wit::new(llms.quick.clone())
-        .name("Quick")
-        .prompt(include_str!("prompts/quick_prompt.txt"));
-    let quick_task = tokio::spawn(run_quick(quick, sensors, instant_tx, store.clone()));
-
-    let quick_sensor = ImpressionStreamSensor::new(instant_rx);
+    #[cfg(feature = "single-wit")]
     let (situ_tx, situ_rx) = unbounded_channel();
-    let combob = Combobulator::new(llms.combob.clone())
-        .name("Combobulator")
-        .prompt(include_str!("prompts/combobulator_prompt.txt"));
-    let combob_task = tokio::spawn(run_combobulator(
-        combob,
-        vec![Box::new(quick_sensor)],
-        situ_tx,
-        store.clone(),
-    ));
+    #[cfg(not(feature = "single-wit"))]
+    let (instant_tx, instant_rx) = unbounded_channel();
+    #[cfg(not(feature = "single-wit"))]
+    let (situ_tx, situ_rx) = unbounded_channel();
+
+    #[cfg(feature = "single-wit")]
+    let combob_task = {
+        let combob = Wit::new(llms.combob.clone())
+            .name("Combobulator")
+            .prompt(include_str!("prompts/combobulator_prompt.txt"));
+        tokio::spawn(run_combobulator_direct(
+            combob,
+            sensors,
+            situ_tx,
+            store.clone(),
+        ))
+    };
+
+    #[cfg(not(feature = "single-wit"))]
+    let quick_task = {
+        let quick = Wit::new(llms.quick.clone())
+            .name("Quick")
+            .prompt(include_str!("prompts/quick_prompt.txt"));
+        tokio::spawn(run_quick(quick, sensors, instant_tx, store.clone()))
+    };
+
+    #[cfg(not(feature = "single-wit"))]
+    let combob_task = {
+        let quick_sensor = ImpressionStreamSensor::new(instant_rx);
+        let combob = Combobulator::new(llms.combob.clone())
+            .name("Combobulator")
+            .prompt(include_str!("prompts/combobulator_prompt.txt"));
+        tokio::spawn(run_combobulator(
+            combob,
+            vec![Box::new(quick_sensor)],
+            situ_tx,
+            store.clone(),
+        ))
+    };
 
     let combo_sensor = ImpressionStreamSensor::new(situ_rx);
-    let will = Will::new(llms.will.clone())
-        .name("Will")
-        .prompt(include_str!("prompts/will_prompt.txt"));
-    let window = will.window_arc();
-    let latest = will.latest_instant_arc();
-    let will_task = tokio::spawn(run_will(
-        will,
-        vec![Box::new(combo_sensor)],
-        executor.clone(),
-        motors_send.clone(),
-    ));
+
+    #[cfg(feature = "single-wit")]
+    let will_task = {
+        let will = Will::new(llms.will.clone())
+            .name("Will")
+            .prompt(include_str!("prompts/will_prompt.txt"));
+        let window = will.window_arc();
+        let latest = will.latest_instant_arc();
+        let task = tokio::spawn(run_will_impressions(
+            will,
+            vec![Box::new(combo_sensor)],
+            executor.clone(),
+            motors_send.clone(),
+        ));
+        (task, window, latest)
+    };
+
+    #[cfg(not(feature = "single-wit"))]
+    let will_task = {
+        let will = Will::new(llms.will.clone())
+            .name("Will")
+            .prompt(include_str!("prompts/will_prompt.txt"));
+        let window = will.window_arc();
+        let latest = will.latest_instant_arc();
+        let task = tokio::spawn(run_will(
+            will,
+            vec![Box::new(combo_sensor)],
+            executor.clone(),
+            motors_send.clone(),
+        ));
+        (task, window, latest)
+    };
+
+    #[cfg(feature = "single-wit")]
+    let (will_task, window, latest) = will_task;
+
+    #[cfg(not(feature = "single-wit"))]
+    let (will_task, window, latest) = will_task;
 
     let get_situation = Arc::new(move || psyche_rs::build_timeline(&window));
     let get_instant = Arc::new(move || latest.lock().unwrap().clone());
@@ -165,6 +216,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         executor.clone(),
     ));
 
+    #[cfg(not(feature = "single-wit"))]
     let mut quick = Some(quick_task);
     let mut combob = Some(combob_task);
     let mut will = Some(will_task);
@@ -173,6 +225,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     tokio::select! {
         _ = shutdown_signal() => {
             tracing::info!("Shutdown signal received");
+            #[cfg(not(feature = "single-wit"))]
             if let Some(h) = quick.take() { h.abort(); }
             if let Some(h) = combob.take() { h.abort(); }
             if let Some(h) = will.take() { h.abort(); }
@@ -180,12 +233,23 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             tracing::info!("Tasks aborted");
         }
         res = async {
-            tokio::try_join!(
-                quick.take().unwrap(),
-                combob.take().unwrap(),
-                will.take().unwrap(),
-                voice_handle.take().unwrap(),
-            )
+            #[cfg(feature = "single-wit")]
+            {
+                tokio::try_join!(
+                    combob.take().unwrap(),
+                    will.take().unwrap(),
+                    voice_handle.take().unwrap(),
+                )
+            }
+            #[cfg(not(feature = "single-wit"))]
+            {
+                tokio::try_join!(
+                    quick.take().unwrap(),
+                    combob.take().unwrap(),
+                    will.take().unwrap(),
+                    voice_handle.take().unwrap(),
+                )
+            }
         } => {
             match res {
                 Ok(_) => tracing::info!("All tasks completed successfully"),
@@ -223,6 +287,40 @@ async fn run_combobulator(
 async fn run_will(
     mut will: Will<Impression<Impression<String>>>,
     sensors: Vec<Box<dyn Sensor<Impression<Impression<String>>> + Send>>,
+    executor: Arc<MotorExecutor>,
+    motors: Vec<Arc<dyn Motor + Send + Sync>>,
+) {
+    tracing::debug!("will task started");
+    for m in &motors {
+        will.register_motor(m.as_ref());
+    }
+    let stream = will.observe(sensors).await;
+    let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
+    tokio::spawn(run_sensor_loop(stream, tx, "will"));
+
+    while let Some(ints) = rx.recv().await {
+        for intent in ints {
+            executor.spawn_intention(intent);
+        }
+    }
+    tracing::info!("will task finished");
+}
+
+#[cfg(feature = "single-wit")]
+async fn run_combobulator_direct(
+    mut combob: Wit<String>,
+    sensors: Vec<Box<dyn Sensor<String> + Send>>,
+    tx: tokio::sync::mpsc::UnboundedSender<Vec<Impression<String>>>,
+    store: Arc<dyn MemoryStore + Send + Sync>,
+) {
+    let stream = combob.observe(sensors).await;
+    run_impression_loop(stream, tx, store, "Moment", "combobulator").await;
+}
+
+#[cfg(feature = "single-wit")]
+async fn run_will_impressions(
+    mut will: Will<Impression<String>>,
+    sensors: Vec<Box<dyn Sensor<Impression<String>> + Send>>,
     executor: Arc<MotorExecutor>,
     motors: Vec<Arc<dyn Motor + Send + Sync>>,
 ) {
