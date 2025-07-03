@@ -1,7 +1,7 @@
 use crate::llm_client::LLMClient;
 use crate::memory_store::{MemoryStore, StoredImpression, StoredSensation};
 use anyhow::{Context, anyhow};
-use reqwest::blocking::Client;
+use reqwest::Client;
 use serde::Deserialize;
 use serde_json::json;
 use std::collections::HashMap;
@@ -37,7 +37,14 @@ impl NeoQdrantMemoryStore {
         }
     }
 
-    fn post_neo(&self, query: &str, params: serde_json::Value) -> anyhow::Result<()> {
+    fn block_on<F: std::future::Future>(&self, fut: F) -> F::Output {
+        match tokio::runtime::Handle::try_current() {
+            Ok(h) => h.block_on(fut),
+            Err(_) => tokio::runtime::Runtime::new().expect("rt").block_on(fut),
+        }
+    }
+
+    async fn post_neo_async(&self, query: &str, params: serde_json::Value) -> anyhow::Result<()> {
         debug!(?query, "posting cypher");
         let payload = json!({"statements":[{"statement": query, "parameters": params}]});
         let resp = self
@@ -46,15 +53,20 @@ impl NeoQdrantMemoryStore {
             .basic_auth(&self.neo_user, Some(&self.neo_pass))
             .json(&payload)
             .send()
+            .await
             .context("neo4j request failed")?;
         if resp.status().is_success() {
             Ok(())
         } else {
             let status = resp.status();
-            let body = resp.text().unwrap_or_default();
+            let body = resp.text().await.unwrap_or_default();
             error!(status = %status, %body, "neo4j error");
             Err(anyhow!("neo4j error: {}", body))
         }
+    }
+
+    fn post_neo(&self, query: &str, params: serde_json::Value) -> anyhow::Result<()> {
+        self.block_on(self.post_neo_async(query, params))
     }
 }
 
@@ -108,16 +120,13 @@ MERGE (i)-[:HAS_SENSATION]->(s)
         let url = format!("{}/collections/impressions/points", self.qdrant_url);
         debug!(url = %url, "storing embedding to qdrant");
         let resp = self
-            .client
-            .put(url)
-            .json(&qbody)
-            .send()
+            .block_on(self.client.put(url).json(&qbody).send())
             .context("qdrant insert failed")?;
         if resp.status().is_success() {
             Ok(())
         } else {
             let status = resp.status();
-            let body = resp.text().unwrap_or_default();
+            let body = self.block_on(resp.text()).unwrap_or_default();
             error!(status = %status, %body, "qdrant error");
             Err(anyhow!("qdrant error: {}", body))
         }
@@ -160,14 +169,11 @@ MERGE (i)-[:HAS_STAGE]->(l)
         let qbody = json!({"vector": vector, "limit": top_k});
         let url = format!("{}/collections/impressions/points/search", self.qdrant_url);
         let resp = self
-            .client
-            .post(url)
-            .json(&qbody)
-            .send()
+            .block_on(self.client.post(url).json(&qbody).send())
             .context("qdrant search failed")?;
         if !resp.status().is_success() {
             let status = resp.status();
-            let body = resp.text().unwrap_or_default();
+            let body = self.block_on(resp.text()).unwrap_or_default();
             error!(status = %status, %body, "qdrant search error");
             return Err(anyhow!("qdrant search error: {}", body));
         }
@@ -179,7 +185,7 @@ MERGE (i)-[:HAS_STAGE]->(l)
         struct SearchItem {
             id: String,
         }
-        let ids: SearchRes = resp.json().context("parse search result")?;
+        let ids: SearchRes = self.block_on(resp.json()).context("parse search result")?;
         if ids.result.is_empty() {
             return Ok(Vec::new());
         }
@@ -188,15 +194,17 @@ MERGE (i)-[:HAS_STAGE]->(l)
         let params = json!({"ids": ids_vec});
         let payload = json!({"statements":[{"statement":query, "parameters":params}]});
         let resp = self
-            .client
-            .post(format!("{}/db/neo4j/tx/commit", self.neo4j_url))
-            .basic_auth(&self.neo_user, Some(&self.neo_pass))
-            .json(&payload)
-            .send()
+            .block_on(
+                self.client
+                    .post(format!("{}/db/neo4j/tx/commit", self.neo4j_url))
+                    .basic_auth(&self.neo_user, Some(&self.neo_pass))
+                    .json(&payload)
+                    .send(),
+            )
             .context("neo4j retrieve failed")?;
         if !resp.status().is_success() {
             let status = resp.status();
-            let body = resp.text().unwrap_or_default();
+            let body = self.block_on(resp.text()).unwrap_or_default();
             error!(status = %status, %body, "neo4j error");
             return Err(anyhow!("neo4j error: {}", body));
         }
@@ -212,7 +220,7 @@ MERGE (i)-[:HAS_STAGE]->(l)
         struct NeoRow {
             row: (StoredImpression,),
         }
-        let res: NeoRes = resp.json().context("parse neo4j result")?;
+        let res: NeoRes = self.block_on(resp.json()).context("parse neo4j result")?;
         let imps = res
             .results
             .into_iter()
@@ -228,15 +236,17 @@ MERGE (i)-[:HAS_STAGE]->(l)
         let params = json!({"limit": limit});
         let payload = json!({"statements":[{"statement":query, "parameters":params}]});
         let resp = self
-            .client
-            .post(format!("{}/db/neo4j/tx/commit", self.neo4j_url))
-            .basic_auth(&self.neo_user, Some(&self.neo_pass))
-            .json(&payload)
-            .send()
+            .block_on(
+                self.client
+                    .post(format!("{}/db/neo4j/tx/commit", self.neo4j_url))
+                    .basic_auth(&self.neo_user, Some(&self.neo_pass))
+                    .json(&payload)
+                    .send(),
+            )
             .context("neo4j recent failed")?;
         if !resp.status().is_success() {
             let status = resp.status();
-            let body = resp.text().unwrap_or_default();
+            let body = self.block_on(resp.text()).unwrap_or_default();
             error!(status = %status, %body, "neo4j error");
             return Err(anyhow!("neo4j error: {}", body));
         }
@@ -252,7 +262,7 @@ MERGE (i)-[:HAS_STAGE]->(l)
         struct R2 {
             row: (StoredImpression,),
         }
-        let res: Res = resp.json().context("parse neo4j recent")?;
+        let res: Res = self.block_on(resp.json()).context("parse neo4j recent")?;
         let out = res
             .results
             .into_iter()
@@ -280,15 +290,17 @@ RETURN i, collect(DISTINCT s) AS sens, collect(DISTINCT l) AS stages
         let params = json!({"id": impression_id});
         let payload = json!({"statements":[{"statement":query, "parameters":params}]});
         let resp = self
-            .client
-            .post(format!("{}/db/neo4j/tx/commit", self.neo4j_url))
-            .basic_auth(&self.neo_user, Some(&self.neo_pass))
-            .json(&payload)
-            .send()
+            .block_on(
+                self.client
+                    .post(format!("{}/db/neo4j/tx/commit", self.neo4j_url))
+                    .basic_auth(&self.neo_user, Some(&self.neo_pass))
+                    .json(&payload)
+                    .send(),
+            )
             .context("neo4j load full failed")?;
         if !resp.status().is_success() {
             let status = resp.status();
-            let body = resp.text().unwrap_or_default();
+            let body = self.block_on(resp.text()).unwrap_or_default();
             error!(status = %status, %body, "neo4j error");
             return Err(anyhow!("neo4j error: {}", body));
         }
@@ -310,7 +322,9 @@ RETURN i, collect(DISTINCT s) AS sens, collect(DISTINCT l) AS stages
             stage: String,
             detail: String,
         }
-        let res: R = resp.json().context("parse neo4j full result")?;
+        let res: R = self
+            .block_on(resp.json())
+            .context("parse neo4j full result")?;
         let row = res
             .results
             .into_iter()
