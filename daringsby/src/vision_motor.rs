@@ -3,6 +3,7 @@ use base64::Engine;
 use base64::engine::general_purpose::STANDARD as B64;
 use chrono::Local;
 use futures::StreamExt;
+use ollama_rs::generation::images::Image;
 use std::sync::Arc;
 use tokio::sync::mpsc::UnboundedSender;
 use tracing::{debug, trace};
@@ -58,11 +59,11 @@ sent to any `VisionSensor` subscribers."
             .await
             .map_err(|e| MotorError::Failed(e.to_string()))?;
         let b64 = B64.encode(&img);
-        let prompt = format!(
-            "This is what you are seeing. If this is your first person perspective, what do you see?\n{b64}"
-        );
+        let prompt = "This is what you are seeing. If this is your first person perspective, what do you see?".to_string();
         debug!(?prompt, "vision prompt");
-        let msgs = vec![ollama_rs::generation::chat::ChatMessage::user(prompt)];
+        let msg = ollama_rs::generation::chat::ChatMessage::user(prompt)
+            .add_image(Image::from_base64(&b64));
+        let msgs = vec![msg];
         let mut stream = self
             .llm
             .chat_stream(&msgs)
