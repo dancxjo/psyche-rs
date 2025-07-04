@@ -71,6 +71,7 @@ Available options (see `main.rs`):
 * `--combob-model`: Model used for Combobulator tasks (default: `gemma3:27b`)
 * `--will-model`: Model used for Will tasks (default: `gemma3:27b`)
 * `--memory-model`: Model used for memory operations (default: `gemma3:27b`)
+* `--embedding-model`: Model used for embeddings (default: `nomic-embed-text`)
 * `--tts-url`: Coqui TTS base URL (default: `http://localhost:5002`)
 * `--language-id`: Language identifier for TTS (optional)
 * `--speaker-id`: Speaker ID for TTS (default: `p234`)

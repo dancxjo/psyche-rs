@@ -17,6 +17,9 @@ pub struct Args {
     pub will_model: String,
     #[arg(long = "memory-model", default_value = "gemma3:27b")]
     pub memory_model: String,
+    /// Model used when generating embeddings.
+    #[arg(long = "embedding-model", default_value = "nomic-embed-text")]
+    pub embedding_model: String,
     #[arg(long, default_value = "http://localhost:7474")]
     pub neo4j_url: String,
     #[arg(long, default_value = "neo4j")]
