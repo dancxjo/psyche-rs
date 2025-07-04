@@ -6,9 +6,14 @@ pub struct Args {
     /// Base URLs of Ollama servers used by all LLM tasks.
     ///
     /// Specify this flag multiple times to add more servers. If omitted,
-    /// `http://localhost:11434` is used.
+    /// `http://localhost:11434` is used. Using multiple servers is
+    /// recommended for parallel LLM calls.
     #[arg(long = "base-url", num_args(1..), default_value = "http://localhost:11434")]
     pub base_url: Vec<String>,
+    /// Max number of concurrent LLM calls. Defaults to the number of
+    /// `--base-url` values.
+    #[arg(long = "llm-concurrency")]
+    pub llm_concurrency: Option<usize>,
     #[arg(long = "quick-model", default_value = "gemma3:27b")]
     pub quick_model: String,
     #[arg(long = "combob-model", default_value = "gemma3:27b")]
