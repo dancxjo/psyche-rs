@@ -25,7 +25,7 @@ Pete is not merely a robot, nor a chatbot. He is:
 |------------|---------|
 | **`psyche-rs`** | Core cognitive engine: Sensation streams, Wits, Will, Motor orchestration |
 | **`daringsby`** | Pete's physical and I/O embodiment: Motors, Sensors, WebSocket streams |
-| **Motors** | Actions Pete performs (e.g., `say`, `look`, `source_tree`) |
+| **Motors** | Actions Pete performs (e.g., `speak`, `look`, `source_tree`) |
 | **Sensors** | Sources of experience (e.g., audio heard, vision snapshots, code awareness) |
 | **LLMs** | Narrative generation, decision-making, and motor command creation (via streaming) |
 

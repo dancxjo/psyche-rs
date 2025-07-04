@@ -68,7 +68,7 @@ pub async fn drive_will_stream<M>(
                         .await
                         .expect("look motor failed");
                 }
-                "say" => {
+                "speak" => {
                     mouth.perform(intent).await.expect("mouth motor failed");
                 }
                 "canvas" => {
