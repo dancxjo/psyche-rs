@@ -64,6 +64,7 @@ self-discovery-sensor = []
 source-discovery-sensor = []
 moment-feedback = []
 single-wit = []
+debug_memory = []
 default = [
     "logging-motor",
     "vision",
