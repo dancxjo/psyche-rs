@@ -25,6 +25,8 @@ pub async fn drive_llm_stream<T>(
 ) where
     T: Clone + Default + Send + 'static + serde::Serialize + for<'de> serde::Deserialize<'de>,
 {
+    let start = std::time::Instant::now();
+    debug!(agent = %name, "LLM request START {:?}", start);
     let mut buf = String::new();
     let mut full_text = String::new();
     let mut state: Option<(String, String, String, UnboundedSender<String>)> = None;
@@ -65,6 +67,7 @@ pub async fn drive_llm_stream<T>(
 
     flush_pending(&mut pending_text, &window, &thoughts_tx);
     debug!(agent = %name, %full_text, "llm full response");
+    debug!(agent = %name, "LLM request END {:?}", std::time::Instant::now());
     debug!(agent = %name, "LLM call ended");
     trace!("will llm stream finished");
 }

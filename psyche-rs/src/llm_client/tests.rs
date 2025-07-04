@@ -164,6 +164,23 @@ async fn fair_llm_processes_in_request_order() {
 }
 
 #[tokio::test]
+async fn fair_llm_allows_parallel_calls() {
+    let llm = Arc::new(FairLLM::new(DelayLLM { delay: 50 }, 2));
+    let llm2 = llm.clone();
+    let start = std::time::Instant::now();
+    let f1 = tokio::spawn(async move {
+        let mut s = llm.chat_stream(&[]).await.unwrap();
+        s.next().await.unwrap().unwrap();
+    });
+    let f2 = tokio::spawn(async move {
+        let mut s = llm2.chat_stream(&[]).await.unwrap();
+        s.next().await.unwrap().unwrap();
+    });
+    let _ = futures::join!(f1, f2);
+    assert!(start.elapsed() < std::time::Duration::from_millis(100));
+}
+
+#[tokio::test]
 async fn spawn_llm_task_collects_tokens() {
     let llm = Arc::new(crate::test_helpers::StaticLLM::new("hello world"));
     let handle = spawn_llm_task(llm, vec![ChatMessage::user("hi".into())]).await;
