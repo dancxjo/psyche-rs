@@ -52,7 +52,7 @@ impl MotorExecutor {
                                 id: uuid::Uuid::new_v4().to_string(),
                                 kind: "Intention".into(),
                                 when: chrono::Utc::now(),
-                                how: intention.to_string(),
+                                how: intention.summary(),
                                 sensation_ids: Vec::new(),
                                 impression_ids: Vec::new(),
                             };

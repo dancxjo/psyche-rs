@@ -66,7 +66,7 @@ pub fn build_motors(
     let mut map = HashMap::new();
     map.insert("log".into(), logging_motor as Arc<dyn Motor>);
     map.insert("look".into(), vision_motor as Arc<dyn Motor>);
-    map.insert("say".into(), mouth as Arc<dyn Motor>);
+    map.insert("speak".into(), mouth as Arc<dyn Motor>);
     map.insert("canvas".into(), canvas_motor as Arc<dyn Motor>);
     map.insert("draw".into(), svg_motor as Arc<dyn Motor>);
     map.insert("recall".into(), recall_motor as Arc<dyn Motor>);

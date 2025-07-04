@@ -411,9 +411,9 @@ mod tests {
             ) -> Result<LLMTokenStream, Box<dyn std::error::Error + Send + Sync>> {
                 use futures::stream;
                 let tokens = vec![
-                    "<say>".to_string(),
+                    "<speak>".to_string(),
                     "Hello".to_string(),
-                    "</say><log>".to_string(),
+                    "</speak><log>".to_string(),
                     "Logging this".to_string(),
                     "</log>".to_string(),
                 ];
@@ -461,12 +461,12 @@ mod tests {
         let llm = Arc::new(MultiLLM);
         let will = Will::new(llm.clone())
             .delay_ms(10)
-            .motor("say", "speak")
+            .motor("speak", "speak")
             .motor("log", "record");
         let psyche = Psyche::new()
             .sensor(DummySensor)
             .will(will)
-            .motor(CountingMotor(count.clone(), "say"))
+            .motor(CountingMotor(count.clone(), "speak"))
             .motor(CountingMotor(count.clone(), "log"));
 
         let _ = tokio::time::timeout(std::time::Duration::from_millis(200), psyche.run()).await;
