@@ -66,6 +66,10 @@ moment-feedback = []
 single-wit = []
 debug_memory = []
 default = [
+    "logging-motor",
+    "canvas-motor",
+    "svg-motor",
+    "canvas-stream",
     "vision",
     "mouth",
     "development-status-sensor",
