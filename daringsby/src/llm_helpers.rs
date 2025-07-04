@@ -11,7 +11,12 @@ fn build_ollama(client: &Client, base: &str) -> ollama_rs::Ollama {
     ollama_rs::Ollama::new_with_client(host, port, client.clone())
 }
 
-fn build_pool(base_urls: &[String], model: &str, embed_model: &str) -> Arc<dyn LLMClient> {
+fn build_pool(
+    base_urls: &[String],
+    model: &str,
+    embed_model: &str,
+    concurrency: usize,
+) -> Arc<dyn LLMClient> {
     let clients: Vec<Arc<dyn LLMClient>> = base_urls
         .iter()
         .map(|base| {
@@ -27,7 +32,7 @@ fn build_pool(base_urls: &[String], model: &str, embed_model: &str) -> Arc<dyn L
         })
         .collect();
     let rr = RoundRobinLLM::new(clients);
-    Arc::new(FairLLM::new(rr, base_urls.len())) as Arc<dyn LLMClient>
+    Arc::new(FairLLM::new(rr, concurrency)) as Arc<dyn LLMClient>
 }
 
 /// Build an Ollama client dedicated to the voice loop.
@@ -51,10 +56,31 @@ pub fn build_ollama_clients(
     Arc<dyn LLMClient>,
     Arc<dyn LLMClient>,
 ) {
-    let quick_llm = build_pool(&args.base_url, &args.quick_model, &args.embedding_model);
-    let combob_llm = build_pool(&args.base_url, &args.combob_model, &args.embedding_model);
-    let will_llm = build_pool(&args.base_url, &args.will_model, &args.embedding_model);
-    let memory_llm = build_pool(&args.base_url, &args.memory_model, &args.embedding_model);
+    let concurrency = args.llm_concurrency.unwrap_or_else(|| args.base_url.len());
+    let quick_llm = build_pool(
+        &args.base_url,
+        &args.quick_model,
+        &args.embedding_model,
+        concurrency,
+    );
+    let combob_llm = build_pool(
+        &args.base_url,
+        &args.combob_model,
+        &args.embedding_model,
+        concurrency,
+    );
+    let will_llm = build_pool(
+        &args.base_url,
+        &args.will_model,
+        &args.embedding_model,
+        concurrency,
+    );
+    let memory_llm = build_pool(
+        &args.base_url,
+        &args.memory_model,
+        &args.embedding_model,
+        concurrency,
+    );
 
     (quick_llm, combob_llm, will_llm, memory_llm)
 }

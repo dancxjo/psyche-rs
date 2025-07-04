@@ -39,3 +39,15 @@ fn default_voice_model_is_gemma3() {
     let args = Args::parse_from(["test"]);
     assert_eq!(args.voice_model, "gemma3:27b".to_string());
 }
+
+#[test]
+fn llm_concurrency_parses_as_option() {
+    let args = Args::parse_from(["test", "--llm-concurrency", "5"]);
+    assert_eq!(args.llm_concurrency, Some(5));
+}
+
+#[test]
+fn llm_concurrency_defaults_to_none() {
+    let args = Args::parse_from(["test"]);
+    assert!(args.llm_concurrency.is_none());
+}
