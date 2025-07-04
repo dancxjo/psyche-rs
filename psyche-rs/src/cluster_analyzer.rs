@@ -42,17 +42,17 @@ use std::sync::Arc;
 ///     sensation_ids: Vec::new(),
 ///     impression_ids: Vec::new(),
 /// };
-/// analyzer.store.store_impression(&imp).unwrap();
-/// futures::executor::block_on(async {
+/// tokio_test::block_on(async {
+///     analyzer.store.store_impression(&imp).await.unwrap();
 ///     analyzer.summarize(vec![vec!["i1".to_string()]]).await.unwrap();
 /// });
 /// ```
-pub struct ClusterAnalyzer<M: MemoryStore, C: LLMClient> {
+pub struct ClusterAnalyzer<M: MemoryStore + Send + Sync, C: LLMClient> {
     pub store: M,
     llm: Arc<C>,
 }
 
-impl<M: MemoryStore, C: LLMClient> ClusterAnalyzer<M, C> {
+impl<M: MemoryStore + Send + Sync, C: LLMClient> ClusterAnalyzer<M, C> {
     /// Create a new analyzer.
     pub fn new(store: M, llm: Arc<C>) -> Self {
         Self { store, llm }
@@ -70,7 +70,7 @@ impl<M: MemoryStore, C: LLMClient> ClusterAnalyzer<M, C> {
             }
             let mut sentences = Vec::new();
             for id in &cluster {
-                let (imp, _, _) = self.store.load_full_impression(id)?;
+                let (imp, _, _) = self.store.load_full_impression(id).await?;
                 sentences.push(imp.how);
             }
             let prompt = format!(
@@ -99,7 +99,9 @@ impl<M: MemoryStore, C: LLMClient> ClusterAnalyzer<M, C> {
                 sensation_ids: Vec::new(),
                 impression_ids: cluster.clone(),
             };
-            self.store.store_summary_impression(&summary, &cluster)?;
+            self.store
+                .store_summary_impression(&summary, &cluster)
+                .await?;
             summaries.push(summary);
         }
         Ok(summaries)
@@ -156,8 +158,8 @@ mod tests {
             sensation_ids: Vec::new(),
             impression_ids: Vec::new(),
         };
-        store.store_impression(&imp1).unwrap();
-        store.store_impression(&imp2).unwrap();
+        store.store_impression(&imp1).await.unwrap();
+        store.store_impression(&imp2).await.unwrap();
 
         let llm = Arc::new(StaticLLM {
             reply: "summary".into(),

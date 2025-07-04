@@ -45,7 +45,7 @@ async fn run_impression_loop<T: serde::Serialize + Clone + Send + 'static>(
     tracing::debug!("{} task started", name);
     while let Some(batch) = stream.next().await {
         for imp in &batch {
-            if let Err(e) = persist_impression(store.as_ref(), imp, kind) {
+            if let Err(e) = persist_impression(store.as_ref(), imp, kind).await {
                 tracing::warn!(error=?e, "persist failed");
             }
         }

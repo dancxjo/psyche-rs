@@ -1,6 +1,7 @@
 use crate::llm_client::LLMClient;
 use crate::memory_store::{MemoryStore, StoredImpression, StoredSensation};
 use anyhow::{Context, anyhow};
+use async_trait::async_trait;
 use reqwest::Client;
 use serde::Deserialize;
 use serde_json::json;
@@ -37,13 +38,6 @@ impl NeoQdrantMemoryStore {
         }
     }
 
-    fn block_on<F: std::future::Future>(&self, fut: F) -> F::Output {
-        match tokio::runtime::Handle::try_current() {
-            Ok(h) => h.block_on(fut),
-            Err(_) => tokio::runtime::Runtime::new().expect("rt").block_on(fut),
-        }
-    }
-
     async fn post_neo_async(&self, query: &str, params: serde_json::Value) -> anyhow::Result<()> {
         debug!(?query, "posting cypher");
         let payload = json!({"statements":[{"statement": query, "parameters": params}]});
@@ -64,14 +58,11 @@ impl NeoQdrantMemoryStore {
             Err(anyhow!("neo4j error: {}", body))
         }
     }
-
-    fn post_neo(&self, query: &str, params: serde_json::Value) -> anyhow::Result<()> {
-        self.block_on(self.post_neo_async(query, params))
-    }
 }
 
+#[async_trait]
 impl MemoryStore for NeoQdrantMemoryStore {
-    fn store_sensation(&self, sensation: &StoredSensation) -> anyhow::Result<()> {
+    async fn store_sensation(&self, sensation: &StoredSensation) -> anyhow::Result<()> {
         debug!(id = %sensation.id, "store sensation");
         let query = "MERGE (s:Sensation {uuid: $id}) SET s.kind=$kind, s.when=datetime($when), s.data=$data";
         let params = json!({
@@ -80,10 +71,10 @@ impl MemoryStore for NeoQdrantMemoryStore {
             "when": sensation.when.to_rfc3339(),
             "data": sensation.data,
         });
-        self.post_neo(query, params)
+        self.post_neo_async(query, params).await
     }
 
-    fn store_impression(&self, impression: &StoredImpression) -> anyhow::Result<()> {
+    async fn store_impression(&self, impression: &StoredImpression) -> anyhow::Result<()> {
         debug!(id = %impression.id, "store impression");
         let query = r#"
 MERGE (i:Impression {uuid:$id})
@@ -101,15 +92,13 @@ MERGE (i)-[:HAS_SENSATION]->(s)
             "sids": impression.sensation_ids,
             "imps": impression.impression_ids,
         });
-        self.post_neo(query, params)?;
+        self.post_neo_async(query, params).await?;
 
-        let vector = match tokio::runtime::Handle::try_current() {
-            Ok(h) => h.block_on(self.llm.embed(&impression.how)),
-            Err(_) => tokio::runtime::Runtime::new()
-                .expect("rt")
-                .block_on(self.llm.embed(&impression.how)),
-        };
-        let vector = vector.map_err(|e| anyhow!(e))?;
+        let vector = self
+            .llm
+            .embed(&impression.how)
+            .await
+            .map_err(|e| anyhow!(e))?;
         let qbody = json!({
             "points": [{
                 "id": impression.id,
@@ -120,19 +109,23 @@ MERGE (i)-[:HAS_SENSATION]->(s)
         let url = format!("{}/collections/impressions/points", self.qdrant_url);
         debug!(url = %url, "storing embedding to qdrant");
         let resp = self
-            .block_on(self.client.put(url).json(&qbody).send())
+            .client
+            .put(url)
+            .json(&qbody)
+            .send()
+            .await
             .context("qdrant insert failed")?;
         if resp.status().is_success() {
             Ok(())
         } else {
             let status = resp.status();
-            let body = self.block_on(resp.text()).unwrap_or_default();
+            let body = resp.text().await.unwrap_or_default();
             error!(status = %status, %body, "qdrant error");
             Err(anyhow!("qdrant error: {}", body))
         }
     }
 
-    fn add_lifecycle_stage(
+    async fn add_lifecycle_stage(
         &self,
         impression_id: &str,
         stage: &str,
@@ -150,30 +143,28 @@ MERGE (i)-[:HAS_STAGE]->(l)
             "stage": stage,
             "detail": detail,
         });
-        self.post_neo(query, params)
+        self.post_neo_async(query, params).await
     }
 
-    fn retrieve_related_impressions(
+    async fn retrieve_related_impressions(
         &self,
         query_how: &str,
         top_k: usize,
     ) -> anyhow::Result<Vec<StoredImpression>> {
         debug!(?query_how, top_k, "retrieve related impressions");
-        let vector = match tokio::runtime::Handle::try_current() {
-            Ok(h) => h.block_on(self.llm.embed(query_how)),
-            Err(_) => tokio::runtime::Runtime::new()
-                .expect("rt")
-                .block_on(self.llm.embed(query_how)),
-        };
-        let vector = vector.map_err(|e| anyhow!(e))?;
+        let vector = self.llm.embed(query_how).await.map_err(|e| anyhow!(e))?;
         let qbody = json!({"vector": vector, "limit": top_k});
         let url = format!("{}/collections/impressions/points/search", self.qdrant_url);
         let resp = self
-            .block_on(self.client.post(url).json(&qbody).send())
+            .client
+            .post(url)
+            .json(&qbody)
+            .send()
+            .await
             .context("qdrant search failed")?;
         if !resp.status().is_success() {
             let status = resp.status();
-            let body = self.block_on(resp.text()).unwrap_or_default();
+            let body = resp.text().await.unwrap_or_default();
             error!(status = %status, %body, "qdrant search error");
             return Err(anyhow!("qdrant search error: {}", body));
         }
@@ -185,7 +176,7 @@ MERGE (i)-[:HAS_STAGE]->(l)
         struct SearchItem {
             id: String,
         }
-        let ids: SearchRes = self.block_on(resp.json()).context("parse search result")?;
+        let ids: SearchRes = resp.json().await.context("parse search result")?;
         if ids.result.is_empty() {
             return Ok(Vec::new());
         }
@@ -194,17 +185,16 @@ MERGE (i)-[:HAS_STAGE]->(l)
         let params = json!({"ids": ids_vec});
         let payload = json!({"statements":[{"statement":query, "parameters":params}]});
         let resp = self
-            .block_on(
-                self.client
-                    .post(format!("{}/db/neo4j/tx/commit", self.neo4j_url))
-                    .basic_auth(&self.neo_user, Some(&self.neo_pass))
-                    .json(&payload)
-                    .send(),
-            )
+            .client
+            .post(format!("{}/db/neo4j/tx/commit", self.neo4j_url))
+            .basic_auth(&self.neo_user, Some(&self.neo_pass))
+            .json(&payload)
+            .send()
+            .await
             .context("neo4j retrieve failed")?;
         if !resp.status().is_success() {
             let status = resp.status();
-            let body = self.block_on(resp.text()).unwrap_or_default();
+            let body = resp.text().await.unwrap_or_default();
             error!(status = %status, %body, "neo4j error");
             return Err(anyhow!("neo4j error: {}", body));
         }
@@ -220,7 +210,7 @@ MERGE (i)-[:HAS_STAGE]->(l)
         struct NeoRow {
             row: (StoredImpression,),
         }
-        let res: NeoRes = self.block_on(resp.json()).context("parse neo4j result")?;
+        let res: NeoRes = resp.json().await.context("parse neo4j result")?;
         let imps = res
             .results
             .into_iter()
@@ -230,23 +220,25 @@ MERGE (i)-[:HAS_STAGE]->(l)
         Ok(imps)
     }
 
-    fn fetch_recent_impressions(&self, limit: usize) -> anyhow::Result<Vec<StoredImpression>> {
+    async fn fetch_recent_impressions(
+        &self,
+        limit: usize,
+    ) -> anyhow::Result<Vec<StoredImpression>> {
         debug!(limit, "fetch recent impressions");
         let query = "MATCH (i:Impression) RETURN i ORDER BY i.when DESC LIMIT $limit";
         let params = json!({"limit": limit});
         let payload = json!({"statements":[{"statement":query, "parameters":params}]});
         let resp = self
-            .block_on(
-                self.client
-                    .post(format!("{}/db/neo4j/tx/commit", self.neo4j_url))
-                    .basic_auth(&self.neo_user, Some(&self.neo_pass))
-                    .json(&payload)
-                    .send(),
-            )
+            .client
+            .post(format!("{}/db/neo4j/tx/commit", self.neo4j_url))
+            .basic_auth(&self.neo_user, Some(&self.neo_pass))
+            .json(&payload)
+            .send()
+            .await
             .context("neo4j recent failed")?;
         if !resp.status().is_success() {
             let status = resp.status();
-            let body = self.block_on(resp.text()).unwrap_or_default();
+            let body = resp.text().await.unwrap_or_default();
             error!(status = %status, %body, "neo4j error");
             return Err(anyhow!("neo4j error: {}", body));
         }
@@ -262,7 +254,7 @@ MERGE (i)-[:HAS_STAGE]->(l)
         struct R2 {
             row: (StoredImpression,),
         }
-        let res: Res = self.block_on(resp.json()).context("parse neo4j recent")?;
+        let res: Res = resp.json().await.context("parse neo4j recent")?;
         let out = res
             .results
             .into_iter()
@@ -272,7 +264,7 @@ MERGE (i)-[:HAS_STAGE]->(l)
         Ok(out)
     }
 
-    fn load_full_impression(
+    async fn load_full_impression(
         &self,
         impression_id: &str,
     ) -> anyhow::Result<(
@@ -290,17 +282,16 @@ RETURN i, collect(DISTINCT s) AS sens, collect(DISTINCT l) AS stages
         let params = json!({"id": impression_id});
         let payload = json!({"statements":[{"statement":query, "parameters":params}]});
         let resp = self
-            .block_on(
-                self.client
-                    .post(format!("{}/db/neo4j/tx/commit", self.neo4j_url))
-                    .basic_auth(&self.neo_user, Some(&self.neo_pass))
-                    .json(&payload)
-                    .send(),
-            )
+            .client
+            .post(format!("{}/db/neo4j/tx/commit", self.neo4j_url))
+            .basic_auth(&self.neo_user, Some(&self.neo_pass))
+            .json(&payload)
+            .send()
+            .await
             .context("neo4j load full failed")?;
         if !resp.status().is_success() {
             let status = resp.status();
-            let body = self.block_on(resp.text()).unwrap_or_default();
+            let body = resp.text().await.unwrap_or_default();
             error!(status = %status, %body, "neo4j error");
             return Err(anyhow!("neo4j error: {}", body));
         }
@@ -322,9 +313,7 @@ RETURN i, collect(DISTINCT s) AS sens, collect(DISTINCT l) AS stages
             stage: String,
             detail: String,
         }
-        let res: R = self
-            .block_on(resp.json())
-            .context("parse neo4j full result")?;
+        let res: R = resp.json().await.context("parse neo4j full result")?;
         let row = res
             .results
             .into_iter()
@@ -348,8 +337,8 @@ mod tests {
     use httpmock::prelude::*;
     use serde_json::json;
 
-    #[test]
-    fn store_impression_hits_backends() {
+    #[tokio::test]
+    async fn store_impression_hits_backends() {
         let neo = MockServer::start();
         let qdrant = MockServer::start();
 
@@ -371,7 +360,7 @@ mod tests {
             when: Utc::now(),
             data: "{}".into(),
         };
-        store.store_sensation(&sens).unwrap();
+        store.store_sensation(&sens).await.unwrap();
 
         let imp = StoredImpression {
             id: "i1".into(),
@@ -381,14 +370,14 @@ mod tests {
             sensation_ids: vec!["s1".into()],
             impression_ids: Vec::new(),
         };
-        store.store_impression(&imp).unwrap();
+        store.store_impression(&imp).await.unwrap();
 
         assert_eq!(neo_mock.hits(), 2);
         assert_eq!(q_mock.hits(), 1);
     }
 
-    #[test]
-    fn fetch_recent_queries_neo4j() {
+    #[tokio::test]
+    async fn fetch_recent_queries_neo4j() {
         let neo = MockServer::start();
         let qdrant = MockServer::start();
 
@@ -401,12 +390,12 @@ mod tests {
 
         let llm = std::sync::Arc::new(StaticLLM::new(""));
         let store = NeoQdrantMemoryStore::new(neo.url(""), "u", "p", qdrant.url(""), llm);
-        let _ = store.fetch_recent_impressions(5);
+        let _ = store.fetch_recent_impressions(5).await;
         assert_eq!(neo_mock.hits(), 1);
     }
 
-    #[test]
-    fn retrieve_related_hits_qdrant() {
+    #[tokio::test]
+    async fn retrieve_related_hits_qdrant() {
         let neo = MockServer::start();
         let qdrant = MockServer::start();
 
@@ -424,13 +413,13 @@ mod tests {
 
         let llm = std::sync::Arc::new(StaticLLM::new(""));
         let store = NeoQdrantMemoryStore::new(neo.url(""), "u", "p", qdrant.url(""), llm);
-        let _ = store.retrieve_related_impressions("hi", 3);
+        let _ = store.retrieve_related_impressions("hi", 3).await;
         assert_eq!(q_mock.hits(), 1);
         assert_eq!(neo_mock.hits(), 0);
     }
 
-    #[test]
-    fn store_impression_error_propagates() {
+    #[tokio::test]
+    async fn store_impression_error_propagates() {
         let neo = MockServer::start();
         let qdrant = MockServer::start();
 
@@ -451,7 +440,7 @@ mod tests {
             when: Utc::now(),
             data: "{}".into(),
         };
-        store.store_sensation(&sens).unwrap();
+        store.store_sensation(&sens).await.unwrap();
 
         let imp = StoredImpression {
             id: "i".into(),
@@ -461,7 +450,7 @@ mod tests {
             sensation_ids: vec!["s".into()],
             impression_ids: Vec::new(),
         };
-        assert!(store.store_impression(&imp).is_err());
+        assert!(store.store_impression(&imp).await.is_err());
         assert_eq!(q_mock.hits(), 1);
     }
 }

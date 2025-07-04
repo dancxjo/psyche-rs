@@ -56,7 +56,7 @@ impl MotorExecutor {
                                 sensation_ids: Vec::new(),
                                 impression_ids: Vec::new(),
                             };
-                            if let Err(e) = store.store_impression(&stored_imp) {
+                            if let Err(e) = store.store_impression(&stored_imp).await {
                                 warn!(?e, "failed to store intention as impression");
                             }
                         }
@@ -73,7 +73,8 @@ impl MotorExecutor {
                                                     when: s.when.with_timezone(&chrono::Utc),
                                                     data,
                                                 };
-                                                if let Err(e) = store.store_sensation(&stored) {
+                                                if let Err(e) = store.store_sensation(&stored).await
+                                                {
                                                     warn!(?e, "failed to store motor sensation");
                                                 }
                                             }
