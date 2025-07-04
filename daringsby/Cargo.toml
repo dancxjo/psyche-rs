@@ -66,19 +66,14 @@ moment-feedback = []
 single-wit = []
 debug_memory = []
 default = [
-    "logging-motor",
     "vision",
-    "canvas-motor",
     "mouth",
     "development-status-sensor",
-    "self-discovery-sensor",
     "source-read-motor",
     "source-search-motor",
     "source-tree-motor",
-    "svg-motor",
     "log-memory-motor",
     "recall-motor",
-    "canvas-stream",
     "heard-self-sensor",
     "heard-user-sensor",
     "heartbeat-sensor",
