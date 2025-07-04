@@ -96,7 +96,7 @@ function sendHeard() {
     );
   }
   pendingText = null;
-  console.log("Queue length", queue.length, "Texts length", texts.length);
+  console.debug("Queue length", queue.length, "Texts length", texts.length);
 }
 
 function sendMessage(ev) {
@@ -136,7 +136,7 @@ function pcmToWav(pcm) {
 
 function play() {
   if (playing || !queue.length) return;
-  console.log('Queue length', queue.length, 'Texts length', texts.length);
+  console.debug('Queue length', queue.length, 'Texts length', texts.length);
   playing = true;
   const pcm = queue.shift();
   if (pcm.length === 0) {
