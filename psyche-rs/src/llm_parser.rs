@@ -230,3 +230,26 @@ mod tests {
         assert_eq!(text, "hello");
     }
 }
+#[cfg(test)]
+mod _parse_speak_log_tests {
+    use super::*;
+    use futures::stream;
+
+    #[tokio::test]
+    async fn parses_speak_and_log_intentions() {
+        let text = "<speak speaker_id=\"p234\" language_id=\"en\">hi</speak><log>done</log>";
+        let tokens = text.chars().map(|c| Ok(c.to_string())).collect::<Vec<_>>();
+        let stream = Box::pin(stream::iter(tokens));
+        let window = Arc::new(Mutex::new(Vec::<Sensation<String>>::new()));
+        let (tx, mut rx) = unbounded_channel();
+
+        drive_llm_stream("test", stream, window.clone(), tx, None).await;
+        let mut all = Vec::new();
+        while let Some(mut batch) = rx.recv().await {
+            all.append(&mut batch);
+        }
+        assert_eq!(all.len(), 2);
+        assert_eq!(all[0].assigned_motor, "speak");
+        assert_eq!(all[1].assigned_motor, "log");
+    }
+}
