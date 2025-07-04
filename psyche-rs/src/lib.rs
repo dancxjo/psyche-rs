@@ -178,7 +178,7 @@ mod tests {
                 "records actions into a vector"
             }
             fn name(&self) -> &'static str {
-                "say"
+                "speak"
             }
             async fn perform(&self, intention: Intention) -> Result<ActionResult, MotorError> {
                 let mut action = intention.action;
@@ -205,8 +205,8 @@ mod tests {
             for impression in batch {
                 let text = impression.how.clone();
                 let body = stream::once(async move { text }).boxed();
-                let action = Action::new("say", Value::Null, body);
-                let intention = Intention::to(action).assign("say");
+                let action = Action::new("speak", Value::Null, body);
+                let intention = Intention::to(action).assign("speak");
                 futures::executor::block_on(async {
                     motor.perform(intention).await.unwrap();
                 });

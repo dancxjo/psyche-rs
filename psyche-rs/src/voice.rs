@@ -164,8 +164,8 @@ impl Voice {
                                             let body =
                                                 futures::stream::once(async move { body_text })
                                                     .boxed();
-                                            let action = Action::new("say", Value::Null, body);
-                                            let intent = Intention::to(action).assign("say");
+                                            let action = Action::new("speak", Value::Null, body);
+                                            let intent = Intention::to(action).assign("speak");
                                             let _ = tx.send(vec![intent]);
                                             if let Some(qtx) = &quick_tx {
                                                 let sens = Sensation {
@@ -192,8 +192,8 @@ impl Voice {
                                 let text = sent.clone();
                                 let body_text = text.clone();
                                 let body = futures::stream::once(async move { body_text }).boxed();
-                                let action = Action::new("say", Value::Null, body);
-                                let intent = Intention::to(action).assign("say");
+                                let action = Action::new("speak", Value::Null, body);
+                                let intent = Intention::to(action).assign("speak");
                                 let _ = tx.send(vec![intent]);
                                 if let Some(qtx) = &quick_tx {
                                     let sens = Sensation {
@@ -240,8 +240,8 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn emits_say_intention() {
-        let llm = Arc::new(StaticLLM::new("<say>hi</say>"));
+    async fn emits_speak_intention() {
+        let llm = Arc::new(StaticLLM::new("<speak>hi</speak>"));
         let voice = Voice::new(llm, 5).delay_ms(10);
         let ear = TestEar;
         let get_situation = Arc::new(|| "".to_string());
@@ -249,7 +249,7 @@ mod tests {
         let mut stream = voice.observe(ear, get_situation, get_instant).await;
         let batch = stream.next().await.unwrap();
         assert!(!batch.is_empty());
-        assert_eq!(batch[0].assigned_motor, "say");
+        assert_eq!(batch[0].assigned_motor, "speak");
     }
 
     #[tokio::test]
@@ -262,7 +262,7 @@ mod tests {
         let mut stream = voice.observe(ear, get_situation, get_instant).await;
         let a = stream.next().await.unwrap();
         let b = stream.next().await.unwrap();
-        assert_eq!(a[0].assigned_motor, "say");
-        assert_eq!(b[0].assigned_motor, "say");
+        assert_eq!(a[0].assigned_motor, "speak");
+        assert_eq!(b[0].assigned_motor, "speak");
     }
 }

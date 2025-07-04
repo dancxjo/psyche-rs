@@ -6,7 +6,7 @@ use crate::sensation::Sensation;
 
 /// Represents a motor command with streaming body content.
 pub struct Action {
-    /// Action name such as `say` or `look`.
+    /// Action name such as `speak` or `look`.
     pub name: String,
     /// Parsed parameters from the action tag.
     pub params: Value,
@@ -154,6 +154,23 @@ impl std::fmt::Display for Intention {
     }
 }
 
+impl Intention {
+    /// Summarize this intention in a single English sentence.
+    ///
+    /// ```
+    /// use futures::stream::{self, StreamExt};
+    /// use psyche_rs::{Action, Intention};
+    ///
+    /// let body = stream::empty().boxed();
+    /// let intent = Intention::to(Action::new("draw", serde_json::Value::Null, body))
+    ///     .assign("canvas");
+    /// assert_eq!(intent.summary(), "I'm about to draw.");
+    /// ```
+    pub fn summary(&self) -> String {
+        format!("I'm about to {}.", self.action.name)
+    }
+}
+
 /// Metadata describing an interruption to an action.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Interruption {
@@ -204,9 +221,9 @@ impl Completion {
     /// use psyche_rs::{Action, Completion};
     /// use futures::stream::{self, StreamExt};
     /// let body = stream::empty().boxed();
-    /// let action = Action::new("say", serde_json::Value::Null, body);
+    /// let action = Action::new("speak", serde_json::Value::Null, body);
     /// let c = Completion::of_action(action);
-    /// assert_eq!(c.name, "say");
+    /// assert_eq!(c.name, "speak");
     /// ```
     pub fn of_action(action: Action) -> Self {
         Self {

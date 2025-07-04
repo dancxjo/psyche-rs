@@ -15,7 +15,7 @@ use psyche_rs::{ActionResult, Completion, Intention, Motor, MotorError};
 
 /// Motor that streams text-to-speech audio via HTTP.
 ///
-/// The motor responds to the `say` action name which streams audio via a
+/// The motor responds to the `speak` action name which streams audio via a
 /// TTS service.
 ///
 /// Sentences from the input body are sent to a TTS service and the
@@ -157,17 +157,17 @@ impl Motor for Mouth {
         "Speak text out loud to your interlocutor (or no one at all).\n\
 Params: `speaker_id` (required) and required `language_id`.\n\
 Example:\n\
-<say speaker_id=\"p234\" language_id=\"en\">Hello, world.</say>\n\
+<speak speaker_id=\"p234\" language_id=\"en\">Hello, world.</speak>\n\
 Explanation:\n\
 The Will sends the text to the TTS service with the given voice and language."
     }
 
     fn name(&self) -> &'static str {
-        "say"
+        "speak"
     }
 
     async fn perform(&self, intention: Intention) -> Result<ActionResult, MotorError> {
-        if intention.action.name != "say" {
+        if intention.action.name != "speak" {
             return Err(MotorError::Unrecognized);
         }
         let mut action = intention.action;
@@ -357,8 +357,8 @@ mod tests {
         let body = stream::once(async { "Hello world. How are you?".to_string() }).boxed();
         let mut map = Map::new();
         map.insert("speaker_id".into(), Value::String("p234".into()));
-        let action = Action::new("say", Value::Object(map), body);
-        let intention = Intention::to(action).assign("say");
+        let action = Action::new("speak", Value::Object(map), body);
+        let intention = Intention::to(action).assign("speak");
 
         // Act
         mouth.perform(intention).await.unwrap();
@@ -399,8 +399,8 @@ mod tests {
         let body = stream::once(async { "Hi.".to_string() }).boxed();
         let mut map = Map::new();
         map.insert("speaker_id".into(), Value::String("p234".into()));
-        let action = Action::new("say", Value::Object(map), body);
-        let intention = Intention::to(action).assign("say");
+        let action = Action::new("speak", Value::Object(map), body);
+        let intention = Intention::to(action).assign("speak");
 
         // Act
         mouth.perform(intention).await.unwrap();
@@ -442,8 +442,8 @@ mod tests {
         let mouth = Mouth::new(client, server.url(""), None);
         let mut rx = mouth.subscribe();
         let body = stream::once(async { "Hi.".to_string() }).boxed();
-        let action = Action::new("say", Map::new().into(), body);
-        let intention = Intention::to(action).assign("say");
+        let action = Action::new("speak", Map::new().into(), body);
+        let intention = Intention::to(action).assign("speak");
 
         // Act
         mouth.perform(intention).await.unwrap();
@@ -488,8 +488,8 @@ mod tests {
         let mouth = Mouth::new(client, server.url(""), None);
         let mut seg_rx = mouth.subscribe_segments();
         let body = stream::once(async { "Hi.".to_string() }).boxed();
-        let action = Action::new("say", Map::new().into(), body);
-        let intention = Intention::to(action).assign("say");
+        let action = Action::new("speak", Map::new().into(), body);
+        let intention = Intention::to(action).assign("speak");
         mouth.perform(intention).await.unwrap();
         let seg = seg_rx.recv().await.unwrap();
         assert_eq!(seg.text, "Hi.");
@@ -512,12 +512,12 @@ mod tests {
             .unwrap();
         let mouth = Mouth::new(client, server.url(""), None);
         let body = stream::once(async { "Hi.".to_string() }).boxed();
-        let action = Action::new("say", Map::new().into(), body);
-        let intention = Intention::to(action).assign("say");
+        let action = Action::new("speak", Map::new().into(), body);
+        let intention = Intention::to(action).assign("speak");
         let result = mouth.perform(intention).await.unwrap();
         assert!(result.completed);
         let completion = result.completion.unwrap();
-        assert_eq!(completion.name, "say");
+        assert_eq!(completion.name, "speak");
         assert!(completion.params.as_object().unwrap().is_empty());
     }
 }

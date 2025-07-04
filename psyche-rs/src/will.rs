@@ -489,13 +489,13 @@ mod tests {
 
     #[test]
     fn detects_motor_tag() {
-        // Given a Will with a "say" motor
+        // Given a Will with a "speak" motor
         let llm = Arc::new(StaticLLM::new(""));
         let mut will = Will::<serde_json::Value>::new(llm);
-        will = will.motor("say", "say words");
+        will = will.motor("speak", "speak words");
 
-        // When the output contains a <say> tag
-        let out = "Thinking <say mood=\"happy\">hi</say>";
+        // When the output contains a <speak> tag
+        let out = "Thinking <speak mood=\"happy\">hi</speak>";
 
         // Then the tag is detected
         assert!(will.contains_motor_action(out));
@@ -517,7 +517,7 @@ mod tests {
     fn ignores_unknown_tags() {
         // Given a Will with a single motor
         let llm = Arc::new(StaticLLM::new(""));
-        let will = Will::<serde_json::Value>::new(llm).motor("say", "");
+        let will = Will::<serde_json::Value>::new(llm).motor("speak", "");
 
         // When the output contains an unknown element
         assert!(!will.contains_motor_action("<unknown/>"));
@@ -535,12 +535,12 @@ mod tests {
 
     #[test]
     fn invalid_xml_is_ignored() {
-        // Given a Will with a "say" motor
+        // Given a Will with a "speak" motor
         let llm = Arc::new(StaticLLM::new(""));
-        let will = Will::<serde_json::Value>::new(llm).motor("say", "");
+        let will = Will::<serde_json::Value>::new(llm).motor("speak", "");
 
         // When the xml is malformed no motor should be detected
-        assert!(!will.contains_motor_action("<say"));
+        assert!(!will.contains_motor_action("<speak"));
     }
 
     struct DummyMotor;
@@ -571,11 +571,11 @@ mod tests {
         let llm = Arc::new(StaticLLM::new(""));
         let mut will = Will::<serde_json::Value>::new(llm);
         assert_eq!(will.motor_text(), "");
-        will = will.motor("say", "speak");
-        assert_eq!(will.motor_text(), "say: speak");
+        will = will.motor("speak", "speak");
+        assert_eq!(will.motor_text(), "speak: speak");
         let motor = DummyMotor;
         will.register_motor(&motor);
-        assert_eq!(will.motor_text(), "say: speak\ndum: test");
+        assert_eq!(will.motor_text(), "speak: speak\ndum: test");
     }
 
     #[tokio::test]
