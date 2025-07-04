@@ -34,20 +34,36 @@ fn map_stream(stream: ChatMessageResponseStream) -> LLMTokenStream {
 pub struct OllamaLLM {
     client: Ollama,
     model: String,
+    embedding_model: String,
 }
 
 impl OllamaLLM {
     /// Creates a new Ollama-backed client.
     pub fn new(client: Ollama, model: impl Into<String>) -> Self {
+        Self::with_embedding_model(client, model, "nomic-embed-text")
+    }
+
+    /// Creates a new client with a custom embedding model.
+    pub fn with_embedding_model(
+        client: Ollama,
+        model: impl Into<String>,
+        embedding_model: impl Into<String>,
+    ) -> Self {
         Self {
             client,
             model: model.into(),
+            embedding_model: embedding_model.into(),
         }
     }
 
     /// Returns the configured model name.
     pub fn model(&self) -> &str {
         &self.model
+    }
+
+    /// Returns the embedding model name.
+    pub fn embedding_model(&self) -> &str {
+        &self.embedding_model
     }
 }
 
@@ -71,7 +87,7 @@ impl LLMClient for OllamaLLM {
         let res = self
             .client
             .generate_embeddings(GenerateEmbeddingsRequest::new(
-                self.model.clone(),
+                self.embedding_model.clone(),
                 text.into(),
             ))
             .await?;
@@ -85,6 +101,7 @@ mod tests {
     use futures::StreamExt;
     use httpmock::prelude::*;
     use reqwest::Client;
+    use serde_json::json;
     use url::Url;
 
     #[tokio::test]
@@ -117,5 +134,29 @@ mod tests {
             collected.push_str(&tok.unwrap());
         }
         assert_eq!(collected, "hello");
+    }
+
+    #[tokio::test]
+    async fn uses_embedding_model() {
+        let server = MockServer::start_async().await;
+        let _m = server
+            .mock_async(|when, then| {
+                when.method(POST).path("/api/embed");
+                then.status(200)
+                    .json_body(json!({"embeddings": [[0.1, 0.2]]}));
+            })
+            .await;
+
+        let http = Client::builder()
+            .pool_max_idle_per_host(10)
+            .build()
+            .unwrap();
+        let url = Url::parse(&server.base_url()).unwrap();
+        let host = format!("{}://{}", url.scheme(), url.host_str().unwrap());
+        let port = url.port_or_known_default().unwrap();
+        let client = Ollama::new_with_client(host, port, http);
+        let llm = OllamaLLM::with_embedding_model(client, "m", "e");
+        let vec = llm.embed("hi").await.unwrap();
+        assert!((vec[0] - 0.1).abs() < f32::EPSILON);
     }
 }
