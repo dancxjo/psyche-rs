@@ -4,7 +4,7 @@ use anyhow::{Context, anyhow};
 use async_trait::async_trait;
 use reqwest::Client;
 use serde::Deserialize;
-use serde_json::json;
+use serde_json::{from_str, json};
 use std::collections::HashMap;
 use tracing::{debug, error};
 
@@ -254,7 +254,10 @@ MERGE (i)-[:HAS_STAGE]->(l)
         struct R2 {
             row: (StoredImpression,),
         }
-        let res: Res = resp.json().await.context("parse neo4j recent")?;
+        let status = resp.status();
+        let body = resp.text().await.context("neo4j recent body")?;
+        let res: Res = from_str(&body)
+            .with_context(|| format!("parse neo4j recent (status {status}): {body}"))?;
         let out = res
             .results
             .into_iter()
@@ -452,5 +455,22 @@ mod tests {
         };
         assert!(store.store_impression(&imp).await.is_err());
         assert_eq!(q_mock.hits(), 1);
+    }
+
+    #[tokio::test]
+    async fn fetch_recent_parse_error_body_included() {
+        let neo = MockServer::start();
+        let qdrant = MockServer::start();
+
+        let neo_mock = neo.mock(|when, then| {
+            when.method(POST);
+            then.status(200).body("not json");
+        });
+
+        let llm = std::sync::Arc::new(StaticLLM::new(""));
+        let store = NeoQdrantMemoryStore::new(neo.url(""), "u", "p", qdrant.url(""), llm);
+        let err = store.fetch_recent_impressions(5).await.unwrap_err();
+        assert!(err.to_string().contains("not json"));
+        assert_eq!(neo_mock.hits(), 1);
     }
 }
