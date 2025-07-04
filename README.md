@@ -66,10 +66,12 @@ cargo run -- \
 
 Available options (see `main.rs`):
 
-* `--base-url`: Ollama base URL. Repeat to add more servers (default: `http://localhost:11434`)
-* `--llm-concurrency`: Max concurrent LLM calls. Defaults to the number of
-  `--base-url` values. Concurrency >1 without multiple servers may overwhelm a
+* `--base-url`: Ollama base URL. Repeat to add more servers (default:
+  `http://localhost:11434`). Multiple servers are strongly recommended for
+  parallel LLM calls. Concurrency >1 without multiple servers may overwhelm a
   single backend.
+* `--llm-concurrency`: Max concurrent LLM calls. Defaults to the number of
+  `--base-url` values.
 * `--quick-model`: Model used for Quick tasks (default: `gemma3:27b`)
 * `--combob-model`: Model used for Combobulator tasks (default: `gemma3:27b`)
 * `--will-model`: Model used for Will tasks (default: `gemma3:27b`)
