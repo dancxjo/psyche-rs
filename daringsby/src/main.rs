@@ -2,7 +2,7 @@ use clap::Parser;
 use daringsby::args::Args;
 use std::sync::Arc;
 
-use daringsby::memory_helpers::persist_impression;
+use daringsby::memory_helpers::{ensure_impressions_collection_exists, persist_impression};
 use daringsby::{CanvasStream, VisionSensor};
 use daringsby::{
     llm_helpers::build_ollama_clients,
@@ -19,7 +19,9 @@ use psyche_rs::{
     Combobulator, Impression, ImpressionStreamSensor, Motor, MotorExecutor, NeoQdrantMemoryStore,
     Sensor, Voice, Will, Wit, shutdown_signal,
 };
+use reqwest::Client;
 use tokio::sync::mpsc::unbounded_channel;
+use url::Url;
 
 async fn run_sensor_loop<I>(
     mut stream: BoxStream<'static, Vec<I>>,
@@ -99,6 +101,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         &args.qdrant_url,
         llms.memory.clone(),
     ));
+    let qdrant_url = Url::parse(&args.qdrant_url)?;
+    ensure_impressions_collection_exists(&Client::new(), &qdrant_url).await?;
     let (motors, _motor_map) = build_motors(
         &llms,
         mouth.clone(),

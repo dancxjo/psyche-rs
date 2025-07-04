@@ -1,6 +1,9 @@
 use chrono::Utc;
 use psyche_rs::{Impression, MemoryStore, StoredImpression, StoredSensation};
-use tracing::{debug, error};
+use reqwest::Client;
+use serde_json::json;
+use tracing::{debug, error, info};
+use url::Url;
 
 /// Persist an impression to the provided store.
 ///
@@ -40,11 +43,71 @@ pub async fn persist_impression<T: serde::Serialize>(
     })
 }
 
+/// Ensure the `impressions` collection exists in Qdrant.
+///
+/// Sends a `GET` request to check if the collection is present. If it returns
+/// a `404` status code, a `PUT` request is issued to create the collection with
+/// appropriate vector parameters.
+pub async fn ensure_impressions_collection_exists(
+    client: &Client,
+    qdrant_base_url: &Url,
+) -> anyhow::Result<()> {
+    let url = qdrant_base_url.join("collections/impressions")?;
+    let resp = client.get(url.clone()).send().await?;
+
+    #[cfg(feature = "debug_memory")]
+    {
+        let status = resp.status();
+        let body = resp.text().await.unwrap_or_default();
+        debug!(%status, %body, "qdrant check response");
+    }
+
+    if resp.status().is_success() {
+        info!("impressions collection exists");
+        return Ok(());
+    }
+
+    if resp.status() != reqwest::StatusCode::NOT_FOUND {
+        let status = resp.status();
+        let body = resp.text().await.unwrap_or_default();
+        error!(%status, %body, "failed to query collection");
+        anyhow::bail!("qdrant check failed: {status}");
+    }
+
+    let body = json!({
+        "vectors": {
+            "size": 768,
+            "distance": "Cosine"
+        }
+    });
+    let resp = client.put(url).json(&body).send().await?;
+
+    #[cfg(feature = "debug_memory")]
+    {
+        let status = resp.status();
+        let body = resp.text().await.unwrap_or_default();
+        debug!(%status, %body, "qdrant create response");
+    }
+
+    if resp.status().is_success() {
+        info!("impressions collection created");
+        Ok(())
+    } else {
+        let status = resp.status();
+        let body = resp.text().await.unwrap_or_default();
+        error!(%status, %body, "failed to create collection");
+        anyhow::bail!("failed to create collection: {status}");
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use chrono::Local;
+    use httpmock::prelude::*;
     use psyche_rs::{InMemoryStore, Sensation};
+    use serde_json::json;
+    use url::Url;
 
     #[tokio::test]
     async fn stores_impression_and_sensations() {
@@ -60,5 +123,75 @@ mod tests {
             what: vec![sensation],
         };
         assert!(persist_impression(&store, &imp, "Instant").await.is_ok());
+    }
+
+    #[tokio::test]
+    async fn creates_collection_when_missing() {
+        let server = MockServer::start_async().await;
+        let _get = server
+            .mock_async(|when, then| {
+                when.method(GET).path("/collections/impressions");
+                then.status(404);
+            })
+            .await;
+        let put = server
+            .mock_async(|when, then| {
+                when.method(PUT)
+                    .path("/collections/impressions")
+                    .json_body(json!({"vectors": {"size": 768, "distance": "Cosine"}}));
+                then.status(200);
+            })
+            .await;
+        let client = Client::new();
+        let url = Url::parse(&server.url("")).unwrap();
+        assert!(
+            ensure_impressions_collection_exists(&client, &url)
+                .await
+                .is_ok()
+        );
+        put.assert();
+    }
+
+    #[tokio::test]
+    async fn does_nothing_when_collection_exists() {
+        let server = MockServer::start_async().await;
+        let get = server
+            .mock_async(|when, then| {
+                when.method(GET).path("/collections/impressions");
+                then.status(200);
+            })
+            .await;
+        let client = Client::new();
+        let url = Url::parse(&server.url("")).unwrap();
+        assert!(
+            ensure_impressions_collection_exists(&client, &url)
+                .await
+                .is_ok()
+        );
+        get.assert();
+    }
+
+    #[tokio::test]
+    async fn returns_error_on_failed_creation() {
+        let server = MockServer::start_async().await;
+        let _get = server
+            .mock_async(|when, then| {
+                when.method(GET).path("/collections/impressions");
+                then.status(404);
+            })
+            .await;
+        let _put = server
+            .mock_async(|when, then| {
+                when.method(PUT).path("/collections/impressions");
+                then.status(500);
+            })
+            .await;
+        let client = Client::new();
+        let url = Url::parse(&server.url("")).unwrap();
+        assert!(
+            ensure_impressions_collection_exists(&client, &url)
+                .await
+                .is_err()
+        );
     }
 }
