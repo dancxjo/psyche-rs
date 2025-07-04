@@ -2,6 +2,8 @@ use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
+use async_trait::async_trait;
+
 /// Represents a sensation stored in memory.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct StoredSensation {
@@ -25,28 +27,29 @@ pub struct StoredImpression {
 }
 
 /// Trait for interacting with Pete's memory storage.
+#[async_trait]
 pub trait MemoryStore {
     /// Insert a new sensation. Implementations should avoid duplicating
     /// previously stored sensations.
-    fn store_sensation(&self, sensation: &StoredSensation) -> anyhow::Result<()>;
+    async fn store_sensation(&self, sensation: &StoredSensation) -> anyhow::Result<()>;
 
     /// Insert a new impression. Implementations are responsible for
     /// persisting the impression and storing its embedding in Qdrant.
-    fn store_impression(&self, impression: &StoredImpression) -> anyhow::Result<()>;
+    async fn store_impression(&self, impression: &StoredImpression) -> anyhow::Result<()>;
 
     /// Insert a summary impression linked to other impressions.
-    fn store_summary_impression(
+    async fn store_summary_impression(
         &self,
         summary: &StoredImpression,
         linked_ids: &[String],
     ) -> anyhow::Result<()> {
         let _ = linked_ids;
-        self.store_impression(summary)
+        self.store_impression(summary).await
     }
 
     /// Link an impression to a lifecycle stage. `detail` may contain a brief
     /// description of the stage.
-    fn add_lifecycle_stage(
+    async fn add_lifecycle_stage(
         &self,
         impression_id: &str,
         stage: &str,
@@ -54,19 +57,20 @@ pub trait MemoryStore {
     ) -> anyhow::Result<()>;
 
     /// Retrieve impressions related to a query string using vector search.
-    fn retrieve_related_impressions(
+    async fn retrieve_related_impressions(
         &self,
         query_how: &str,
         top_k: usize,
     ) -> anyhow::Result<Vec<StoredImpression>>;
 
     /// Fetch the most recent impressions from storage.
-    fn fetch_recent_impressions(&self, limit: usize) -> anyhow::Result<Vec<StoredImpression>>;
+    async fn fetch_recent_impressions(&self, limit: usize)
+    -> anyhow::Result<Vec<StoredImpression>>;
 
     /// Load the full impression, including associated sensations and lifecycle
     /// information. The returned `HashMap` maps stage names to their detail
     /// strings.
-    fn load_full_impression(
+    async fn load_full_impression(
         &self,
         impression_id: &str,
     ) -> anyhow::Result<(
@@ -102,8 +106,9 @@ impl InMemoryStore {
     }
 }
 
+#[async_trait]
 impl MemoryStore for InMemoryStore {
-    fn store_sensation(&self, sensation: &StoredSensation) -> anyhow::Result<()> {
+    async fn store_sensation(&self, sensation: &StoredSensation) -> anyhow::Result<()> {
         self.sensations
             .lock()
             .unwrap()
@@ -112,7 +117,7 @@ impl MemoryStore for InMemoryStore {
         Ok(())
     }
 
-    fn store_impression(&self, impression: &StoredImpression) -> anyhow::Result<()> {
+    async fn store_impression(&self, impression: &StoredImpression) -> anyhow::Result<()> {
         self.impressions
             .lock()
             .unwrap()
@@ -120,7 +125,7 @@ impl MemoryStore for InMemoryStore {
         Ok(())
     }
 
-    fn add_lifecycle_stage(
+    async fn add_lifecycle_stage(
         &self,
         impression_id: &str,
         stage: &str,
@@ -132,7 +137,7 @@ impl MemoryStore for InMemoryStore {
         Ok(())
     }
 
-    fn retrieve_related_impressions(
+    async fn retrieve_related_impressions(
         &self,
         _query_how: &str,
         top_k: usize,
@@ -141,14 +146,17 @@ impl MemoryStore for InMemoryStore {
         Ok(imps.values().take(top_k).cloned().collect())
     }
 
-    fn fetch_recent_impressions(&self, limit: usize) -> anyhow::Result<Vec<StoredImpression>> {
+    async fn fetch_recent_impressions(
+        &self,
+        limit: usize,
+    ) -> anyhow::Result<Vec<StoredImpression>> {
         let mut imps: Vec<_> = self.impressions.lock().unwrap().values().cloned().collect();
         imps.sort_by_key(|i| std::cmp::Reverse(i.when));
         imps.truncate(limit);
         Ok(imps)
     }
 
-    fn load_full_impression(
+    async fn load_full_impression(
         &self,
         impression_id: &str,
     ) -> anyhow::Result<(
@@ -178,48 +186,56 @@ impl MemoryStore for InMemoryStore {
     }
 }
 
+#[async_trait]
 impl<M> MemoryStore for std::sync::Arc<M>
 where
-    M: MemoryStore + ?Sized,
+    M: MemoryStore + Send + Sync + ?Sized,
 {
-    fn store_sensation(&self, s: &StoredSensation) -> anyhow::Result<()> {
-        (**self).store_sensation(s)
+    async fn store_sensation(&self, s: &StoredSensation) -> anyhow::Result<()> {
+        (**self).store_sensation(s).await
     }
 
-    fn store_impression(&self, i: &StoredImpression) -> anyhow::Result<()> {
-        (**self).store_impression(i)
+    async fn store_impression(&self, i: &StoredImpression) -> anyhow::Result<()> {
+        (**self).store_impression(i).await
     }
 
-    fn store_summary_impression(
+    async fn store_summary_impression(
         &self,
         summary: &StoredImpression,
         linked_ids: &[String],
     ) -> anyhow::Result<()> {
-        (**self).store_summary_impression(summary, linked_ids)
+        (**self).store_summary_impression(summary, linked_ids).await
     }
 
-    fn add_lifecycle_stage(
+    async fn add_lifecycle_stage(
         &self,
         impression_id: &str,
         stage: &str,
         detail: &str,
     ) -> anyhow::Result<()> {
-        (**self).add_lifecycle_stage(impression_id, stage, detail)
+        (**self)
+            .add_lifecycle_stage(impression_id, stage, detail)
+            .await
     }
 
-    fn retrieve_related_impressions(
+    async fn retrieve_related_impressions(
         &self,
         query_how: &str,
         top_k: usize,
     ) -> anyhow::Result<Vec<StoredImpression>> {
-        (**self).retrieve_related_impressions(query_how, top_k)
+        (**self)
+            .retrieve_related_impressions(query_how, top_k)
+            .await
     }
 
-    fn fetch_recent_impressions(&self, limit: usize) -> anyhow::Result<Vec<StoredImpression>> {
-        (**self).fetch_recent_impressions(limit)
+    async fn fetch_recent_impressions(
+        &self,
+        limit: usize,
+    ) -> anyhow::Result<Vec<StoredImpression>> {
+        (**self).fetch_recent_impressions(limit).await
     }
 
-    fn load_full_impression(
+    async fn load_full_impression(
         &self,
         impression_id: &str,
     ) -> anyhow::Result<(
@@ -227,7 +243,7 @@ where
         Vec<StoredSensation>,
         HashMap<String, String>,
     )> {
-        (**self).load_full_impression(impression_id)
+        (**self).load_full_impression(impression_id).await
     }
 }
 
@@ -256,18 +272,19 @@ mod tests {
         }
     }
 
-    #[test]
-    fn store_and_load_round_trip() {
+    #[tokio::test]
+    async fn store_and_load_round_trip() {
         let store = InMemoryStore::new();
         let s1 = sample_sensation("s1");
-        store.store_sensation(&s1).unwrap();
+        store.store_sensation(&s1).await.unwrap();
         let imp = sample_impression("i1", &[s1.clone()]);
-        store.store_impression(&imp).unwrap();
+        store.store_impression(&imp).await.unwrap();
         store
             .add_lifecycle_stage(&imp.id, "Intention", "test")
+            .await
             .unwrap();
 
-        let (loaded_imp, sensations, stages) = store.load_full_impression(&imp.id).unwrap();
+        let (loaded_imp, sensations, stages) = store.load_full_impression(&imp.id).await.unwrap();
         assert_eq!(loaded_imp, imp);
         assert_eq!(sensations, vec![s1]);
         assert_eq!(stages.get("Intention"), Some(&"test".to_string()));
@@ -299,19 +316,19 @@ mod integration_tests {
         }
     }
 
-    #[test]
-    fn store_sensation_once_and_link_to_multiple_impressions() {
+    #[tokio::test]
+    async fn store_sensation_once_and_link_to_multiple_impressions() {
         let store = InMemoryStore::new();
         let sensation = make_sensation("s1");
-        store.store_sensation(&sensation).unwrap();
+        store.store_sensation(&sensation).await.unwrap();
 
         let imp1 = make_impression("i1", vec![sensation.id.clone()]);
         let imp2 = make_impression("i2", vec![sensation.id.clone()]);
-        store.store_impression(&imp1).unwrap();
-        store.store_impression(&imp2).unwrap();
+        store.store_impression(&imp1).await.unwrap();
+        store.store_impression(&imp2).await.unwrap();
 
-        let (imp1_loaded, sens1, _) = store.load_full_impression("i1").unwrap();
-        let (imp2_loaded, sens2, _) = store.load_full_impression("i2").unwrap();
+        let (imp1_loaded, sens1, _) = store.load_full_impression("i1").await.unwrap();
+        let (imp2_loaded, sens2, _) = store.load_full_impression("i2").await.unwrap();
 
         assert_eq!(imp1_loaded.id, "i1");
         assert_eq!(imp2_loaded.id, "i2");
@@ -319,68 +336,71 @@ mod integration_tests {
         assert_eq!(sens2, vec![sensation.clone()]);
     }
 
-    #[test]
-    fn lifecycle_stage_linking_and_retrieval() {
+    #[tokio::test]
+    async fn lifecycle_stage_linking_and_retrieval() {
         let store = InMemoryStore::new();
         let sensation = make_sensation("s2");
-        store.store_sensation(&sensation).unwrap();
+        store.store_sensation(&sensation).await.unwrap();
         let imp = make_impression("i3", vec![sensation.id.clone()]);
-        store.store_impression(&imp).unwrap();
+        store.store_impression(&imp).await.unwrap();
 
         store
             .add_lifecycle_stage("i3", "Intention", "wanted to greet")
+            .await
             .unwrap();
         store
             .add_lifecycle_stage("i3", "Action", "waved hand")
+            .await
             .unwrap();
 
-        let (_, _, stages) = store.load_full_impression("i3").unwrap();
+        let (_, _, stages) = store.load_full_impression("i3").await.unwrap();
         assert_eq!(stages.get("Intention"), Some(&"wanted to greet".into()));
         assert_eq!(stages.get("Action"), Some(&"waved hand".into()));
     }
 
-    #[test]
-    fn related_impressions_via_retrieve_related_impressions_mock() {
+    #[tokio::test]
+    async fn related_impressions_via_retrieve_related_impressions_mock() {
         let store = InMemoryStore::new();
         for i in 0..10 {
             let s = make_sensation(&format!("s{}", i));
-            store.store_sensation(&s).unwrap();
+            store.store_sensation(&s).await.unwrap();
             let imp = make_impression(&format!("i{}", i), vec![s.id.clone()]);
-            store.store_impression(&imp).unwrap();
+            store.store_impression(&imp).await.unwrap();
         }
 
         let related = store
             .retrieve_related_impressions("Saw a familiar face.", 3)
+            .await
             .unwrap();
         assert_eq!(related.len(), 3);
     }
 
-    #[test]
-    fn consolidates_duplicate_sensations() {
+    #[tokio::test]
+    async fn consolidates_duplicate_sensations() {
         let store = InMemoryStore::new();
         let mut s = make_sensation("dup");
-        store.store_sensation(&s).unwrap();
+        store.store_sensation(&s).await.unwrap();
         s.data = "changed".into();
-        store.store_sensation(&s).unwrap();
+        store.store_sensation(&s).await.unwrap();
 
         let imp = make_impression("i_dup", vec!["dup".into()]);
-        store.store_impression(&imp).unwrap();
-        let (_, sens, _) = store.load_full_impression("i_dup").unwrap();
+        store.store_impression(&imp).await.unwrap();
+        let (_, sens, _) = store.load_full_impression("i_dup").await.unwrap();
         assert_eq!(sens.len(), 1);
         assert_eq!(sens[0].data, r#"{"face_id":"abc123"}"#);
     }
 
-    #[test]
-    fn fetch_recent_returns_latest() {
+    #[tokio::test]
+    async fn fetch_recent_returns_latest() {
         let store = InMemoryStore::new();
         for i in 0..3 {
             let s = make_sensation(&format!("s{}", i));
-            store.store_sensation(&s).unwrap();
+            store.store_sensation(&s).await.unwrap();
             let mut imp = make_impression(&format!("i{}", i), vec![s.id.clone()]);
             imp.when = imp.when + chrono::Duration::seconds(i as i64);
-            store.store_impression(&imp).unwrap();
+            store.store_impression(&imp).await.unwrap();
         }
-        let latest = store.fetch_recent_impressions(2).unwrap();
+        let latest = store.fetch_recent_impressions(2).await.unwrap();
         assert_eq!(latest.len(), 2);
         assert!(latest[0].when >= latest[1].when);
     }

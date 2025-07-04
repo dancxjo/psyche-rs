@@ -5,8 +5,8 @@ use tracing::{debug, error};
 /// Persist an impression to the provided store.
 ///
 /// Clones the sensation data to avoid ownership issues.
-pub fn persist_impression<T: serde::Serialize>(
-    store: &dyn MemoryStore,
+pub async fn persist_impression<T: serde::Serialize>(
+    store: &(dyn MemoryStore + Send + Sync),
     imp: &Impression<T>,
     kind: &str,
 ) -> anyhow::Result<()> {
@@ -21,7 +21,7 @@ pub fn persist_impression<T: serde::Serialize>(
             when: s.when.with_timezone(&Utc),
             data: serde_json::to_string(&s.what)?,
         };
-        store.store_sensation(&stored).map_err(|e| {
+        store.store_sensation(&stored).await.map_err(|e| {
             error!(?e, "store_sensation failed");
             e
         })?;
@@ -34,7 +34,7 @@ pub fn persist_impression<T: serde::Serialize>(
         sensation_ids,
         impression_ids: Vec::new(),
     };
-    store.store_impression(&stored_imp).map_err(|e| {
+    store.store_impression(&stored_imp).await.map_err(|e| {
         error!(?e, "store_impression failed");
         e
     })
@@ -46,8 +46,8 @@ mod tests {
     use chrono::Local;
     use psyche_rs::{InMemoryStore, Sensation};
 
-    #[test]
-    fn stores_impression_and_sensations() {
+    #[tokio::test]
+    async fn stores_impression_and_sensations() {
         let store = InMemoryStore::new();
         let sensation = Sensation {
             kind: "test".into(),
@@ -59,6 +59,6 @@ mod tests {
             how: "example".into(),
             what: vec![sensation],
         };
-        assert!(persist_impression(&store, &imp, "Instant").is_ok());
+        assert!(persist_impression(&store, &imp, "Instant").await.is_ok());
     }
 }

@@ -222,7 +222,7 @@ where
                             trace!(batch_len = batch.len(), "psyche received impressions");
                             if let Some(store) = &self.store {
                                 for imp in batch {
-                                    if let Err(e) = persist_impression(store.as_ref(), &imp, "Instant") {
+                                    if let Err(e) = persist_impression(store.as_ref(), &imp, "Instant").await {
                                         warn!(?e, "failed to persist impression");
                                     }
                                 }
@@ -242,8 +242,8 @@ where
     }
 }
 
-fn persist_impression<T: serde::Serialize>(
-    store: &dyn MemoryStore,
+async fn persist_impression<T: serde::Serialize>(
+    store: &(dyn MemoryStore + Send + Sync),
     imp: &Impression<T>,
     kind: &str,
 ) -> anyhow::Result<()> {
@@ -258,7 +258,7 @@ fn persist_impression<T: serde::Serialize>(
             when: s.when.with_timezone(&Utc),
             data: serde_json::to_string(&s.what)?,
         };
-        store.store_sensation(&stored).map_err(|e| {
+        store.store_sensation(&stored).await.map_err(|e| {
             error!(?e, "store_sensation failed");
             e
         })?;
@@ -271,7 +271,7 @@ fn persist_impression<T: serde::Serialize>(
         sensation_ids,
         impression_ids: Vec::new(),
     };
-    store.store_impression(&stored_imp).map_err(|e| {
+    store.store_impression(&stored_imp).await.map_err(|e| {
         error!(?e, "store_impression failed");
         e
     })

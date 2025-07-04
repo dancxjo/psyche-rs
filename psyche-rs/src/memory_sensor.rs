@@ -30,10 +30,11 @@ impl<M: MemoryStore> MemorySensor<M> {
     > {
         let related = self
             .store
-            .retrieve_related_impressions(current_how, self.top_k)?;
+            .retrieve_related_impressions(current_how, self.top_k)
+            .await?;
         let mut out = Vec::new();
         for imp in related {
-            let data = self.store.load_full_impression(&imp.id)?;
+            let data = self.store.load_full_impression(&imp.id).await?;
             tracing::debug!(?data, "related impression");
             out.push(data);
         }
@@ -56,7 +57,7 @@ mod tests {
             when: Utc::now(),
             data: "{}".into(),
         };
-        store.store_sensation(&sensation).unwrap();
+        store.store_sensation(&sensation).await.unwrap();
         let impression = StoredImpression {
             id: "i1".into(),
             kind: "Situation".into(),
@@ -65,7 +66,7 @@ mod tests {
             sensation_ids: vec!["s1".into()],
             impression_ids: Vec::new(),
         };
-        store.store_impression(&impression).unwrap();
+        store.store_impression(&impression).await.unwrap();
 
         let sensor = MemorySensor::new(store, 1);
         let res = sensor.sense_related_memory("example").await.unwrap();

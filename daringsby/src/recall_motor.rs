@@ -16,14 +16,14 @@ use psyche_rs::{
 ///
 /// The associated sensor emits a `neighbor.summary` sensation containing the
 /// one-sentence summary.
-pub struct RecallMotor<M: MemoryStore> {
+pub struct RecallMotor<M: MemoryStore + Send + Sync> {
     store: M,
     llm: Arc<dyn LLMClient>,
     tx: UnboundedSender<Vec<Sensation<String>>>,
     batch_size: usize,
 }
 
-impl<M: MemoryStore> RecallMotor<M> {
+impl<M: MemoryStore + Send + Sync> RecallMotor<M> {
     /// Create a new motor backed by the given store and LLM.
     pub fn new(
         store: M,
@@ -43,6 +43,7 @@ impl<M: MemoryStore> RecallMotor<M> {
         let recents = self
             .store
             .fetch_recent_impressions(self.batch_size)
+            .await
             .map_err(|e| MotorError::Failed(e.to_string()))?;
         if recents.is_empty() {
             return Err(MotorError::Failed("no recent impressions".into()));
@@ -55,6 +56,7 @@ impl<M: MemoryStore> RecallMotor<M> {
         let neighbors = self
             .store
             .retrieve_related_impressions(&moment_text, 3)
+            .await
             .map_err(|e| MotorError::Failed(e.to_string()))?;
         let ctx = json!({
             "moment": moment_text,
@@ -91,6 +93,7 @@ impl<M: MemoryStore> RecallMotor<M> {
         };
         self.store
             .store_summary_impression(&stored, &stored.impression_ids)
+            .await
             .map_err(|e| MotorError::Failed(e.to_string()))?;
         let s = Sensation {
             kind: "neighbor.summary".into(),
