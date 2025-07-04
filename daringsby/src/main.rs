@@ -5,7 +5,7 @@ use std::sync::Arc;
 use daringsby::memory_helpers::{ensure_impressions_collection_exists, persist_impression};
 use daringsby::{CanvasStream, VisionSensor};
 use daringsby::{
-    llm_helpers::build_ollama_clients,
+    llm_helpers::{build_ollama_clients, build_voice_llm},
     logger,
     motor_helpers::{LLMClients, build_motors},
     mouth_helpers::build_mouth,
@@ -82,6 +82,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let args = Args::parse();
 
     let (quick_llm, combob_llm, will_llm, memory_llm) = build_ollama_clients(&args);
+    let voice_llm = build_voice_llm(&args);
     let llms = LLMClients {
         quick: quick_llm.clone(),
         combob: combob_llm.clone(),
@@ -124,9 +125,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let sensors = build_sensors(stream.clone());
     let ear = build_ear(stream.clone());
-    let voice = Voice::new(llms.quick.clone(), 10)
+    let voice = Voice::new(voice_llm.clone(), 10)
         .name("Voice")
-        .system_prompt(include_str!("prompts/voice_prompt.txt"));
+        .system_prompt(include_str!("prompts/voice_prompt.txt"))
+        .delay_ms(0);
 
     #[cfg(feature = "single-wit")]
     let (situ_tx, situ_rx) = unbounded_channel();

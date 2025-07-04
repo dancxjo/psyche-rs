@@ -17,6 +17,12 @@ pub struct Args {
     pub will_model: String,
     #[arg(long = "memory-model", default_value = "gemma3:27b")]
     pub memory_model: String,
+    /// Base URL of the Ollama server dedicated to the voice loop.
+    #[arg(long = "voice-url", default_value = "http://localhost:11434")]
+    pub voice_url: String,
+    /// Model used for voice generation.
+    #[arg(long = "voice-model", default_value = "gemma3:27b")]
+    pub voice_model: String,
     /// Model used when generating embeddings.
     #[arg(long = "embedding-model", default_value = "nomic-embed-text")]
     pub embedding_model: String,

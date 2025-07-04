@@ -30,6 +30,18 @@ fn build_pool(base_urls: &[String], model: &str, embed_model: &str) -> Arc<dyn L
     Arc::new(FairLLM::new(rr, base_urls.len())) as Arc<dyn LLMClient>
 }
 
+/// Build an Ollama client dedicated to the voice loop.
+pub fn build_voice_llm(args: &Args) -> Arc<dyn LLMClient> {
+    let http = Client::builder()
+        .pool_max_idle_per_host(10)
+        .build()
+        .expect("ollama http client");
+    Arc::new(OllamaLLM::new(
+        build_ollama(&http, &args.voice_url),
+        args.voice_model.clone(),
+    )) as Arc<dyn LLMClient>
+}
+
 /// Build all Ollama LLM clients.
 pub fn build_ollama_clients(
     args: &Args,
