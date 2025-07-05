@@ -1,4 +1,4 @@
-use crate::{spawn_llm_task, spawn_fair_llm_task, FairLLM, LLMClient, RoundRobinLLM, LLMTokenStream};
+use crate::{spawn_llm_task, spawn_fair_llm_task, FairLLM, LLMClient, RoundRobinLLM, TokenStream, Token};
 use async_trait::async_trait;
 use futures::{StreamExt, stream};
 use ollama_rs::generation::chat::ChatMessage;
@@ -15,9 +15,9 @@ impl LLMClient for RecordLLM {
     async fn chat_stream(
         &self,
         _msgs: &[ChatMessage],
-    ) -> Result<LLMTokenStream, Box<dyn std::error::Error + Send + Sync>> {
+    ) -> Result<TokenStream, Box<dyn std::error::Error + Send + Sync>> {
         self.log.lock().unwrap().push(self.id);
-        Ok(Box::pin(stream::empty()))
+        Ok(Box::pin(stream::empty::<Token>()))
     }
 
     async fn embed(
@@ -36,7 +36,7 @@ impl LLMClient for FailingLLM {
     async fn chat_stream(
         &self,
         _msgs: &[ChatMessage],
-    ) -> Result<LLMTokenStream, Box<dyn std::error::Error + Send + Sync>> {
+    ) -> Result<TokenStream, Box<dyn std::error::Error + Send + Sync>> {
         Err(Box::new(std::io::Error::new(
             std::io::ErrorKind::Other,
             "fail",
@@ -64,11 +64,11 @@ impl LLMClient for DelayLLM {
     async fn chat_stream(
         &self,
         _msgs: &[ChatMessage],
-    ) -> Result<LLMTokenStream, Box<dyn std::error::Error + Send + Sync>> {
+    ) -> Result<TokenStream, Box<dyn std::error::Error + Send + Sync>> {
         let d = self.delay;
         let s = stream::once(async move {
             tokio::time::sleep(std::time::Duration::from_millis(d)).await;
-            Ok::<_, Box<dyn std::error::Error + Send + Sync>>("done".into())
+            Token { text: "done".into() }
         });
         Ok(Box::pin(s))
     }
@@ -153,11 +153,11 @@ async fn fair_llm_processes_in_request_order() {
     let start = std::time::Instant::now();
     let f1 = tokio::spawn(async move {
         let mut s = llm.chat_stream(&[]).await.unwrap();
-        s.next().await.unwrap().unwrap();
+        s.next().await.unwrap();
     });
     let f2 = tokio::spawn(async move {
         let mut s = llm2.chat_stream(&[]).await.unwrap();
-        s.next().await.unwrap().unwrap();
+        s.next().await.unwrap();
     });
     let _ = futures::join!(f1, f2);
     assert!(start.elapsed() >= std::time::Duration::from_millis(100));
@@ -170,11 +170,11 @@ async fn fair_llm_allows_parallel_calls() {
     let start = std::time::Instant::now();
     let f1 = tokio::spawn(async move {
         let mut s = llm.chat_stream(&[]).await.unwrap();
-        s.next().await.unwrap().unwrap();
+        s.next().await.unwrap();
     });
     let f2 = tokio::spawn(async move {
         let mut s = llm2.chat_stream(&[]).await.unwrap();
-        s.next().await.unwrap().unwrap();
+        s.next().await.unwrap();
     });
     let _ = futures::join!(f1, f2);
     assert!(start.elapsed() < std::time::Duration::from_millis(100));

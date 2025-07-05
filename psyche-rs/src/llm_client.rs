@@ -1,12 +1,9 @@
 use async_trait::async_trait;
-use futures::{Stream, StreamExt};
-use std::{pin::Pin, sync::Arc};
+use futures::StreamExt;
+use std::sync::Arc;
 
+use crate::llm_types::TokenStream;
 use ollama_rs::generation::chat::ChatMessage;
-
-/// Stream of LLM-generated text fragments.
-pub type LLMTokenStream =
-    Pin<Box<dyn Stream<Item = Result<String, Box<dyn std::error::Error + Send + Sync>>> + Send>>;
 
 /// Common interface for chat-based LLMs.
 #[async_trait]
@@ -15,7 +12,7 @@ pub trait LLMClient: Send + Sync {
     async fn chat_stream(
         &self,
         messages: &[ChatMessage],
-    ) -> Result<LLMTokenStream, Box<dyn std::error::Error + Send + Sync>>;
+    ) -> Result<TokenStream, Box<dyn std::error::Error + Send + Sync>>;
 
     /// Generate an embedding vector for the provided text.
     async fn embed(&self, text: &str)
@@ -38,8 +35,9 @@ pub trait LLMClient: Send + Sync {
 ///     async fn chat_stream(
 ///         &self,
 ///         _: &[ChatMessage],
-///     ) -> Result<psyche_rs::LLMTokenStream, Box<dyn std::error::Error + Send + Sync>> {
-///         Ok(Box::pin(stream::once(async { Ok("hello ".to_string()) })))
+///     ) -> Result<psyche_rs::TokenStream, Box<dyn std::error::Error + Send + Sync>> {
+///         let stream = stream::once(async { psyche_rs::Token { text: "hello ".into() } });
+///         Ok(Box::pin(stream))
 ///     }
 ///     async fn embed(
 ///         &self,
@@ -63,7 +61,7 @@ pub async fn spawn_llm_task(
         let mut stream = llm.chat_stream(&msgs).await?;
         let mut out = String::new();
         while let Some(tok) = stream.next().await {
-            out.push_str(&tok?);
+            out.push_str(&tok.text);
         }
         tracing::debug!(%out, "llm full response");
         Ok(out)

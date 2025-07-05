@@ -1,6 +1,6 @@
-use crate::llm_client::{LLMClient, LLMTokenStream};
+use crate::{LLMClient, Token, TokenStream};
 use async_trait::async_trait;
-use futures::TryStreamExt;
+use futures::StreamExt;
 use ollama_rs::{
     Ollama,
     generation::chat::{ChatMessage, ChatMessageResponseStream, request::ChatMessageRequest},
@@ -17,15 +17,22 @@ fn build_request(model: &str, messages: &[ChatMessage]) -> ChatMessageRequest {
         .options(ModelOptions::default().temperature(temperature))
 }
 
-/// Map an Ollama response stream into an [`LLMTokenStream`].
-fn map_stream(stream: ChatMessageResponseStream) -> LLMTokenStream {
+/// Map an Ollama response stream into an [`TokenStream`].
+fn map_stream(stream: ChatMessageResponseStream) -> TokenStream {
+    use futures::StreamExt;
     let mapped = stream
-        .map_err(|_| Box::<dyn std::error::Error + Send + Sync>::from("ollama stream error"))
-        .map_ok(|resp| {
-            let tok = resp.message.content;
-            tracing::trace!(%tok, "llm token");
-            tok
-        });
+        .map(|res| match res {
+            Ok(resp) => {
+                let tok = resp.message.content;
+                tracing::trace!(%tok, "llm token");
+                Some(Token { text: tok })
+            }
+            Err(e) => {
+                tracing::error!(?e, "ollama stream error");
+                None
+            }
+        })
+        .filter_map(|v| async move { v });
     Box::pin(mapped)
 }
 
@@ -73,7 +80,7 @@ impl LLMClient for OllamaLLM {
     async fn chat_stream(
         &self,
         messages: &[ChatMessage],
-    ) -> Result<LLMTokenStream, Box<dyn std::error::Error + Send + Sync>> {
+    ) -> Result<TokenStream, Box<dyn std::error::Error + Send + Sync>> {
         let req = build_request(&self.model, messages);
         let stream = self.client.send_chat_messages_stream(req).await?;
         Ok(map_stream(stream))
@@ -131,7 +138,7 @@ mod tests {
         let mut stream = llm.chat_stream(&msgs).await.unwrap();
         let mut collected = String::new();
         while let Some(tok) = stream.next().await {
-            collected.push_str(&tok.unwrap());
+            collected.push_str(&tok.text);
         }
         assert_eq!(collected, "hello");
     }

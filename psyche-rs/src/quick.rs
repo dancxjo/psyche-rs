@@ -1,5 +1,7 @@
 use super::genius::Genius;
+use crate::{Token, TokenStream};
 use async_trait::async_trait;
+use futures::StreamExt;
 use std::sync::Mutex;
 use tokio::sync::mpsc::{UnboundedReceiver, UnboundedSender};
 use tracing::{debug, trace};
@@ -51,14 +53,18 @@ impl QuickGenius {
 #[async_trait]
 impl Genius for QuickGenius {
     type Input = InstantInput;
-    type Output = InstantOutput;
 
     fn name(&self) -> &'static str {
         "Quick"
     }
 
-    async fn feed(&self, _input: Self::Input) {
-        // Inputs arrive via the receiver owned by `run`.
+    async fn call(&self, input: Self::Input) -> TokenStream {
+        let prompt = self.generate_prompt(&input).await;
+        let output = self.call_llm(prompt).await;
+        let token = Token {
+            text: output.description,
+        };
+        Box::pin(futures::stream::once(async move { token }))
     }
 
     async fn run(&self) {
@@ -69,9 +75,12 @@ impl Genius for QuickGenius {
             .take()
             .expect("run called twice");
         while let Some(input) = rx.recv().await {
-            let prompt = self.generate_prompt(&input).await;
-            let output = self.call_llm(prompt).await;
-            let _ = self.output_tx.send(output);
+            let mut stream = self.call(input).await;
+            let mut out = String::new();
+            while let Some(tok) = stream.next().await {
+                out.push_str(&tok.text);
+            }
+            let _ = self.output_tx.send(InstantOutput { description: out });
         }
     }
 }

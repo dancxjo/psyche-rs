@@ -6,9 +6,9 @@ use serde_json::{Map, Value};
 use std::sync::{Arc, Mutex};
 use tokio::sync::mpsc::{UnboundedSender, unbounded_channel};
 use tokio_stream::wrappers::UnboundedReceiverStream;
-use tracing::{debug, error, trace, warn};
+use tracing::{debug, trace, warn};
 
-use crate::{Action, Intention, LLMTokenStream, Sensation};
+use crate::{Action, Intention, Sensation, Token, TokenStream};
 
 static START_RE: Lazy<Regex> =
     Lazy::new(|| Regex::new(r"^<([a-zA-Z0-9_]+)([^>]*)>").expect("valid regex"));
@@ -18,7 +18,7 @@ static ATTR_RE: Lazy<Regex> =
 
 pub async fn drive_llm_stream<T>(
     name: &str,
-    mut stream: LLMTokenStream,
+    mut stream: TokenStream,
     window: Arc<Mutex<Vec<Sensation<T>>>>,
     tx: UnboundedSender<Vec<Intention>>,
     thoughts_tx: Option<UnboundedSender<Vec<Sensation<String>>>>,
@@ -37,14 +37,10 @@ pub async fn drive_llm_stream<T>(
         tokio::select! {
             tok = stream.next() => {
                 match tok {
-                    Some(Ok(tok)) => {
-                        trace!(token = %tok, "Will received LLM token");
-                        buf.push_str(&tok);
-                        full_text.push_str(&tok);
-                    }
-                    Some(Err(e)) => {
-                        error!(?e, "llm token error");
-                        break;
+                    Some(tok) => {
+                        trace!(token = %tok.text, "Will received LLM token");
+                        buf.push_str(&tok.text);
+                        full_text.push_str(&tok.text);
                     }
                     None => break,
                 }
@@ -216,10 +212,14 @@ mod tests {
     #[tokio::test]
     async fn stream_bodies_include_initial_chunks() {
         let tokens = vec![
-            Ok("<log>".to_string()),
-            Ok("he".to_string()),
-            Ok("llo".to_string()),
-            Ok("</log>".to_string()),
+            Token {
+                text: "<log>".into(),
+            },
+            Token { text: "he".into() },
+            Token { text: "llo".into() },
+            Token {
+                text: "</log>".into(),
+            },
         ];
         let stream = Box::pin(stream::iter(tokens));
         let window = Arc::new(Mutex::new(Vec::<Sensation<String>>::new()));
@@ -241,7 +241,12 @@ mod _parse_speak_log_tests {
     #[tokio::test]
     async fn parses_speak_and_log_intentions() {
         let text = "<speak speaker_id=\"p234\" language_id=\"en\">hi</speak><log>done</log>";
-        let tokens = text.chars().map(|c| Ok(c.to_string())).collect::<Vec<_>>();
+        let tokens = text
+            .chars()
+            .map(|c| Token {
+                text: c.to_string(),
+            })
+            .collect::<Vec<_>>();
         let stream = Box::pin(stream::iter(tokens));
         let window = Arc::new(Mutex::new(Vec::<Sensation<String>>::new()));
         let (tx, mut rx) = unbounded_channel();

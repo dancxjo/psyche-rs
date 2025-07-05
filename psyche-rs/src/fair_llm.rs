@@ -4,8 +4,8 @@ use async_trait::async_trait;
 use futures::StreamExt;
 use tokio::sync::Semaphore;
 
-use crate::llm_client::{LLMClient, LLMTokenStream};
 use crate::stream_util::ReleasingStream;
+use crate::{LLMClient, TokenStream};
 use ollama_rs::generation::chat::ChatMessage;
 
 /// Wrapper around an [`LLMClient`] that limits concurrent access and ensures
@@ -35,7 +35,7 @@ where
     async fn chat_stream(
         &self,
         messages: &[ChatMessage],
-    ) -> Result<LLMTokenStream, Box<dyn std::error::Error + Send + Sync>> {
+    ) -> Result<TokenStream, Box<dyn std::error::Error + Send + Sync>> {
         tracing::trace!("waiting for llm permit");
         let permit = self
             .semaphore
@@ -86,8 +86,9 @@ where
 ///     async fn chat_stream(
 ///         &self,
 ///         _msgs: &[ChatMessage],
-///     ) -> Result<psyche_rs::LLMTokenStream, Box<dyn std::error::Error + Send + Sync>> {
-///         Ok(Box::pin(stream::once(async { Ok("hi".to_string()) })))
+///     ) -> Result<psyche_rs::TokenStream, Box<dyn std::error::Error + Send + Sync>> {
+///         let stream = stream::once(async { psyche_rs::Token { text: "hi".into() } });
+///         Ok(Box::pin(stream))
 ///     }
 ///     async fn embed(
 ///         &self,
@@ -114,7 +115,7 @@ where
         let mut stream = llm.chat_stream(&msgs).await?;
         let mut out = String::new();
         while let Some(tok) = stream.next().await {
-            out.push_str(&tok?);
+            out.push_str(&tok.text);
         }
         tracing::debug!(%out, "llm full response");
         Ok(out)

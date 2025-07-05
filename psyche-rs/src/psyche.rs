@@ -44,7 +44,7 @@ impl<T> Sensor<T> for SharedSensor<T> {
 /// Core orchestrator coordinating sensors, wits and motors.
 ///
 /// ```no_run
-/// use psyche_rs::{Psyche, Wit, Sensor, LLMClient, LLMTokenStream, Sensation};
+/// use psyche_rs::{Psyche, Wit, Sensor, LLMClient, TokenStream, Sensation};
 /// use async_trait::async_trait;
 /// use futures::{stream, StreamExt};
 /// use std::sync::Arc;
@@ -56,7 +56,7 @@ impl<T> Sensor<T> for SharedSensor<T> {
 ///     async fn chat_stream(
 ///         &self,
 ///         _msgs: &[ollama_rs::generation::chat::ChatMessage],
-///     ) -> Result<LLMTokenStream, Box<dyn std::error::Error + Send + Sync>> {
+///     ) -> Result<TokenStream, Box<dyn std::error::Error + Send + Sync>> {
 ///         Ok(Box::pin(stream::empty()))
 ///     }
 ///     async fn embed(
@@ -330,10 +330,14 @@ mod tests {
             async fn chat_stream(
                 &self,
                 _msgs: &[ollama_rs::generation::chat::ChatMessage],
-            ) -> Result<LLMTokenStream, Box<dyn std::error::Error + Send + Sync>> {
+            ) -> Result<TokenStream, Box<dyn std::error::Error + Send + Sync>> {
                 use futures::stream;
-                let tokens = vec!["<log>".to_string(), "hi".to_string(), "</log>".to_string()];
-                Ok(Box::pin(stream::iter(tokens.into_iter().map(Ok))))
+                let tokens = vec![
+                    Token { text: "<log>".into() },
+                    Token { text: "hi".into() },
+                    Token { text: "</log>".into() },
+                ];
+                Ok(Box::pin(stream::iter(tokens)))
             }
 
             async fn embed(
@@ -367,10 +371,14 @@ mod tests {
             async fn chat_stream(
                 &self,
                 _msgs: &[ollama_rs::generation::chat::ChatMessage],
-            ) -> Result<LLMTokenStream, Box<dyn std::error::Error + Send + Sync>> {
+            ) -> Result<TokenStream, Box<dyn std::error::Error + Send + Sync>> {
                 use futures::stream;
-                let tokens = vec!["<log>".to_string(), "hi".to_string(), "</log>".to_string()];
-                Ok(Box::pin(stream::iter(tokens.into_iter().map(Ok))))
+                let tokens = vec![
+                    Token { text: "<log>".into() },
+                    Token { text: "hi".into() },
+                    Token { text: "</log>".into() },
+                ];
+                Ok(Box::pin(stream::iter(tokens)))
             }
 
             async fn embed(
@@ -408,16 +416,16 @@ mod tests {
             async fn chat_stream(
                 &self,
                 _msgs: &[ollama_rs::generation::chat::ChatMessage],
-            ) -> Result<LLMTokenStream, Box<dyn std::error::Error + Send + Sync>> {
+            ) -> Result<TokenStream, Box<dyn std::error::Error + Send + Sync>> {
                 use futures::stream;
                 let tokens = vec![
-                    "<speak>".to_string(),
-                    "Hello".to_string(),
-                    "</speak><log>".to_string(),
-                    "Logging this".to_string(),
-                    "</log>".to_string(),
+                    Token { text: "<speak>".into() },
+                    Token { text: "Hello".into() },
+                    Token { text: "</speak><log>".into() },
+                    Token { text: "Logging this".into() },
+                    Token { text: "</log>".into() },
                 ];
-                Ok(Box::pin(stream::iter(tokens.into_iter().map(Ok))))
+                Ok(Box::pin(stream::iter(tokens)))
             }
 
             async fn embed(
@@ -487,17 +495,17 @@ mod tests {
             async fn chat_stream(
                 &self,
                 _msgs: &[ollama_rs::generation::chat::ChatMessage],
-            ) -> Result<LLMTokenStream, Box<dyn std::error::Error + Send + Sync>> {
+            ) -> Result<TokenStream, Box<dyn std::error::Error + Send + Sync>> {
                 use futures::stream;
                 let toks = vec![
-                    "<log>".to_string(),
-                    "1".to_string(),
-                    "</log>".to_string(),
-                    "<log>".to_string(),
-                    "2".to_string(),
-                    "</log>".to_string(),
+                    Token { text: "<log>".into() },
+                    Token { text: "1".into() },
+                    Token { text: "</log>".into() },
+                    Token { text: "<log>".into() },
+                    Token { text: "2".into() },
+                    Token { text: "</log>".into() },
                 ];
-                Ok(Box::pin(stream::iter(toks.into_iter().map(Ok))))
+                Ok(Box::pin(stream::iter(toks)))
             }
 
             async fn embed(
@@ -569,10 +577,14 @@ mod tests {
             async fn chat_stream(
                 &self,
                 _msgs: &[ollama_rs::generation::chat::ChatMessage],
-            ) -> Result<LLMTokenStream, Box<dyn std::error::Error + Send + Sync>> {
+            ) -> Result<TokenStream, Box<dyn std::error::Error + Send + Sync>> {
                 use futures::stream;
-                let toks = vec!["<a>".to_string(), "hi".to_string(), "</a>".to_string()];
-                Ok(Box::pin(stream::iter(toks.into_iter().map(Ok))))
+                let toks = vec![
+                    Token { text: "<a>".into() },
+                    Token { text: "hi".into() },
+                    Token { text: "</a>".into() },
+                ];
+                Ok(Box::pin(stream::iter(toks)))
             }
 
             async fn embed(
@@ -591,10 +603,14 @@ mod tests {
             async fn chat_stream(
                 &self,
                 _msgs: &[ollama_rs::generation::chat::ChatMessage],
-            ) -> Result<LLMTokenStream, Box<dyn std::error::Error + Send + Sync>> {
+            ) -> Result<TokenStream, Box<dyn std::error::Error + Send + Sync>> {
                 use futures::stream;
-                let toks = vec!["<b>".to_string(), "bye".to_string(), "</b>".to_string()];
-                Ok(Box::pin(stream::iter(toks.into_iter().map(Ok))))
+                let toks = vec![
+                    Token { text: "<b>".into() },
+                    Token { text: "bye".into() },
+                    Token { text: "</b>".into() },
+                ];
+                Ok(Box::pin(stream::iter(toks)))
             }
 
             async fn embed(
@@ -666,12 +682,11 @@ mod tests {
             async fn chat_stream(
                 &self,
                 _msgs: &[ollama_rs::generation::chat::ChatMessage],
-            ) -> Result<LLMTokenStream, Box<dyn std::error::Error + Send + Sync>> {
+            ) -> Result<TokenStream, Box<dyn std::error::Error + Send + Sync>> {
                 self.0.wait().await;
                 use futures::stream;
-                Ok(Box::pin(stream::once(async {
-                    Ok("<log></log>".to_string())
-                })))
+                let stream = stream::once(async { crate::Token { text: "<log></log>".into() } });
+                Ok(Box::pin(stream))
             }
 
             async fn embed(

@@ -12,6 +12,7 @@ mod genius;
 mod impression;
 mod llm_client;
 mod llm_parser;
+mod llm_types;
 mod memory_sensor;
 mod memory_store;
 mod motor;
@@ -36,9 +37,10 @@ pub mod text_util;
 mod timeline;
 mod voice;
 mod will;
+
 mod wit;
 
-pub use crate::llm_client::{LLMClient, LLMTokenStream, spawn_llm_task};
+pub use crate::llm_client::{LLMClient, spawn_llm_task};
 pub use crate::ollama_llm::OllamaLLM;
 pub use abort_guard::AbortGuard;
 pub use cluster_analyzer::ClusterAnalyzer;
@@ -48,6 +50,7 @@ pub use fair_llm::FairLLM;
 pub use fair_llm::spawn_fair_llm_task;
 pub use genius::Genius;
 pub use impression::Impression;
+pub use llm_types::{Token, TokenStream};
 pub use memory_sensor::MemorySensor;
 pub use memory_store::{InMemoryStore, MemoryStore, StoredImpression, StoredSensation};
 pub use motor::{
@@ -106,10 +109,13 @@ mod tests {
             async fn chat_stream(
                 &self,
                 _msgs: &[ollama_rs::generation::chat::ChatMessage],
-            ) -> Result<LLMTokenStream, Box<dyn std::error::Error + Send + Sync>> {
-                Ok(Box::pin(stream::once(async {
-                    Ok("ping event".to_string())
-                })))
+            ) -> Result<TokenStream, Box<dyn std::error::Error + Send + Sync>> {
+                let s = stream::once(async {
+                    Token {
+                        text: "ping event".into(),
+                    }
+                });
+                Ok(Box::pin(s))
             }
 
             async fn embed(
@@ -156,10 +162,13 @@ mod tests {
             async fn chat_stream(
                 &self,
                 _msgs: &[ollama_rs::generation::chat::ChatMessage],
-            ) -> Result<LLMTokenStream, Box<dyn std::error::Error + Send + Sync>> {
-                Ok(Box::pin(stream::once(async {
-                    Ok("ping event".to_string())
-                })))
+            ) -> Result<TokenStream, Box<dyn std::error::Error + Send + Sync>> {
+                let s = stream::once(async {
+                    Token {
+                        text: "ping event".into(),
+                    }
+                });
+                Ok(Box::pin(s))
             }
 
             async fn embed(

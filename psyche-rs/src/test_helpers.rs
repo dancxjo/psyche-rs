@@ -1,6 +1,6 @@
 #![cfg(test)]
 
-use crate::{Impression, LLMClient, LLMTokenStream, Sensation, Sensor};
+use crate::{Impression, LLMClient, Sensation, Sensor, Token, TokenStream};
 use async_trait::async_trait;
 use futures::stream::{self, BoxStream};
 
@@ -23,14 +23,15 @@ impl LLMClient for StaticLLM {
     async fn chat_stream(
         &self,
         _msgs: &[ollama_rs::generation::chat::ChatMessage],
-    ) -> Result<LLMTokenStream, Box<dyn std::error::Error + Send + Sync>> {
-        let words: Vec<String> = self
+    ) -> Result<TokenStream, Box<dyn std::error::Error + Send + Sync>> {
+        let tokens: Vec<Token> = self
             .reply
             .split_whitespace()
-            .map(|w| format!("{} ", w))
+            .map(|w| Token {
+                text: format!("{} ", w),
+            })
             .collect();
-        let s = stream::iter(words.into_iter().map(Result::Ok));
-        Ok(Box::pin(s))
+        Ok(Box::pin(stream::iter(tokens)))
     }
 
     async fn embed(

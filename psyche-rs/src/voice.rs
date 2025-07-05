@@ -12,9 +12,7 @@ use tracing::{debug, trace, warn};
 use crate::Action;
 use crate::conversation::Conversation;
 use crate::{
-    Intention, Sensation, Sensor,
-    llm_client::{LLMClient, LLMTokenStream},
-    llm_parser, render_template,
+    Intention, LLMClient, Sensation, Sensor, Token, TokenStream, llm_parser, render_template,
 };
 use ollama_rs::generation::chat::ChatMessage;
 
@@ -119,12 +117,12 @@ impl Voice {
                     debug!(agent=%name, "LLM request START");
                     match llm.chat_stream(&msgs).await {
                         Ok(mut llm_stream) => {
-                            let (tok_tx, tok_rx) = unbounded_channel();
+                            let (tok_tx, tok_rx) = unbounded_channel::<Token>();
                             let window_clone = window.clone();
                             let tx_clone = tx.clone();
                             let name_clone = name.clone();
                             tokio::spawn(async move {
-                                let rx_stream: LLMTokenStream =
+                                let rx_stream: TokenStream =
                                     Box::pin(UnboundedReceiverStream::new(tok_rx));
                                 llm_parser::drive_llm_stream(
                                     &name_clone,
@@ -138,51 +136,42 @@ impl Voice {
                             let mut buf = String::new();
                             let mut reply = String::new();
                             while let Some(tok) = llm_stream.next().await {
-                                match tok {
-                                    Ok(t) => {
-                                        trace!(agent=%name, %t, "voice llm token");
-                                        if !t.contains('<') && !t.contains('>') {
-                                            buf.push_str(&t);
-                                            reply.push_str(&t);
-                                        }
-                                        let _ = tok_tx.send(Ok(t));
+                                let t = tok.text;
+                                trace!(agent=%name, %t, "voice llm token");
+                                if !t.contains('<') && !t.contains('>') {
+                                    buf.push_str(&t);
+                                    reply.push_str(&t);
+                                }
+                                let _ = tok_tx.send(Token { text: t.clone() });
 
-                                        let mut sents =
-                                            split_single(&buf, SegmentConfig::default());
-                                        if let Some(last) = sents.last() {
-                                            if !last.trim_end().ends_with(['.', '!', '?']) {
-                                                buf = last.clone();
-                                                sents.pop();
-                                            } else {
-                                                buf.clear();
-                                            }
-                                        }
-                                        for sent in sents {
-                                            pending.push_back(sent.clone());
-                                            let text = sent.clone();
-                                            let body_text = text.clone();
-                                            let body =
-                                                futures::stream::once(async move { body_text })
-                                                    .boxed();
-                                            let action = Action::new("speak", Value::Null, body);
-                                            let intent = Intention::to(action).assign("speak");
-                                            let _ = tx.send(vec![intent]);
-                                            if let Some(qtx) = &quick_tx {
-                                                let sens = Sensation {
-                                                    kind: "utterance.planned".into(),
-                                                    when: Local::now(),
-                                                    what: format!(
-                                                        "I feel myself starting to say: '{text}'"
-                                                    ),
-                                                    source: None,
-                                                };
-                                                let _ = qtx.send(vec![sens]);
-                                            }
-                                        }
+                                let mut sents = split_single(&buf, SegmentConfig::default());
+                                if let Some(last) = sents.last() {
+                                    if !last.trim_end().ends_with(['.', '!', '?']) {
+                                        buf = last.clone();
+                                        sents.pop();
+                                    } else {
+                                        buf.clear();
                                     }
-                                    Err(e) => {
-                                        warn!(?e, "llm token error");
-                                        break;
+                                }
+                                for sent in sents {
+                                    pending.push_back(sent.clone());
+                                    let text = sent.clone();
+                                    let body_text = text.clone();
+                                    let body =
+                                        futures::stream::once(async move { body_text }).boxed();
+                                    let action = Action::new("speak", Value::Null, body);
+                                    let intent = Intention::to(action).assign("speak");
+                                    let _ = tx.send(vec![intent]);
+                                    if let Some(qtx) = &quick_tx {
+                                        let sens = Sensation {
+                                            kind: "utterance.planned".into(),
+                                            when: Local::now(),
+                                            what: format!(
+                                                "I feel myself starting to say: '{text}'"
+                                            ),
+                                            source: None,
+                                        };
+                                        let _ = qtx.send(vec![sens]);
                                     }
                                 }
                             }

@@ -480,9 +480,7 @@ impl<T> Will<T> {
 mod tests {
     use super::*;
     use crate::{
-        ActionResult, Intention, MotorError,
-        llm_client::{LLMClient, LLMTokenStream},
-        test_helpers::StaticLLM,
+        ActionResult, Intention, LLMClient, MotorError, Token, TokenStream, test_helpers::StaticLLM,
     };
     use ollama_rs::generation::chat::ChatMessage;
     use std::sync::Arc;
@@ -591,9 +589,9 @@ mod tests {
             async fn chat_stream(
                 &self,
                 _msgs: &[ChatMessage],
-            ) -> Result<LLMTokenStream, Box<dyn std::error::Error + Send + Sync>> {
+            ) -> Result<TokenStream, Box<dyn std::error::Error + Send + Sync>> {
                 self.0.fetch_add(1, Ordering::SeqCst);
-                Ok(Box::pin(futures::stream::empty()))
+                Ok(Box::pin(futures::stream::empty::<Token>()))
             }
 
             async fn embed(

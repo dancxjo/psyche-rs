@@ -20,8 +20,8 @@ use std::sync::Arc;
 ///     async fn chat_stream(
 ///         &self,
 ///         _m: &[ollama_rs::generation::chat::ChatMessage],
-///     ) -> Result<psyche_rs::LLMTokenStream, Box<dyn std::error::Error + Send + Sync>> {
-///         let stream = futures::stream::once(async { Ok("echo".to_string()) });
+///     ) -> Result<psyche_rs::TokenStream, Box<dyn std::error::Error + Send + Sync>> {
+///         let stream = futures::stream::once(async { psyche_rs::Token { text: "echo".into() } });
 ///         Ok(Box::pin(stream))
 ///     }
 ///     async fn embed(
@@ -86,9 +86,8 @@ impl<M: MemoryStore + Send + Sync, C: LLMClient> ClusterAnalyzer<M, C> {
                 .map_err(|e| anyhow::anyhow!(e))?;
             let mut out = String::new();
             while let Some(tok) = stream.next().await {
-                let tok = tok.map_err(|e| anyhow::anyhow!(e))?;
-                tracing::trace!(%tok, "summary_token");
-                out.push_str(&tok);
+                tracing::trace!(token = %tok.text, "summary_token");
+                out.push_str(&tok.text);
             }
             tracing::debug!(%out, "llm full response");
             let summary = StoredImpression {
@@ -125,10 +124,11 @@ mod tests {
         async fn chat_stream(
             &self,
             _m: &[ChatMessage],
-        ) -> Result<crate::LLMTokenStream, Box<dyn std::error::Error + Send + Sync + 'static>>
+        ) -> Result<crate::TokenStream, Box<dyn std::error::Error + Send + Sync + 'static>>
         {
             let reply = self.reply.clone();
-            Ok(Box::pin(stream::once(async move { Ok(reply) })))
+            let s = stream::once(async move { crate::Token { text: reply } });
+            Ok(Box::pin(s))
         }
 
         async fn embed(

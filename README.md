@@ -104,8 +104,8 @@ use psyche_rs::{RoundRobinLLM, LLMClient};
 # struct Dummy;
 # #[async_trait]
 # impl LLMClient for Dummy {
-#     async fn chat_stream(&self, _msgs: &[ChatMessage]) -> Result<psyche_rs::LLMTokenStream, Box<dyn Error + Send + Sync>> {
-#         Ok(Box::pin(stream::empty()))
+#     async fn chat_stream(&self, _msgs: &[ChatMessage]) -> Result<psyche_rs::TokenStream, Box<dyn Error + Send + Sync>> {
+#         Ok(Box::pin(stream::empty::<psyche_rs::Token>()))
 #     }
 # }
 let pool = RoundRobinLLM::new(vec![Arc::new(Dummy)]);
