@@ -89,6 +89,27 @@ default. When enabled, only the Combobulator wit runs and raw sensations
 are fed directly into it. Disable the feature to keep the legacy Quick
 pipeline.
 
+### Supervising genii
+
+`PsycheSupervisor` keeps multiple genii running and restarts them if one
+crashes. Add each `Genius` via [`add_genius`] and call [`start`] to spawn
+threads. Use [`shutdown`] to stop all genii:
+
+```no_run
+use std::sync::Arc;
+use tokio::sync::mpsc::unbounded_channel;
+use psyche_rs::{PsycheSupervisor, QuickGenius};
+
+let (_tx, rx) = unbounded_channel();
+let (out_tx, _out_rx) = unbounded_channel();
+let quick = Arc::new(QuickGenius::new(rx, out_tx));
+
+let mut sup = PsycheSupervisor::new();
+sup.add_genius(quick);
+sup.start(None);
+sup.shutdown().await;
+```
+
 ---
 
 
