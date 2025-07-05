@@ -91,28 +91,6 @@ pipeline.
 
 ---
 
-### LLM pooling
-
-Use `RoundRobinLLM` to distribute requests across multiple LLM instances.
-
-```rust
-use std::sync::Arc;
-use psyche_rs::{RoundRobinLLM, LLMClient};
-# use async_trait::async_trait;
-# use futures::{stream, Stream};
-# use std::{pin::Pin, error::Error};
-# use ollama_rs::generation::chat::ChatMessage;
-# struct Dummy;
-# #[async_trait]
-# impl LLMClient for Dummy {
-#     async fn chat_stream(&self, _msgs: &[ChatMessage]) -> Result<psyche_rs::LLMTokenStream, Box<dyn Error + Send + Sync>> {
-#         Ok(Box::pin(stream::empty()))
-#     }
-# }
-let pool = RoundRobinLLM::new(vec![Arc::new(Dummy)]);
-```
-
----
 
 ## 📝 Contributing
 
