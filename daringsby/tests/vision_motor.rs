@@ -1,6 +1,6 @@
 use daringsby::{vision_motor::VisionMotor, vision_sensor::VisionSensor};
 use psyche_rs::{LLMClient, MotorError, SensorDirectingMotor};
-use psyche_rs::llm::types::{Token, TokenStream};
+use psyche_rs::{Token, TokenStream};
 use std::sync::Arc;
 use tokio::sync::mpsc::unbounded_channel;
 

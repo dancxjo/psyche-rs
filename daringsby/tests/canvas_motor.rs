@@ -1,7 +1,7 @@
 use daringsby::{canvas_motor::CanvasMotor, canvas_stream::CanvasStream};
 use futures::stream::{self, StreamExt};
 use psyche_rs::{LLMClient, Motor, MotorError, SensorDirectingMotor};
-use psyche_rs::llm::types::{Token, TokenStream};
+use psyche_rs::{Token, TokenStream};
 use std::sync::Arc;
 use tokio::sync::mpsc::unbounded_channel;
 
