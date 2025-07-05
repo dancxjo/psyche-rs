@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use tokio::sync::{Mutex, mpsc};
+use tokio::sync::{Semaphore, mpsc};
 use tracing::{debug, warn};
 
 use crate::{AbortGuard, Intention, MemoryStore, Motor, StoredImpression, StoredSensation};
@@ -24,74 +24,78 @@ impl MotorExecutor {
         capacity: usize,
         store: Option<Arc<dyn MemoryStore + Send + Sync>>,
     ) -> Self {
-        let (tx, rx) = mpsc::channel::<Intention>(capacity);
-        let rx = Arc::new(Mutex::new(rx));
+        let (tx, mut rx) = mpsc::channel::<Intention>(capacity);
         let motors = Arc::new(motors);
-        let store = store.clone();
-        let mut guards = Vec::new();
-
-        for _ in 0..workers.max(1) {
+        let semaphore = Arc::new(Semaphore::new(workers.max(1)));
+        let store_cloned = store.clone();
+        let handle = tokio::spawn({
             let motors = motors.clone();
-            let rx = rx.clone();
-            let store = store.clone();
-            let handle = tokio::spawn(async move {
-                loop {
-                    let next = {
-                        let mut lock = rx.lock().await;
-                        lock.recv().await
-                    };
-                    let Some(intention) = next else { break };
+            let semaphore = semaphore.clone();
+            async move {
+                while let Some(intention) = rx.recv().await {
+                    let permit = semaphore.clone().acquire_owned().await.unwrap();
+                    let motors = motors.clone();
+                    let store = store_cloned.clone();
+                    tokio::spawn(async move {
+                        if let Some(motor) =
+                            motors.iter().find(|m| m.name() == intention.assigned_motor)
+                        {
+                            debug!(target_motor = %motor.name(), "Executing motor");
 
-                    if let Some(motor) =
-                        motors.iter().find(|m| m.name() == intention.assigned_motor)
-                    {
-                        debug!(target_motor = %motor.name(), "Executing motor");
-
-                        if let Some(store) = &store {
-                            let stored_imp = StoredImpression {
-                                id: uuid::Uuid::new_v4().to_string(),
-                                kind: "Intention".into(),
-                                when: chrono::Utc::now(),
-                                how: intention.summary(),
-                                sensation_ids: Vec::new(),
-                                impression_ids: Vec::new(),
-                            };
-                            if let Err(e) = store.store_impression(&stored_imp).await {
-                                warn!(?e, "failed to store intention as impression");
+                            if let Some(store) = &store {
+                                let stored_imp = StoredImpression {
+                                    id: uuid::Uuid::new_v4().to_string(),
+                                    kind: "Intention".into(),
+                                    when: chrono::Utc::now(),
+                                    how: intention.summary(),
+                                    sensation_ids: Vec::new(),
+                                    impression_ids: Vec::new(),
+                                };
+                                if let Err(e) = store.store_impression(&stored_imp).await {
+                                    warn!(?e, "failed to store intention as impression");
+                                }
                             }
-                        }
 
-                        match motor.perform(intention).await {
-                            Ok(result) => {
-                                if let Some(store) = &store {
-                                    for s in result.sensations {
-                                        match serde_json::to_string(&s.what) {
-                                            Ok(data) => {
-                                                let stored = StoredSensation {
-                                                    id: uuid::Uuid::new_v4().to_string(),
-                                                    kind: s.kind.clone(),
-                                                    when: s.when.with_timezone(&chrono::Utc),
-                                                    data,
-                                                };
-                                                if let Err(e) = store.store_sensation(&stored).await
-                                                {
-                                                    warn!(?e, "failed to store motor sensation");
+                            match motor.perform(intention).await {
+                                Ok(result) => {
+                                    if let Some(store) = &store {
+                                        for s in result.sensations {
+                                            match serde_json::to_string(&s.what) {
+                                                Ok(data) => {
+                                                    let stored = StoredSensation {
+                                                        id: uuid::Uuid::new_v4().to_string(),
+                                                        kind: s.kind.clone(),
+                                                        when: s.when.with_timezone(&chrono::Utc),
+                                                        data,
+                                                    };
+                                                    if let Err(e) =
+                                                        store.store_sensation(&stored).await
+                                                    {
+                                                        warn!(
+                                                            ?e,
+                                                            "failed to store motor sensation"
+                                                        );
+                                                    }
+                                                }
+                                                Err(e) => {
+                                                    warn!(?e, "failed to serialize sensation")
                                                 }
                                             }
-                                            Err(e) => warn!(?e, "failed to serialize sensation"),
                                         }
                                     }
                                 }
+                                Err(e) => warn!(?e, "Motor action failed"),
                             }
-                            Err(e) => warn!(?e, "Motor action failed"),
+                        } else {
+                            warn!(?intention, "No matching motor for intention");
                         }
-                    } else {
-                        warn!(?intention, "No matching motor for intention");
-                    }
+                        drop(permit);
+                    });
                 }
-            });
-            guards.push(AbortGuard::new(handle));
-        }
+            }
+        });
+        let mut guards = Vec::new();
+        guards.push(AbortGuard::new(handle));
 
         Self {
             tx,
@@ -145,6 +149,11 @@ mod tests {
         Intention::to(Action::new("count", Value::Null, body)).assign("count")
     }
 
+    fn delay_intention() -> Intention {
+        let body = stream::empty().boxed();
+        Intention::to(Action::new("delay", Value::Null, body)).assign("delay")
+    }
+
     fn sensing_intention() -> Intention {
         let body = stream::empty().boxed();
         Intention::to(Action::new("sense", Value::Null, body)).assign("sense")
@@ -194,5 +203,38 @@ mod tests {
         tokio::time::sleep(std::time::Duration::from_millis(100)).await;
         assert_eq!(store.impression_count(), 1);
         assert_eq!(store.sensation_count(), 1);
+    }
+
+    struct DelayMotor(Arc<AtomicUsize>);
+
+    #[async_trait::async_trait]
+    impl Motor for DelayMotor {
+        fn description(&self) -> &'static str {
+            "delays"
+        }
+        fn name(&self) -> &'static str {
+            "delay"
+        }
+        async fn perform(&self, _i: Intention) -> Result<ActionResult, MotorError> {
+            tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+            self.0.fetch_add(1, Ordering::SeqCst);
+            Ok(ActionResult {
+                sensations: Vec::new(),
+                completed: true,
+                completion: None,
+                interruption: None,
+            })
+        }
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn concurrent_workers_process_tasks() {
+        let counter = Arc::new(AtomicUsize::new(0));
+        let motor = Arc::new(DelayMotor(counter.clone()));
+        let executor = MotorExecutor::new(vec![motor], 2, 4, None);
+        executor.spawn_intention(delay_intention());
+        executor.spawn_intention(delay_intention());
+        tokio::time::sleep(std::time::Duration::from_millis(60)).await;
+        assert_eq!(counter.load(Ordering::SeqCst), 2);
     }
 }

@@ -34,6 +34,7 @@ mod template;
 #[cfg(test)]
 pub mod test_helpers;
 pub mod text_util;
+mod thread_local;
 mod timeline;
 mod voice;
 mod will;
@@ -67,6 +68,7 @@ pub use sensor::Sensor;
 pub use sensor_util::ImpressionStreamSensor;
 pub use shutdown::shutdown_signal;
 pub use template::render_template;
+pub use thread_local::ThreadLocalContext;
 pub use timeline::build_timeline;
 pub use voice::Voice;
 pub use will::{MotorDescription, Will, safe_prefix};

@@ -110,6 +110,22 @@ sup.start(None);
 sup.shutdown().await;
 ```
 
+### Thread-local clients
+
+Each genius thread constructs a [`ThreadLocalContext`] holding an LLM client and
+memory store for that thread. This keeps network handles isolated and avoids
+cross-thread locking.
+
+```rust
+use psyche_rs::{ThreadLocalContext, InMemoryStore, OllamaLLM};
+use std::sync::Arc;
+
+let ctx = ThreadLocalContext {
+    llm: Arc::new(OllamaLLM::default()),
+    store: Arc::new(InMemoryStore::new()),
+};
+```
+
 ---
 
 
