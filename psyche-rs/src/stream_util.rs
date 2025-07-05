@@ -4,8 +4,8 @@ use tokio::sync::OwnedSemaphorePermit;
 /// Stream wrapper that releases a [`Semaphore`] permit when the inner stream
 /// ends or the wrapper is dropped.
 ///
-/// This ensures concurrency permits are returned even if a client
-/// drops the token stream early.
+/// This is used by [`FairLLM`](crate::FairLLM) to ensure concurrency permits are
+/// returned even if a client drops the token stream early.
 pub(crate) struct ReleasingStream<S> {
     inner: S,
     permit: Option<OwnedSemaphorePermit>,
