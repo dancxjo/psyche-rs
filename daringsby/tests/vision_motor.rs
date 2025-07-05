@@ -1,5 +1,6 @@
 use daringsby::{vision_motor::VisionMotor, vision_sensor::VisionSensor};
 use psyche_rs::{LLMClient, MotorError, SensorDirectingMotor};
+use psyche_rs::llm::types::{Token, TokenStream};
 use std::sync::Arc;
 use tokio::sync::mpsc::unbounded_channel;
 
@@ -10,9 +11,9 @@ impl LLMClient for DummyLLM {
     async fn chat_stream(
         &self,
         _messages: &[ollama_rs::generation::chat::ChatMessage],
-    ) -> Result<psyche_rs::LLMTokenStream, Box<dyn std::error::Error + Send + Sync>> {
+    ) -> Result<TokenStream, Box<dyn std::error::Error + Send + Sync>> {
         let stream = async_stream::stream! {
-            yield Ok(String::new());
+            yield Token { text: String::new() };
         };
         Ok(Box::pin(stream))
     }

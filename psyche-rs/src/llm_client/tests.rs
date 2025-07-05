@@ -1,4 +1,5 @@
-use crate::{spawn_llm_task, LLMClient, LLMTokenStream};
+use crate::{spawn_llm_task, LLMClient};
+use crate::llm::types::{Token, TokenStream};
 use async_trait::async_trait;
 use futures::{StreamExt, stream};
 use ollama_rs::generation::chat::ChatMessage;
@@ -15,7 +16,7 @@ impl LLMClient for RecordLLM {
     async fn chat_stream(
         &self,
         _msgs: &[ChatMessage],
-    ) -> Result<LLMTokenStream, Box<dyn std::error::Error + Send + Sync>> {
+    ) -> Result<TokenStream, Box<dyn std::error::Error + Send + Sync>> {
         self.log.lock().unwrap().push(self.id);
         Ok(Box::pin(stream::empty()))
     }
@@ -36,7 +37,7 @@ impl LLMClient for FailingLLM {
     async fn chat_stream(
         &self,
         _msgs: &[ChatMessage],
-    ) -> Result<LLMTokenStream, Box<dyn std::error::Error + Send + Sync>> {
+    ) -> Result<TokenStream, Box<dyn std::error::Error + Send + Sync>> {
         Err(Box::new(std::io::Error::new(
             std::io::ErrorKind::Other,
             "fail",
@@ -64,11 +65,11 @@ impl LLMClient for DelayLLM {
     async fn chat_stream(
         &self,
         _msgs: &[ChatMessage],
-    ) -> Result<LLMTokenStream, Box<dyn std::error::Error + Send + Sync>> {
+    ) -> Result<TokenStream, Box<dyn std::error::Error + Send + Sync>> {
         let d = self.delay;
         let s = stream::once(async move {
             tokio::time::sleep(std::time::Duration::from_millis(d)).await;
-            Ok::<_, Box<dyn std::error::Error + Send + Sync>>("done".into())
+            Token { text: "done".into() }
         });
         Ok(Box::pin(s))
     }

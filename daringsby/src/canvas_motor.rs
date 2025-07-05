@@ -30,8 +30,9 @@ use crate::canvas_stream::CanvasStream;
 ///         async fn chat_stream(
 ///             &self,
 ///             _msgs: &[ollama_rs::generation::chat::ChatMessage],
-///         ) -> Result<psyche_rs::LLMTokenStream, Box<dyn std::error::Error + Send + Sync>> {
-///             let stream = async_stream::stream! { yield Ok(String::new()) };
+///         ) -> Result<psyche_rs::llm::types::TokenStream, Box<dyn std::error::Error + Send + Sync>> {
+///             use psyche_rs::llm::types::Token;
+///             let stream = async_stream::stream! { yield Token { text: String::new() } };
 ///             Ok(Box::pin(stream))
 ///         }
 ///         async fn embed(
