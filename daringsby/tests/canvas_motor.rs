@@ -1,6 +1,7 @@
 use daringsby::{canvas_motor::CanvasMotor, canvas_stream::CanvasStream};
 use futures::stream::{self, StreamExt};
 use psyche_rs::{LLMClient, Motor, MotorError, SensorDirectingMotor};
+use psyche_rs::llm::types::{Token, TokenStream};
 use std::sync::Arc;
 use tokio::sync::mpsc::unbounded_channel;
 
@@ -11,10 +12,10 @@ impl LLMClient for DummyLLM {
     async fn chat_stream(
         &self,
         _messages: &[ollama_rs::generation::chat::ChatMessage],
-    ) -> Result<psyche_rs::LLMTokenStream, Box<dyn std::error::Error + Send + Sync>> {
+    ) -> Result<TokenStream, Box<dyn std::error::Error + Send + Sync>> {
         let reply = self.0.to_string();
         let stream = async_stream::stream! {
-            yield Ok(reply);
+            yield Token { text: reply };
         };
         Ok(Box::pin(stream))
     }

@@ -13,6 +13,7 @@ use segtok::segmenter::{SegmentConfig, split_single};
 
 use crate::{Impression, Sensation, Sensor, render_template};
 
+use crate::llm::types::{Token, TokenStream};
 use crate::llm_client::LLMClient;
 use ollama_rs::generation::chat::ChatMessage;
 
@@ -90,7 +91,7 @@ impl<T> Wit<T> {
     ///     async fn chat_stream(
     ///         &self,
     ///         _msgs: &[ollama_rs::generation::chat::ChatMessage],
-    ///     ) -> Result<psyche_rs::LLMTokenStream, Box<dyn std::error::Error + Send + Sync>> {
+    ///     ) -> Result<psyche_rs::TokenStream, Box<dyn std::error::Error + Send + Sync>> {
     ///         Ok(Box::pin(futures::stream::empty()))
     ///     }
     ///     async fn embed(
@@ -233,8 +234,8 @@ where
                             match llm_clone.chat_stream(&msgs).await {
                                 Ok(mut stream) => {
                                     let mut text = String::new();
-                                    while let Some(Ok(tok)) = stream.next().await {
-                                        trace!(%tok, "llm token");
+                                    while let Some(Token { text: tok }) = stream.next().await {
+                                        trace!(token = %tok, "llm token");
                                         text.push_str(&tok);
                                     }
                                     if text.trim().is_empty() {
@@ -324,7 +325,8 @@ where
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::llm_client::{LLMClient, LLMTokenStream};
+    use crate::llm::types::{Token, TokenStream};
+    use crate::llm_client::LLMClient;
     use async_trait::async_trait;
     use futures::{StreamExt, stream};
 
@@ -338,13 +340,15 @@ mod tests {
         async fn chat_stream(
             &self,
             _msgs: &[ChatMessage],
-        ) -> Result<LLMTokenStream, Box<dyn std::error::Error + Send + Sync>> {
-            let words: Vec<String> = self
+        ) -> Result<TokenStream, Box<dyn std::error::Error + Send + Sync>> {
+            let words: Vec<Token> = self
                 .reply
                 .split_whitespace()
-                .map(|w| format!("{} ", w))
+                .map(|w| Token {
+                    text: format!("{} ", w),
+                })
                 .collect();
-            let stream = stream::iter(words.into_iter().map(Result::Ok));
+            let stream = stream::iter(words);
             Ok(Box::pin(stream))
         }
 
@@ -395,9 +399,14 @@ mod tests {
             async fn chat_stream(
                 &self,
                 _msgs: &[ChatMessage],
-            ) -> Result<LLMTokenStream, Box<dyn std::error::Error + Send + Sync>> {
+            ) -> Result<TokenStream, Box<dyn std::error::Error + Send + Sync>> {
                 self.0.fetch_add(1, Ordering::SeqCst);
-                Ok(Box::pin(stream::once(async { Ok("done".to_string()) })))
+                use crate::llm::types::Token;
+                Ok(Box::pin(stream::once(async {
+                    Token {
+                        text: "done".into(),
+                    }
+                })))
             }
 
             async fn embed(
@@ -473,9 +482,14 @@ mod tests {
             async fn chat_stream(
                 &self,
                 msgs: &[ChatMessage],
-            ) -> Result<LLMTokenStream, Box<dyn std::error::Error + Send + Sync>> {
+            ) -> Result<TokenStream, Box<dyn std::error::Error + Send + Sync>> {
                 self.prompts.lock().unwrap().push(msgs[0].content.clone());
-                Ok(Box::pin(stream::once(async { Ok("frame".to_string()) })))
+                use crate::llm::types::Token;
+                Ok(Box::pin(stream::once(async {
+                    Token {
+                        text: "frame".into(),
+                    }
+                })))
             }
 
             async fn embed(

@@ -1,3 +1,4 @@
+use crate::llm::types::TokenStream;
 use async_trait::async_trait;
 
 /// Trait implemented by autonomous sub-agents running as independent tasks.
@@ -11,8 +12,8 @@ pub trait Genius: Send + Sync + 'static {
     /// Human readable name used for logging.
     fn name(&self) -> &'static str;
 
-    /// Feed an input into this genius.
-    async fn feed(&self, input: Self::Input);
+    /// Process an input and stream tokens back.
+    async fn call(&self, input: Self::Input) -> TokenStream;
 
     /// Run the main loop for this genius.
     async fn run(&self);

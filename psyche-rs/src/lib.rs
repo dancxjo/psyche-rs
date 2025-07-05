@@ -9,6 +9,7 @@ mod combobulator;
 mod conversation;
 mod genius;
 mod impression;
+mod llm;
 mod llm_client;
 mod llm_parser;
 mod memory_sensor;
@@ -36,7 +37,8 @@ mod voice;
 mod will;
 mod wit;
 
-pub use crate::llm_client::{LLMClient, LLMTokenStream, spawn_llm_task};
+pub use crate::llm::types::{Token, TokenStream};
+pub use crate::llm_client::{LLMClient, spawn_llm_task};
 pub use crate::ollama_llm::OllamaLLM;
 pub use abort_guard::AbortGuard;
 pub use cluster_analyzer::ClusterAnalyzer;
@@ -101,9 +103,12 @@ mod tests {
             async fn chat_stream(
                 &self,
                 _msgs: &[ollama_rs::generation::chat::ChatMessage],
-            ) -> Result<LLMTokenStream, Box<dyn std::error::Error + Send + Sync>> {
+            ) -> Result<TokenStream, Box<dyn std::error::Error + Send + Sync>> {
+                use crate::llm::types::Token;
                 Ok(Box::pin(stream::once(async {
-                    Ok("ping event".to_string())
+                    Token {
+                        text: "ping event".into(),
+                    }
                 })))
             }
 
@@ -151,9 +156,12 @@ mod tests {
             async fn chat_stream(
                 &self,
                 _msgs: &[ollama_rs::generation::chat::ChatMessage],
-            ) -> Result<LLMTokenStream, Box<dyn std::error::Error + Send + Sync>> {
+            ) -> Result<TokenStream, Box<dyn std::error::Error + Send + Sync>> {
+                use crate::llm::types::Token;
                 Ok(Box::pin(stream::once(async {
-                    Ok("ping event".to_string())
+                    Token {
+                        text: "ping event".into(),
+                    }
                 })))
             }
 
