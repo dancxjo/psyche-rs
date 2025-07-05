@@ -4,14 +4,16 @@ use std::time::Duration;
 
 use tracing::{debug, error, info};
 
+use crate::ThreadLocalContext;
 use crate::genius::Genius;
 
 /// Launches a [`Genius`] on its own OS thread.
 ///
-/// The genius runs inside a single-threaded Tokio runtime. If `delay_ms` is
-/// provided, the runtime sleeps for that duration after each iteration of
-/// [`Genius::run`]. The returned [`JoinHandle`] can be detached or joined
-/// by the caller.
+/// Each thread should create its own [`ThreadLocalContext`] so that LLM clients
+/// and memory stores are scoped per-thread. The genius runs inside a
+/// single-threaded Tokio runtime. If `delay_ms` is provided, the runtime
+/// sleeps for that duration after each iteration of [`Genius::run`]. The
+/// returned [`JoinHandle`] can be detached or joined by the caller.
 pub fn launch_genius<G>(genius: Arc<G>, delay_ms: Option<u64>) -> JoinHandle<()>
 where
     G: Genius,

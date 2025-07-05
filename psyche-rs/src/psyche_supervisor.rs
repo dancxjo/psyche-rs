@@ -6,7 +6,7 @@ use std::thread::JoinHandle;
 use tokio::sync::broadcast;
 use tracing::{debug, error};
 
-use crate::{Genius, launch_genius};
+use crate::{Genius, ThreadLocalContext, launch_genius};
 
 /// Key wrapper allowing [`Arc`] pointers to be used in a [`HashMap`]
 /// by comparing the underlying pointer value.
@@ -41,7 +41,8 @@ struct Entry<G: Genius> {
 /// Supervises a set of [`Genius`] threads.
 ///
 /// Each genius is spawned using [`launch_genius`] and restarted if the thread
-/// stops unexpectedly.
+/// stops unexpectedly. Threads are expected to create a [`ThreadLocalContext`]
+/// with dedicated LLM and memory clients.
 ///
 /// ```no_run
 /// use std::sync::Arc;

@@ -295,6 +295,7 @@ mod tests {
 mod integration_tests {
     use super::*;
     use chrono::Utc;
+    use std::sync::Arc;
 
     fn make_sensation(id: &str) -> StoredSensation {
         StoredSensation {
@@ -403,5 +404,25 @@ mod integration_tests {
         let latest = store.fetch_recent_impressions(2).await.unwrap();
         assert_eq!(latest.len(), 2);
         assert!(latest[0].when >= latest[1].when);
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+    async fn concurrent_access() {
+        let store = Arc::new(InMemoryStore::new());
+        let mut handles = Vec::new();
+        for i in 0..10 {
+            let store = store.clone();
+            handles.push(tokio::spawn(async move {
+                let s = make_sensation(&format!("c{}", i));
+                store.store_sensation(&s).await.unwrap();
+                let imp = make_impression(&format!("i{}", i), vec![s.id.clone()]);
+                store.store_impression(&imp).await.unwrap();
+            }));
+        }
+        for h in handles {
+            h.await.unwrap();
+        }
+        assert_eq!(store.sensation_count(), 10);
+        assert_eq!(store.impression_count(), 10);
     }
 }
