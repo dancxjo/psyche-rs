@@ -3,18 +3,18 @@ use clap::Parser;
 /// Command line arguments for the daringsby binary.
 #[derive(Parser, Clone)]
 pub struct Args {
-    /// Base URLs of Ollama servers used by all LLM tasks.
-    ///
-    /// Specify this flag multiple times to add more servers. If omitted,
-    /// `http://localhost:11434` is used. Multiple `--base-url` values are
-    /// strongly recommended for parallel LLMs. Concurrency >1 without
-    /// multiple servers may overload a single backend.
-    #[arg(long = "base-url", num_args(1..), default_value = "http://localhost:11434")]
-    pub base_url: Vec<String>,
-    /// Max number of concurrent LLM calls. Defaults to the number of
-    /// `--base-url` values.
-    #[arg(long = "llm-concurrency")]
-    pub llm_concurrency: Option<usize>,
+    /// Base URL of the Ollama server used for quick tasks.
+    #[arg(long = "quick-url", default_value = "http://localhost:11434")]
+    pub quick_url: String,
+    /// Base URL of the server used by the Combobulator.
+    #[arg(long = "combob-url", default_value = "http://localhost:11434")]
+    pub combob_url: String,
+    /// Base URL of the server used by the Will wit.
+    #[arg(long = "will-url", default_value = "http://localhost:11434")]
+    pub will_url: String,
+    /// Base URL of the server used for memory operations.
+    #[arg(long = "memory-url", default_value = "http://localhost:11434")]
+    pub memory_url: String,
     #[arg(long = "quick-model", default_value = "gemma3:27b")]
     pub quick_model: String,
     #[arg(long = "combob-model", default_value = "gemma3:27b")]

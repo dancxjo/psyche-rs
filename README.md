@@ -60,18 +60,19 @@ Pete is not merely a robot, nor a chatbot. He is:
 ```bash
 cargo build --release
 cargo run -- \
-  --base-url http://localhost:11434 \
+  --quick-url http://localhost:11434 \
+  --combob-url http://localhost:11434 \
+  --will-url http://localhost:11434 \
+  --memory-url http://localhost:11434 \
   --tts-url http://localhost:5002
 ````
 
 Available options (see `main.rs`):
 
-* `--base-url`: Ollama base URL. Repeat to add more servers (default:
-  `http://localhost:11434`). Multiple servers are strongly recommended for
-  parallel LLM calls. Concurrency >1 without multiple servers may overwhelm a
-  single backend.
-* `--llm-concurrency`: Max concurrent LLM calls. Defaults to the number of
-  `--base-url` values.
+* `--quick-url`: Base URL for quick tasks (default: `http://localhost:11434`)
+* `--combob-url`: Base URL for Combobulator tasks (default: `http://localhost:11434`)
+* `--will-url`: Base URL for Will tasks (default: `http://localhost:11434`)
+* `--memory-url`: Base URL for memory operations (default: `http://localhost:11434`)
 * `--quick-model`: Model used for Quick tasks (default: `gemma3:27b`)
 * `--combob-model`: Model used for Combobulator tasks (default: `gemma3:27b`)
 * `--will-model`: Model used for Will tasks (default: `gemma3:27b`)
@@ -90,28 +91,6 @@ pipeline.
 
 ---
 
-### LLM pooling
-
-Use `RoundRobinLLM` to distribute requests across multiple LLM instances.
-
-```rust
-use std::sync::Arc;
-use psyche_rs::{RoundRobinLLM, LLMClient};
-# use async_trait::async_trait;
-# use futures::{stream, Stream};
-# use std::{pin::Pin, error::Error};
-# use ollama_rs::generation::chat::ChatMessage;
-# struct Dummy;
-# #[async_trait]
-# impl LLMClient for Dummy {
-#     async fn chat_stream(&self, _msgs: &[ChatMessage]) -> Result<psyche_rs::LLMTokenStream, Box<dyn Error + Send + Sync>> {
-#         Ok(Box::pin(stream::empty()))
-#     }
-# }
-let pool = RoundRobinLLM::new(vec![Arc::new(Dummy)]);
-```
-
----
 
 ## 📝 Contributing
 
