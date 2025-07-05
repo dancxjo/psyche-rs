@@ -75,9 +75,8 @@ impl<M: MemoryStore + Send + Sync> RecallMotor<M> {
             .map_err(|e| MotorError::Failed(e.to_string()))?;
         let mut out = String::new();
         while let Some(tok) = stream.next().await {
-            let tok = tok.map_err(|e| MotorError::Failed(e.to_string()))?;
-            trace!(%tok, "neighbor_llm_token");
-            out.push_str(&tok);
+            trace!(token = %tok.text, "neighbor_llm_token");
+            out.push_str(&tok.text);
         }
         let summary = out.trim();
         if summary.is_empty() {

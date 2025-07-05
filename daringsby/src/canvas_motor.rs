@@ -30,8 +30,8 @@ use crate::canvas_stream::CanvasStream;
 ///         async fn chat_stream(
 ///             &self,
 ///             _msgs: &[ollama_rs::generation::chat::ChatMessage],
-///         ) -> Result<psyche_rs::llm::types::TokenStream, Box<dyn std::error::Error + Send + Sync>> {
-///             use psyche_rs::llm::types::Token;
+///         ) -> Result<psyche_rs::TokenStream, Box<dyn std::error::Error + Send + Sync>> {
+///             use psyche_rs::Token;
 ///             let stream = async_stream::stream! { yield Token { text: String::new() } };
 ///             Ok(Box::pin(stream))
 ///         }
@@ -104,9 +104,9 @@ The snapshot image is also delivered to any `CanvasStream` subscribers."
             .await
             .map_err(|e| MotorError::Failed(e.to_string()))?;
         let mut desc = String::new();
-        while let Some(Ok(tok)) = stream.next().await {
-            trace!(%tok, "llm token");
-            desc.push_str(&tok);
+        while let Some(tok) = stream.next().await {
+            trace!(token = %tok.text, "llm token");
+            desc.push_str(&tok.text);
         }
         let when = Local::now();
         let sensation = Sensation {

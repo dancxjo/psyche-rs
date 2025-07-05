@@ -70,9 +70,9 @@ sent to any `VisionSensor` subscribers."
             .await
             .map_err(|e| MotorError::Failed(e.to_string()))?;
         let mut desc = String::new();
-        while let Some(Ok(tok)) = stream.next().await {
-            trace!(%tok, "llm token");
-            desc.push_str(&tok);
+        while let Some(tok) = stream.next().await {
+            trace!(token = %tok.text, "llm token");
+            desc.push_str(&tok.text);
         }
         let when = Local::now();
         let sensation = Sensation {
