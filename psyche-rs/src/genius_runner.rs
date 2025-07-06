@@ -20,23 +20,36 @@ where
 {
     thread::spawn(move || {
         info!(name = %genius.name(), "starting genius thread");
-        let rt = tokio::runtime::Builder::new_current_thread()
-            .enable_all()
-            .build()
-            .expect("Failed to build thread-local runtime");
+        let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            let rt = tokio::runtime::Builder::new_current_thread()
+                .enable_all()
+                .build()
+                .expect("Failed to build thread-local runtime");
 
-        rt.block_on(async {
-            loop {
-                genius.run().await;
-                if let Some(ms) = delay_ms {
-                    tokio::time::sleep(Duration::from_millis(ms)).await;
+            rt.block_on(async {
+                loop {
+                    genius.run().await;
+                    if let Some(ms) = delay_ms {
+                        tokio::time::sleep(Duration::from_millis(ms)).await;
+                    } else {
+                        break;
+                    }
+                }
+            });
+        }));
+
+        match result {
+            Ok(()) => debug!(name = %genius.name(), "stopping genius thread"),
+            Err(e) => {
+                if let Some(s) = e.downcast_ref::<&str>() {
+                    error!(name = %genius.name(), panic = %s, "genius panicked");
+                } else if let Some(s) = e.downcast_ref::<String>() {
+                    error!(name = %genius.name(), panic = %s, "genius panicked");
                 } else {
-                    break;
+                    error!(name = %genius.name(), "genius panicked");
                 }
             }
-        });
-
-        debug!(name = %genius.name(), "stopping genius thread");
+        }
     })
 }
 

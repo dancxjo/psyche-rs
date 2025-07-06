@@ -51,9 +51,9 @@ struct Entry<G: Genius> {
 ///
 /// #[tokio::main]
 /// async fn main() {
-///     let (_tx, rx) = unbounded_channel();
 ///     let (out_tx, _out_rx) = unbounded_channel();
-///     let quick = Arc::new(QuickGenius::new(rx, out_tx));
+///     let (quick, _tx) = QuickGenius::with_capacity(1, out_tx);
+///     let quick = Arc::new(quick);
 ///     let mut sup = PsycheSupervisor::new();
 ///     sup.add_genius(quick);
 ///     sup.start(None);
@@ -199,5 +199,53 @@ mod tests {
         tokio::time::sleep(Duration::from_millis(30)).await;
         sup.shutdown().await;
         assert!(count.load(Ordering::SeqCst) > 1);
+    }
+
+    struct PanicGenius {
+        count: Arc<AtomicUsize>,
+        first: AtomicUsize,
+    }
+
+    #[async_trait]
+    impl Genius for PanicGenius {
+        type Input = ();
+        type Output = ();
+
+        fn name(&self) -> &'static str {
+            "panic"
+        }
+
+        async fn call(&self, _input: Self::Input) -> TokenStream {
+            use crate::llm::types::Token;
+            use futures::stream;
+            stream::once(async {
+                Token {
+                    text: String::new(),
+                }
+            })
+            .boxed()
+        }
+
+        async fn run(&self) {
+            if self.first.fetch_add(1, Ordering::SeqCst) == 0 {
+                panic!("boom");
+            }
+            self.count.fetch_add(1, Ordering::SeqCst);
+        }
+    }
+
+    #[tokio::test]
+    async fn restarts_panicking_genius() {
+        let count = Arc::new(AtomicUsize::new(0));
+        let genius = Arc::new(PanicGenius {
+            count: count.clone(),
+            first: AtomicUsize::new(0),
+        });
+        let mut sup = PsycheSupervisor::new();
+        sup.add_genius(genius);
+        sup.start(None);
+        tokio::time::sleep(Duration::from_millis(30)).await;
+        sup.shutdown().await;
+        assert!(count.load(Ordering::SeqCst) >= 1);
     }
 }
