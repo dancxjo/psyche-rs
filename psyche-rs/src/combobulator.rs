@@ -21,7 +21,7 @@ const DEFAULT_PROMPT: &str = "";
 /// let stream = comb.observe(sensors).await;
 /// ```
 pub struct Combobulator<T = serde_json::Value> {
-    wit: Wit<Impression<T>>,
+    wit: Wit<T>,
 }
 
 impl<T> Combobulator<T> {
@@ -120,31 +120,25 @@ impl<T> Combobulator<T>
 where
     T: Clone + Send + 'static + serde::Serialize,
 {
-    /// Observe provided impression sensors and yield summarized impressions.
-    ///
-    /// Each emitted item is an `Impression` summarizing a batch of lower level
-    /// impressions. The resulting stream therefore contains `Vec<Impression<Impression<T>>>`.
-    pub async fn observe<S>(
-        &mut self,
-        sensors: Vec<S>,
-    ) -> BoxStream<'static, Vec<Impression<Impression<T>>>>
+    /// Observe provided sensors and yield summarized impressions.
+    pub async fn observe<S>(&mut self, sensors: Vec<S>) -> BoxStream<'static, Vec<Impression<T>>>
     where
-        S: Sensor<Impression<T>> + Send + 'static,
+        S: Sensor<T> + Send + 'static,
     {
         self.wit.observe(sensors).await
     }
 
     /// Observe sensors with the ability to abort processing.
     ///
-    /// Like [`observe`] this returns a stream of summarized impressions where
-    /// each summary is an `Impression` over lower level impressions.
+    /// Like [`observe`] this returns a stream of summarized impressions
+    /// and allows abortion via the provided channel.
     pub async fn observe_with_abort<S>(
         &mut self,
         sensors: Vec<S>,
         abort: tokio::sync::oneshot::Receiver<()>,
-    ) -> BoxStream<'static, Vec<Impression<Impression<T>>>>
+    ) -> BoxStream<'static, Vec<Impression<T>>>
     where
-        S: Sensor<Impression<T>> + Send + 'static,
+        S: Sensor<T> + Send + 'static,
     {
         self.wit.observe_with_abort(sensors, abort).await
     }
@@ -245,10 +239,8 @@ mod tests {
         }
 
         struct InstantMomentSensor;
-        impl Sensor<Impression<Impression<String>>> for InstantMomentSensor {
-            fn stream(
-                &mut self,
-            ) -> BoxStream<'static, Vec<Sensation<Impression<Impression<String>>>>> {
+        impl Sensor<Impression<String>> for InstantMomentSensor {
+            fn stream(&mut self) -> BoxStream<'static, Vec<Sensation<Impression<String>>>> {
                 use async_stream::stream;
                 let s = stream! {
                     yield vec![

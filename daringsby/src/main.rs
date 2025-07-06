@@ -148,7 +148,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .system_prompt(include_str!("prompts/voice_prompt.txt"))
         .delay_ms(0);
 
-    let (instant_tx, instant_rx) = unbounded_channel();
     let (situ_tx, situ_rx) = unbounded_channel();
 
     let mut svg_guard = svg_rx.take().map(|mut rx| {
@@ -161,24 +160,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         }))
     });
 
-    let quick_task = {
-        let quick = Wit::new(llms.quick.clone())
-            .name("Quick")
-            .prompt(include_str!("prompts/quick_prompt.txt"));
-        tokio::spawn(run_quick(quick, sensors, instant_tx, store.clone()))
-    };
     let combob_task = {
-        let quick_sensor = ImpressionStreamSensor::new(instant_rx);
         let combob = Combobulator::new(llms.combob.clone())
             .name("Combobulator")
             .prompt(include_str!("prompts/combobulator_prompt.txt"))
             .memory_store(store.clone());
-        tokio::spawn(run_combobulator(
-            combob,
-            vec![Box::new(quick_sensor)],
-            situ_tx,
-            store.clone(),
-        ))
+        tokio::spawn(run_combobulator(combob, sensors, situ_tx, store.clone()))
     };
 
     let combo_sensor = ImpressionStreamSensor::new(situ_rx);
@@ -214,7 +201,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         executor.clone(),
     ));
 
-    let mut quick = Some(quick_task);
     let mut combob = Some(combob_task);
     let mut will = Some(will_task);
     let mut voice_handle = Some(voice_task);
@@ -222,7 +208,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     tokio::select! {
         _ = shutdown_signal() => {
             tracing::info!("Shutdown signal received");
-            if let Some(h) = quick.take() { h.abort(); }
             if let Some(h) = combob.take() { h.abort(); }
             if let Some(h) = will.take() { h.abort(); }
             if let Some(h) = voice_handle.take() { h.abort(); }
@@ -231,7 +216,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
         res = async {
             tokio::try_join!(
-                quick.take().unwrap(),
                 combob.take().unwrap(),
                 will.take().unwrap(),
                 voice_handle.take().unwrap(),
@@ -253,20 +237,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     Ok(())
 }
 
-async fn run_quick(
-    mut quick: Wit<String>,
-    sensors: Vec<Box<dyn Sensor<String> + Send>>,
-    tx: tokio::sync::mpsc::UnboundedSender<Vec<Impression<String>>>,
-    store: Arc<dyn MemoryStore + Send + Sync>,
-) {
-    let stream = quick.observe(sensors).await;
-    run_impression_loop(stream, tx, store, "Instant", "quick").await;
-}
-
 async fn run_combobulator(
     mut combob: Combobulator<String>,
-    sensors: Vec<Box<dyn Sensor<Impression<String>> + Send>>,
-    tx: tokio::sync::mpsc::UnboundedSender<Vec<Impression<Impression<String>>>>,
+    sensors: Vec<Box<dyn Sensor<String> + Send>>,
+    tx: tokio::sync::mpsc::UnboundedSender<Vec<Impression<String>>>,
     store: Arc<dyn MemoryStore + Send + Sync>,
 ) {
     let stream = combob.observe(sensors).await;
@@ -274,8 +248,8 @@ async fn run_combobulator(
 }
 
 async fn run_will(
-    mut will: Will<Impression<Impression<String>>>,
-    sensors: Vec<Box<dyn Sensor<Impression<Impression<String>>> + Send>>,
+    mut will: Will<Impression<String>>,
+    sensors: Vec<Box<dyn Sensor<Impression<String>> + Send>>,
     executor: Arc<MotorExecutor>,
     motors: Vec<Arc<dyn Motor + Send + Sync>>,
     store: Arc<dyn MemoryStore + Send + Sync>,
