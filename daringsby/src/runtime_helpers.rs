@@ -1,3 +1,5 @@
+#[cfg(feature = "battery-motor")]
+use crate::BatteryMotor;
 use crate::{
     CanvasMotor, LogMemoryMotor, LoggingMotor, Mouth, RecallMotor, SourceReadMotor,
     SourceSearchMotor, SourceTreeMotor, SvgMotor, VisionMotor,
@@ -53,6 +55,7 @@ pub async fn drive_will_stream<M>(
     source_read: Arc<SourceReadMotor>,
     source_search: Arc<SourceSearchMotor>,
     source_tree: Arc<SourceTreeMotor>,
+    #[cfg(feature = "battery-motor")] battery: Arc<BatteryMotor>,
 ) where
     M: psyche_rs::MemoryStore + Send + Sync + 'static,
 {
@@ -103,6 +106,10 @@ pub async fn drive_will_stream<M>(
                         .perform(intent)
                         .await
                         .expect("source tree motor failed");
+                }
+                #[cfg(feature = "battery-motor")]
+                "battery" => {
+                    battery.perform(intent).await.expect("battery motor failed");
                 }
                 _ => {
                     tracing::warn!(motor = %intent.assigned_motor, "unknown motor");

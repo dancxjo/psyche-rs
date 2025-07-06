@@ -1,3 +1,5 @@
+#[cfg(feature = "battery-sensor")]
+use crate::BatterySensor;
 #[cfg(feature = "development-status-sensor")]
 use crate::development_status::DevelopmentStatus;
 use crate::{Ear, HeardSelfSensor, HeardUserSensor, Heartbeat, SpeechStream};
@@ -31,6 +33,10 @@ pub fn build_sensors(stream: Arc<SpeechStream>) -> Vec<Box<dyn Sensor<String> + 
         Box::new(HeardSelfSensor::new(stream.subscribe_heard())) as Box<dyn Sensor<String> + Send>,
         Box::new(HeardUserSensor::new(stream.subscribe_user())) as Box<dyn Sensor<String> + Send>,
     ];
+    #[cfg(feature = "battery-sensor")]
+    {
+        sensors.push(Box::new(BatterySensor::default()) as Box<dyn Sensor<String> + Send>);
+    }
     #[cfg(feature = "development-status-sensor")]
     {
         debug!("development status sensor plugged in");

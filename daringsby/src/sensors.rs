@@ -1,3 +1,5 @@
+#[cfg(feature = "battery-sensor")]
+pub use crate::battery_sensor::BatterySensor;
 /// Sensor-related types re-exported for convenience.
 ///
 /// # Examples

@@ -1,3 +1,5 @@
+#[cfg(feature = "battery-motor")]
+pub use crate::battery_motor::BatteryMotor;
 #[cfg(feature = "canvas-motor")]
 pub use crate::canvas_motor::CanvasMotor;
 #[cfg(feature = "log-memory-motor")]
