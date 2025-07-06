@@ -18,6 +18,7 @@ mod memory_sensor;
 mod memory_store;
 mod motor;
 mod motor_executor;
+mod neighbor;
 mod neo_qdrant_store;
 mod ollama_llm;
 mod plain_describe;
@@ -61,6 +62,7 @@ pub use motor::{
     SensorDirectingMotor,
 };
 pub use motor_executor::MotorExecutor;
+pub use neighbor::merge_neighbors;
 pub use neo_qdrant_store::NeoQdrantMemoryStore;
 pub use plain_describe::PlainDescribe;
 pub use psyche::Psyche;

@@ -173,6 +173,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             vec![Box::new(combo_sensor)],
             executor.clone(),
             motors_send.clone(),
+            store.clone(),
         ));
         (task, window, latest)
     };
@@ -249,11 +250,13 @@ async fn run_will(
     sensors: Vec<Box<dyn Sensor<Impression<Impression<String>>> + Send>>,
     executor: Arc<MotorExecutor>,
     motors: Vec<Arc<dyn Motor + Send + Sync>>,
+    store: Arc<dyn MemoryStore + Send + Sync>,
 ) {
     tracing::debug!("will task started");
     for m in &motors {
         will.register_motor(m.as_ref());
     }
+    let mut will = will.memory_store(store);
     let stream = will.observe(sensors).await;
     let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
     tokio::spawn(run_sensor_loop(stream, tx, "will"));
