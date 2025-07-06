@@ -1,13 +1,9 @@
-#[cfg(feature = "battery-sensor")]
 use crate::BatterySensor;
-#[cfg(feature = "development-status-sensor")]
 use crate::development_status::DevelopmentStatus;
-#[cfg(feature = "memory-consolidation-sensor")]
 use crate::memory_consolidation_sensor::{ConsolidationStatus, MemoryConsolidationSensor};
 use crate::{Ear, HeardSelfSensor, HeardUserSensor, Heartbeat, SpeechStream};
 use psyche_rs::Sensor;
 use std::sync::Arc;
-#[cfg(feature = "memory-consolidation-sensor")]
 use tokio::sync::Mutex;
 use tracing::debug;
 
@@ -33,25 +29,20 @@ use tracing::debug;
 /// ```
 pub fn build_sensors(
     stream: Arc<SpeechStream>,
-    #[cfg(feature = "memory-consolidation-sensor")] consolidation: Option<
-        Arc<Mutex<ConsolidationStatus>>,
-    >,
+    consolidation: Option<Arc<Mutex<ConsolidationStatus>>>,
 ) -> Vec<Box<dyn Sensor<String> + Send>> {
     let mut sensors: Vec<Box<dyn Sensor<String> + Send>> = vec![
         Box::new(Heartbeat) as Box<dyn Sensor<String> + Send>,
         Box::new(HeardSelfSensor::new(stream.subscribe_heard())) as Box<dyn Sensor<String> + Send>,
         Box::new(HeardUserSensor::new(stream.subscribe_user())) as Box<dyn Sensor<String> + Send>,
     ];
-    #[cfg(feature = "battery-sensor")]
     {
         sensors.push(Box::new(BatterySensor::default()) as Box<dyn Sensor<String> + Send>);
     }
-    #[cfg(feature = "development-status-sensor")]
     {
         debug!("development status sensor plugged in");
         sensors.push(Box::new(DevelopmentStatus) as Box<dyn Sensor<String> + Send>);
     }
-    #[cfg(feature = "memory-consolidation-sensor")]
     if let Some(status) = consolidation {
         sensors.push(
             Box::new(MemoryConsolidationSensor::new(status)) as Box<dyn Sensor<String> + Send>
@@ -65,7 +56,7 @@ pub fn build_ear(stream: Arc<SpeechStream>) -> Ear {
     Ear::from_stream(stream)
 }
 
-#[cfg(all(test, feature = "development-status-sensor"))]
+#[cfg(test)]
 mod tests {
     use super::*;
     use futures::StreamExt;
