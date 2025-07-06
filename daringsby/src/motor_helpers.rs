@@ -1,5 +1,8 @@
 use std::{collections::HashMap, sync::Arc};
-use tokio::sync::{Mutex, mpsc::unbounded_channel};
+use tokio::sync::{
+    Mutex,
+    mpsc::{UnboundedReceiver, unbounded_channel},
+};
 
 use crate::Mouth;
 #[cfg(feature = "memory-consolidation-motor")]
@@ -58,9 +61,11 @@ pub fn build_motors(
     Vec<Arc<dyn Motor>>,
     Arc<HashMap<String, Arc<dyn Motor>>>,
     Option<Arc<Mutex<ConsolidationStatus>>>,
+    Option<UnboundedReceiver<String>>,
 ) {
     let mut motors: Vec<Arc<dyn Motor>> = Vec::new();
     let mut map: HashMap<String, Arc<dyn Motor>> = HashMap::new();
+    let mut svg_rx_opt: Option<UnboundedReceiver<String>> = None;
 
     #[cfg(any(
         feature = "memory-consolidation-motor",
@@ -102,8 +107,9 @@ pub fn build_motors(
 
     #[cfg(feature = "svg-motor")]
     {
-        let (svg_tx, _svg_rx) = unbounded_channel::<String>();
+        let (svg_tx, svg_rx) = unbounded_channel::<String>();
         let svg_motor = Arc::new(SvgMotor::new(svg_tx));
+        svg_rx_opt = Some(svg_rx);
         motors.push(svg_motor.clone());
         map.insert("draw".into(), svg_motor);
     }
@@ -173,5 +179,5 @@ pub fn build_motors(
         map.insert("battery".into(), battery_motor);
     }
 
-    (motors, Arc::new(map), status)
+    (motors, Arc::new(map), status, svg_rx_opt)
 }

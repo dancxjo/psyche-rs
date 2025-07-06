@@ -121,7 +121,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     ));
     let qdrant_url = Url::parse(&args.qdrant_url)?;
     ensure_impressions_collection_exists(&Client::new(), &qdrant_url).await?;
-    let (motors, _motor_map, consolidation_status) = build_motors(
+    let (motors, _motor_map, consolidation_status, mut svg_rx) = build_motors(
         &llms,
         mouth.clone(),
         vision.clone(),
@@ -154,6 +154,16 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let (instant_tx, instant_rx) = unbounded_channel();
     let (situ_tx, situ_rx) = unbounded_channel();
+
+    let mut svg_guard = svg_rx.take().map(|mut rx| {
+        let stream = canvas.clone();
+        psyche_rs::AbortGuard::new(tokio::spawn(async move {
+            while let Some(svg) = rx.recv().await {
+                stream.broadcast_svg(svg);
+            }
+            tracing::info!("svg forwarder task exiting");
+        }))
+    });
 
     let quick_task = {
         let quick = Wit::new(llms.quick.clone())
@@ -238,6 +248,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
     }
 
+    if let Some(mut g) = svg_guard {
+        g.abort();
+    }
     stream.abort_tasks();
     server_handle.abort();
     tracing::info!("Server aborted");
