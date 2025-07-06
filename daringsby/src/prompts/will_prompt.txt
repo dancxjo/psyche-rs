@@ -10,6 +10,9 @@ SITUATION:
 Latest instant: {latest_instant}
 Latest moment: {latest_moment}
 {situation}
+Relevant memories:
+{memories}
+What's relevant among this? Please respond in a natural way, like: "I remember that last week..."
 
 AVAILABLE MOTORS:
 {motors}
