@@ -26,6 +26,13 @@ impl AbortGuard {
     pub fn into_inner(mut self) -> Option<tokio::task::JoinHandle<()>> {
         self.handle.take()
     }
+
+    /// Abort the task immediately.
+    pub fn abort(&mut self) {
+        if let Some(handle) = self.handle.take() {
+            handle.abort();
+        }
+    }
 }
 
 impl Drop for AbortGuard {
@@ -55,6 +62,17 @@ mod tests {
         // give the runtime a moment to process the abort
         tokio::task::yield_now().await;
         // Then sending fails because the receiver was dropped
+        assert!(tx.send(()).is_err());
+    }
+
+    #[tokio::test]
+    async fn aborts_task_on_call() {
+        let (tx, rx) = oneshot::channel::<()>();
+        let mut guard = AbortGuard::new(tokio::spawn(async move {
+            let _ = rx.await;
+        }));
+        guard.abort();
+        tokio::task::yield_now().await;
         assert!(tx.send(()).is_err());
     }
 }

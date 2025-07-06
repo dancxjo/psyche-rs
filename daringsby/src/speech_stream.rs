@@ -16,6 +16,10 @@ use tracing::{error, warn};
 
 /// WebSocket streamer for mouth audio.
 ///
+/// Spawns:
+/// - background task forwarding mouth text to listeners
+/// - WebSocket session task per client connection
+///
 /// Exposes two routes:
 /// - `/` serves a minimal HTML page that connects to the WebSocket and plays
 ///   PCM data via the Web Audio API.
@@ -31,6 +35,7 @@ pub struct SpeechStream {
     segment_rx: Arc<Mutex<Receiver<SpeechSegment>>>,
     heard_tx: Sender<String>,
     user_tx: Sender<String>,
+    abort_guards: std::sync::Mutex<Vec<psyche_rs::AbortGuard>>,
 }
 
 impl SpeechStream {
@@ -43,16 +48,16 @@ impl SpeechStream {
         let (heard_tx, _) = broadcast::channel(32);
         let (user_tx, _) = broadcast::channel(32);
         let (text_tx, text_rx_out) = broadcast::channel(32);
-        let stream = Self {
+        let mut stream = Self {
             tts_rx: Arc::new(Mutex::new(audio_rx)),
             text_rx: Arc::new(Mutex::new(text_rx_out)),
             text_tx: text_tx.clone(),
             segment_rx: Arc::new(Mutex::new(segment_rx)),
             heard_tx: heard_tx.clone(),
             user_tx,
+            abort_guards: std::sync::Mutex::new(Vec::new()),
         };
-
-        tokio::spawn(async move {
+        let guard = psyche_rs::AbortGuard::new(tokio::spawn(async move {
             let mut src = text_rx;
             while let Ok(t) = src.recv().await {
                 let desc = format!("text {} bytes", t.len());
@@ -63,9 +68,21 @@ impl SpeechStream {
                     warn!(target: "speech_stream", error=?e, what=%desc, "broadcast send failed");
                 }
             }
-        });
+
+            tracing::info!("text forwarder task exiting");
+        }));
+        stream.abort_guards.lock().unwrap().push(guard);
 
         stream
+    }
+
+    /// Abort all background tasks.
+    pub fn abort_tasks(&self) {
+        let mut guards = self.abort_guards.lock().unwrap();
+        for g in &mut *guards {
+            g.abort();
+        }
+        guards.clear();
     }
 
     /// Build an [`axum::Router`] exposing the WebSocket streaming routes.
@@ -141,7 +158,10 @@ impl SpeechStream {
                     warn!(%count, "audio channel lagged");
                     continue;
                 }
-                Err(broadcast::error::RecvError::Closed) => break,
+                Err(broadcast::error::RecvError::Closed) => {
+                    tracing::info!("audio channel closed, exiting");
+                    break;
+                }
             }
         }
     }
@@ -149,16 +169,26 @@ impl SpeechStream {
     async fn stream_segments(self: Arc<Self>, mut socket: WebSocket) {
         let rx = self.segment_rx.clone();
         let mut rx = rx.lock().await;
-        while let Ok(seg) = rx.recv().await {
-            match serde_json::to_string(&seg) {
-                Ok(json) => {
-                    if socket.send(Message::Text(json)).await.is_err() {
-                        error!("websocket segment send failed");
-                        break;
+        loop {
+            match rx.recv().await {
+                Ok(seg) => match serde_json::to_string(&seg) {
+                    Ok(json) => {
+                        if socket.send(Message::Text(json)).await.is_err() {
+                            error!("websocket segment send failed");
+                            break;
+                        }
                     }
+                    Err(e) => {
+                        error!(error=?e, "segment serialize failed");
+                    }
+                },
+                Err(broadcast::error::RecvError::Closed) => {
+                    tracing::info!("segment channel closed, exiting");
+                    break;
                 }
-                Err(e) => {
-                    error!(error=?e, "segment serialize failed");
+                Err(broadcast::error::RecvError::Lagged(count)) => {
+                    warn!(%count, "segment channel lagged");
+                    continue;
                 }
             }
         }
@@ -179,7 +209,10 @@ impl SpeechStream {
                     warn!(%count, "text channel lagged");
                     continue;
                 }
-                Err(broadcast::error::RecvError::Closed) => break,
+                Err(broadcast::error::RecvError::Closed) => {
+                    tracing::info!("text channel closed, exiting");
+                    break;
+                }
             }
         }
     }
