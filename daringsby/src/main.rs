@@ -151,7 +151,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         let quick_sensor = ImpressionStreamSensor::new(instant_rx);
         let combob = Combobulator::new(llms.combob.clone())
             .name("Combobulator")
-            .prompt(include_str!("prompts/combobulator_prompt.txt"));
+            .prompt(include_str!("prompts/combobulator_prompt.txt"))
+            .memory_store(store.clone());
         tokio::spawn(run_combobulator(
             combob,
             vec![Box::new(quick_sensor)],
