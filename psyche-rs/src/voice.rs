@@ -12,11 +12,14 @@ use tracing::{debug, trace, warn};
 use crate::Action;
 use crate::conversation::Conversation;
 use crate::llm::types::{Token, TokenStream};
-use crate::{Intention, Sensation, Sensor, llm_client::LLMClient, llm_parser, render_template};
+use crate::{
+    Intention, RecentActionsLog, Sensation, Sensor, llm_client::LLMClient, llm_parser,
+    render_template,
+};
 use ollama_rs::generation::chat::ChatMessage;
 
 /// Default system prompt template for [`Voice`].
-const DEFAULT_PROMPT: &str = "You are Pete, an artificial being capable of natural, thoughtful speech. (Other parts of your mind are responsible for controlling your actions. Your job is to speak on Pete's behalf. Only use information from the following situation and instant (and general knowledge).\n\nCurrent situation: {situation}\nCurrent instant: {instant}\n\nSpeak aloud as yourself, Pete. Respond in clear, natural language.\n\n✅ Return only what Pete would actually *say* out loud—no stage directions, no asterisks, no emoji, no XML or other tags.\n✅ Prefer responses of one or at most two complete sentences at a time.\n✅ Keep your speech fluid, friendly, and coherent.\n✅ Do not include internal thoughts, descriptions of actions, or system notes—only speakable dialogue.";
+const DEFAULT_PROMPT: &str = "You are Pete, an artificial being capable of natural, thoughtful speech. (Other parts of your mind are responsible for controlling your actions. Your job is to speak on Pete's behalf. Only use information from the following situation and instant (and general knowledge).\n\nCurrent situation: {situation}\nRecent actions: {recent_actions}\nCurrent instant: {instant}\n\nSpeak aloud as yourself, Pete. Respond in clear, natural language.\n\n✅ Return only what Pete would actually *say* out loud—no stage directions, no asterisks, no emoji, no XML or other tags.\n✅ Prefer responses of one or at most two complete sentences at a time.\n✅ Keep your speech fluid, friendly, and coherent.\n✅ Do not include internal thoughts, descriptions of actions, or system notes—only speakable dialogue.";
 
 /// LLM-powered conversational reflex.
 pub struct Voice {
@@ -26,6 +29,7 @@ pub struct Voice {
     delay_ms: u64,
     system_prompt: String,
     quick_tx: Option<UnboundedSender<Vec<Sensation<String>>>>,
+    recent_actions: Option<Arc<RecentActionsLog>>,
 }
 
 impl Voice {
@@ -38,6 +42,7 @@ impl Voice {
             delay_ms: 500,
             system_prompt: DEFAULT_PROMPT.to_string(),
             quick_tx: None,
+            recent_actions: None,
         }
     }
 
@@ -65,6 +70,16 @@ impl Voice {
         self
     }
 
+    /// Provide a log of recent actions.
+    pub fn recent_actions(mut self, log: Arc<RecentActionsLog>) -> Self {
+        self.recent_actions = Some(log);
+        self
+    }
+
+    pub fn set_recent_actions(&mut self, log: Arc<RecentActionsLog>) {
+        self.recent_actions = Some(log);
+    }
+
     /// Observe the provided ear sensor and emit speech intentions.
     pub async fn observe(
         &self,
@@ -79,6 +94,7 @@ impl Voice {
         let prompt_tpl = self.system_prompt.clone();
         let delay = self.delay_ms;
         let quick_tx = self.quick_tx.clone();
+        let recent_actions = self.recent_actions.clone();
         tokio::spawn(async move {
             let mut stream = ear.stream();
             let window: Arc<Mutex<Vec<Sensation<serde_json::Value>>>> =
@@ -100,10 +116,17 @@ impl Voice {
                     struct Ctx<'a> {
                         situation: &'a str,
                         instant: &'a str,
+                        recent_actions: &'a str,
                     }
+                    let actions_text = if let Some(log) = &recent_actions {
+                        log.take_all().join("; ")
+                    } else {
+                        String::new()
+                    };
                     let ctx = Ctx {
                         situation: &situation,
                         instant: &instant,
+                        recent_actions: &actions_text,
                     };
                     let system_prompt = render_template(&prompt_tpl, &ctx).unwrap_or_else(|e| {
                         warn!(?e, "voice prompt render failed");
@@ -209,8 +232,36 @@ impl Voice {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::llm_client::LLMClient;
     use crate::test_helpers::StaticLLM;
+    use async_trait::async_trait;
     use futures::StreamExt;
+    use futures::stream;
+    use ollama_rs::generation::chat::ChatMessage;
+    use std::sync::{Arc, Mutex};
+
+    #[derive(Clone, Default)]
+    struct CaptureLLM {
+        pub last: Arc<Mutex<Vec<ChatMessage>>>,
+    }
+
+    #[async_trait]
+    impl LLMClient for CaptureLLM {
+        async fn chat_stream(
+            &self,
+            msgs: &[ChatMessage],
+        ) -> Result<TokenStream, Box<dyn std::error::Error + Send + Sync>> {
+            self.last.lock().unwrap().extend_from_slice(msgs);
+            Ok(Box::pin(stream::empty()))
+        }
+
+        async fn embed(
+            &self,
+            _text: &str,
+        ) -> Result<Vec<f32>, Box<dyn std::error::Error + Send + Sync>> {
+            Ok(vec![0.0])
+        }
+    }
 
     struct TestEar;
     impl Sensor<String> for TestEar {
@@ -251,5 +302,22 @@ mod tests {
         let b = stream.next().await.unwrap();
         assert_eq!(a[0].assigned_motor, "speak");
         assert_eq!(b[0].assigned_motor, "speak");
+    }
+
+    #[tokio::test]
+    async fn recent_actions_in_prompt() {
+        let llm = Arc::new(CaptureLLM::default());
+        let log = Arc::new(RecentActionsLog::default());
+        log.push("I waved");
+        let voice = Voice::new(llm.clone(), 5)
+            .delay_ms(10)
+            .recent_actions(log.clone());
+        let ear = TestEar;
+        let get_situation = Arc::new(|| "".to_string());
+        let get_instant = Arc::new(|| "".to_string());
+        let mut stream = voice.observe(ear, get_situation, get_instant).await;
+        let _ = stream.next().await;
+        let msgs = llm.last.lock().unwrap();
+        assert!(msgs[0].content.contains("I waved"));
     }
 }

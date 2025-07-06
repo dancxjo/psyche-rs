@@ -3,7 +3,9 @@ use std::sync::Arc;
 use tokio::sync::{Semaphore, mpsc};
 use tracing::{debug, warn};
 
-use crate::{AbortGuard, Intention, MemoryStore, Motor, StoredImpression, StoredSensation};
+use crate::{
+    AbortGuard, Intention, MemoryStore, Motor, RecentActionsLog, StoredImpression, StoredSensation,
+};
 
 /// Central dispatcher for motor intentions.
 ///
@@ -13,6 +15,7 @@ pub struct MotorExecutor {
     tx: mpsc::Sender<Intention>,
     _guards: Vec<AbortGuard>,
     store: Option<Arc<dyn MemoryStore + Send + Sync>>,
+    actions: Option<Arc<RecentActionsLog>>,
 }
 
 impl MotorExecutor {
@@ -23,25 +26,29 @@ impl MotorExecutor {
         workers: usize,
         capacity: usize,
         store: Option<Arc<dyn MemoryStore + Send + Sync>>,
+        actions: Option<Arc<RecentActionsLog>>,
     ) -> Self {
         let (tx, mut rx) = mpsc::channel::<Intention>(capacity);
         let motors = Arc::new(motors);
         let semaphore = Arc::new(Semaphore::new(workers.max(1)));
         let store_cloned = store.clone();
+        let actions_cloned = actions.clone();
         let handle = tokio::spawn({
             let motors = motors.clone();
             let semaphore = semaphore.clone();
+            let actions = actions_cloned;
             async move {
                 while let Some(intention) = rx.recv().await {
                     let permit = semaphore.clone().acquire_owned().await.unwrap();
                     let motors = motors.clone();
                     let store = store_cloned.clone();
+                    let actions = actions.clone();
                     tokio::spawn(async move {
+                        let summary = intention.completed_summary();
                         if let Some(motor) =
                             motors.iter().find(|m| m.name() == intention.assigned_motor)
                         {
                             debug!(target_motor = %motor.name(), "Executing motor");
-
                             if let Some(store) = &store {
                                 let stored_imp = StoredImpression {
                                     id: uuid::Uuid::new_v4().to_string(),
@@ -89,6 +96,9 @@ impl MotorExecutor {
                         } else {
                             warn!(?intention, "No matching motor for intention");
                         }
+                        if let Some(log) = &actions {
+                            log.push(summary);
+                        }
                         drop(permit);
                     });
                 }
@@ -101,6 +111,7 @@ impl MotorExecutor {
             tx,
             _guards: guards,
             store,
+            actions,
         }
     }
 
@@ -163,7 +174,7 @@ mod tests {
     async fn dispatches_to_motor() {
         let counter = Arc::new(AtomicUsize::new(0));
         let motor = Arc::new(CountMotor(counter.clone()));
-        let executor = MotorExecutor::new(vec![motor], 1, 4, None);
+        let executor = MotorExecutor::new(vec![motor], 1, 4, None, None);
         executor.spawn_intention(sample_intention());
         tokio::time::sleep(std::time::Duration::from_millis(10)).await;
         assert_eq!(counter.load(Ordering::SeqCst), 1);
@@ -198,7 +209,7 @@ mod tests {
     async fn stores_intentions_and_sensations() {
         let store = Arc::new(InMemoryStore::new());
         let motor = Arc::new(SensationMotor);
-        let executor = MotorExecutor::new(vec![motor], 1, 4, Some(store.clone()));
+        let executor = MotorExecutor::new(vec![motor], 1, 4, Some(store.clone()), None);
         executor.spawn_intention(sensing_intention());
         tokio::time::sleep(std::time::Duration::from_millis(100)).await;
         assert_eq!(store.impression_count(), 1);
@@ -231,7 +242,7 @@ mod tests {
     async fn concurrent_workers_process_tasks() {
         let counter = Arc::new(AtomicUsize::new(0));
         let motor = Arc::new(DelayMotor(counter.clone()));
-        let executor = MotorExecutor::new(vec![motor], 2, 4, None);
+        let executor = MotorExecutor::new(vec![motor], 2, 4, None, None);
         executor.spawn_intention(delay_intention());
         executor.spawn_intention(delay_intention());
         tokio::time::sleep(std::time::Duration::from_millis(60)).await;

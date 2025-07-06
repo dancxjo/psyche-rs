@@ -12,7 +12,8 @@ use crate::Intention;
 #[cfg(test)]
 use crate::{ActionResult, MotorError};
 use crate::{
-    Impression, MemoryStore, Motor, Sensation, Sensor, StoredImpression, StoredSensation, Will, Wit,
+    Impression, MemoryStore, Motor, RecentActionsLog, Sensation, Sensor, StoredImpression,
+    StoredSensation, Will, Wit,
 };
 
 /// Sensor wrapper enabling shared ownership.
@@ -165,6 +166,7 @@ where
     /// background tasks so the main event loop remains responsive.
     pub async fn run(mut self) {
         debug!("starting psyche");
+        let action_log = Arc::new(RecentActionsLog::default());
         let mut wit_streams = Vec::new();
         for wit in self.wits.iter_mut() {
             let sensors_for_wit: Vec<_> = self
@@ -184,7 +186,13 @@ where
         for m in self.motors.iter() {
             will.register_motor(m.as_ref());
         }
-        let executor = crate::MotorExecutor::new(self.motors.clone(), 4, 16, self.store.clone());
+        let executor = crate::MotorExecutor::new(
+            self.motors.clone(),
+            4,
+            16,
+            self.store.clone(),
+            Some(action_log.clone()),
+        );
         let sensors_for_will: Vec<_> = self
             .sensors
             .iter()
@@ -193,13 +201,14 @@ where
         let stream = will.observe(sensors_for_will).await;
         let mut intention_streams: Vec<BoxStream<'static, Vec<Intention>>> = vec![stream];
 
-        if let Some(voice) = &self.voice {
+        if let Some(voice) = &mut self.voice {
             if let Some(sensor) = self.ears.first() {
                 let ear = SharedSensor::new(sensor.clone());
                 let window = will.window_arc();
                 let get_situation = Arc::new(move || crate::build_timeline(&window));
                 let latest = will.latest_instant_arc();
                 let get_instant = Arc::new(move || latest.lock().unwrap().clone());
+                voice.set_recent_actions(action_log.clone());
                 let vstream = voice.observe(ear, get_situation, get_instant).await;
                 intention_streams.push(vstream);
             }

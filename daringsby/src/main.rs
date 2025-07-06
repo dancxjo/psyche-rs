@@ -128,6 +128,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         4,
         16,
         Some(store.clone()),
+        None,
     ));
 
     let sensors = build_sensors(stream.clone());
