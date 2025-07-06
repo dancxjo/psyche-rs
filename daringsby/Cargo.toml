@@ -32,6 +32,7 @@ axum = { version = "0.7", features = ["macros", "ws"] }
 hound = "3"
 base64 = "0.21"
 anyhow = "1"
+battery = "0.7"
 
 [dev-dependencies]
 httpmock = "0.7"
@@ -65,6 +66,8 @@ source-discovery-sensor = []
 moment-feedback = []
 single-wit = []
 debug_memory = []
+battery-sensor = []
+battery-motor = []
 default = [
     "logging-motor",
     "canvas-motor",
@@ -81,5 +84,7 @@ default = [
     "heard-self-sensor",
     "heard-user-sensor",
     "heartbeat-sensor",
+    "battery-sensor",
+    "battery-motor",
     "single-wit",
 ]

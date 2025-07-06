@@ -25,6 +25,8 @@ use crate::SourceReadMotor;
 #[cfg(feature = "source-search-motor")]
 use crate::SourceSearchMotor;
 
+#[cfg(feature = "battery-motor")]
+use crate::BatteryMotor;
 #[cfg(feature = "source-tree-motor")]
 use crate::SourceTreeMotor;
 
@@ -126,6 +128,13 @@ pub fn build_motors(
         let source_tree_motor = Arc::new(SourceTreeMotor::new(tree_tx));
         motors.push(source_tree_motor.clone());
         map.insert("source_tree".into(), source_tree_motor);
+    }
+
+    #[cfg(feature = "battery-motor")]
+    {
+        let battery_motor = Arc::new(BatteryMotor::default());
+        motors.push(battery_motor.clone());
+        map.insert("battery".into(), battery_motor);
     }
 
     (motors, Arc::new(map))

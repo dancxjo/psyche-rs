@@ -1,3 +1,7 @@
+#[cfg(feature = "battery-motor")]
+pub mod battery_motor;
+#[cfg(feature = "battery-sensor")]
+pub mod battery_sensor;
 #[cfg(feature = "canvas-motor")]
 pub mod canvas_motor;
 #[cfg(feature = "canvas-stream")]
