@@ -126,6 +126,29 @@ let ctx = ThreadLocalContext {
 };
 ```
 
+### Thread management and configuration
+
+Pin each genius to a CPU core and configure its clients separately.
+
+```rust
+use psyche_rs::{PsycheSupervisor, QuickGenius, Wit, Will, InMemoryStore, OllamaLLM};
+use std::sync::Arc;
+use tokio::sync::mpsc::unbounded_channel;
+
+let (out_tx, _out_rx) = unbounded_channel();
+let (quick, _tx) = QuickGenius::with_capacity(1, out_tx);
+let quick = Arc::new(quick);
+
+let llm = Arc::new(OllamaLLM::default());
+let store = Arc::new(InMemoryStore::new());
+let wit = Wit::new(llm.clone()).memory_store(store.clone());
+let will = Will::new(llm.clone()).memory_store(store);
+
+let mut sup = PsycheSupervisor::new();
+sup.add_genius_on_core(quick, Some(0));
+sup.start(None);
+```
+
 ---
 
 

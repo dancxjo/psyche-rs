@@ -11,6 +11,7 @@ use tracing::{debug, error, trace, warn};
 use once_cell::sync::OnceCell;
 use regex::Regex;
 
+use crate::MemoryStore;
 use crate::llm_client::LLMClient;
 use crate::timeline::build_timeline_from_slice;
 use crate::{AbortGuard, Intention, Motor, PlainDescribe, Sensation, Sensor, render_template};
@@ -68,6 +69,7 @@ pub struct MotorDescription {
 /// A looping controller that turns sensations into motor actions using an LLM.
 pub struct Will<T = serde_json::Value> {
     llm: Arc<dyn LLMClient>,
+    store: Option<Arc<dyn MemoryStore + Send + Sync>>,
     name: String,
     prompt: String,
     delay_ms: u64,
@@ -106,6 +108,7 @@ impl<T> Will<T> {
     pub fn new(llm: Arc<dyn LLMClient>) -> Self {
         Self {
             llm,
+            store: None,
             name: "Will".into(),
             prompt: DEFAULT_PROMPT.to_string(),
             delay_ms: 1000,
@@ -129,6 +132,18 @@ impl<T> Will<T> {
 
     pub fn prompt(mut self, template: impl Into<String>) -> Self {
         self.prompt = template.into();
+        self
+    }
+
+    /// Replace the LLM client.
+    pub fn llm(mut self, llm: Arc<dyn LLMClient>) -> Self {
+        self.llm = llm;
+        self
+    }
+
+    /// Attach a memory store used by this will.
+    pub fn memory_store(mut self, store: Arc<dyn MemoryStore + Send + Sync>) -> Self {
+        self.store = Some(store);
         self
     }
 
@@ -615,5 +630,14 @@ mod tests {
         tokio::time::sleep(std::time::Duration::from_millis(20)).await;
         assert_eq!(calls.load(Ordering::SeqCst), 1);
         let _ = tx.send(());
+    }
+
+    #[test]
+    fn builder_sets_store() {
+        use crate::InMemoryStore;
+        let llm = Arc::new(StaticLLM::new(""));
+        let store = Arc::new(InMemoryStore::new());
+        let will = Will::<serde_json::Value>::new(llm).memory_store(store);
+        assert!(will.store.is_some());
     }
 }

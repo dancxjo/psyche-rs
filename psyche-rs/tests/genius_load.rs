@@ -64,7 +64,7 @@ async fn load_test_throughput() {
         let (tx, rx) = bounded_channel(8, "dummy");
         let genius = Arc::new(DummyGenius::new(rx, latencies.clone(), processed.clone()));
         senders.push(tx);
-        handles.push(launch_genius(genius, Some(0)));
+        handles.push(launch_genius(genius, Some(0), None));
     }
 
     let start = Instant::now();

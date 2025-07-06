@@ -36,6 +36,7 @@ impl<G: Genius> Hash for ArcKey<G> {
 struct Entry<G: Genius> {
     genius: Arc<G>,
     handle: Arc<Mutex<Option<JoinHandle<()>>>>,
+    core: Option<usize>,
 }
 
 /// Supervises a set of [`Genius`] threads.
@@ -80,12 +81,18 @@ where
 
     /// Register a genius to be supervised.
     pub fn add_genius(&mut self, genius: Arc<G>) {
+        self.add_genius_on_core(genius, None);
+    }
+
+    /// Register a genius pinned to a specific CPU core.
+    pub fn add_genius_on_core(&mut self, genius: Arc<G>, core: Option<usize>) {
         let key = ArcKey::new(genius.clone());
         self.entries.insert(
             key,
             Entry {
                 genius,
                 handle: Arc::new(Mutex::new(None)),
+                core,
             },
         );
     }
@@ -93,13 +100,14 @@ where
     /// Spawn all registered genii and start monitoring their threads.
     pub fn start(&mut self, delay_ms: Option<u64>) {
         for entry in self.entries.values_mut() {
-            let handle = launch_genius(entry.genius.clone(), delay_ms);
+            let handle = launch_genius(entry.genius.clone(), delay_ms, entry.core);
             *entry.handle.lock().unwrap() = Some(handle);
             Self::monitor(
                 entry.genius.clone(),
                 Arc::clone(&entry.handle),
                 self.stop_tx.subscribe(),
                 delay_ms,
+                entry.core,
             );
         }
     }
@@ -109,6 +117,7 @@ where
         handle: Arc<Mutex<Option<JoinHandle<()>>>>,
         mut stop_rx: broadcast::Receiver<()>,
         delay_ms: Option<u64>,
+        core: Option<usize>,
     ) {
         tokio::spawn(async move {
             loop {
@@ -132,7 +141,7 @@ where
                     break;
                 }
 
-                let new_handle = launch_genius(genius.clone(), delay_ms);
+                let new_handle = launch_genius(genius.clone(), delay_ms, core);
                 *handle.lock().unwrap() = Some(new_handle);
             }
         });
@@ -245,6 +254,20 @@ mod tests {
         sup.add_genius(genius);
         sup.start(None);
         tokio::time::sleep(Duration::from_millis(30)).await;
+        sup.shutdown().await;
+        assert!(count.load(Ordering::SeqCst) >= 1);
+    }
+
+    #[tokio::test]
+    async fn adds_genius_with_core() {
+        let count = Arc::new(AtomicUsize::new(0));
+        let genius = Arc::new(CountGenius {
+            count: count.clone(),
+        });
+        let mut sup = PsycheSupervisor::new();
+        sup.add_genius_on_core(genius, Some(0));
+        sup.start(None);
+        tokio::time::sleep(Duration::from_millis(10)).await;
         sup.shutdown().await;
         assert!(count.load(Ordering::SeqCst) >= 1);
     }
