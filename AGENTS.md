@@ -47,3 +47,4 @@
 - Refer to external speakers as "my interlocutor" in prompts and logs.
 - Pass interlocutor utterances to the voice module as plain text without
   wrapping them in narrative phrasing.
+- Remove obsolete feature flags when the codebase no longer relies on them.

@@ -64,7 +64,6 @@ heartbeat-sensor = []
 self-discovery-sensor = []
 source-discovery-sensor = []
 moment-feedback = []
-single-wit = []
 debug_memory = []
 battery-sensor = []
 battery-motor = []
@@ -86,5 +85,4 @@ default = [
     "heartbeat-sensor",
     "battery-sensor",
     "battery-motor",
-    "single-wit",
 ]
