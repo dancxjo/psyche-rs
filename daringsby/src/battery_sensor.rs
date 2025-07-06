@@ -3,7 +3,7 @@ use psyche_rs::{Sensation, Sensor};
 use rand::Rng;
 use tracing::debug;
 
-use crate::battery_motor::{battery_message, system_battery_percentage};
+use crate::battery_motor::{battery_status_message, system_battery_info};
 
 fn interval_secs() -> u64 {
     if std::env::var("FAST_TEST").is_ok() {
@@ -26,9 +26,9 @@ impl Sensor<String> for BatterySensor {
                     rng.gen_range(0..60)
                 };
                 tokio::time::sleep(std::time::Duration::from_secs(interval_secs() + jitter)).await;
-                match system_battery_percentage() {
-                    Ok(pct) => {
-                        let msg = battery_message(pct);
+                match system_battery_info() {
+                    Ok((pct, state)) => {
+                        let msg = battery_status_message(pct, state);
                         debug!(?msg, "battery sensed");
                         yield vec![Sensation {
                             kind: "battery.status".into(),
@@ -53,6 +53,10 @@ mod tests {
 
     #[test]
     fn formats_message() {
-        assert_eq!(battery_message(42), "My host battery is at 42% charge.");
+        use battery::State;
+        assert_eq!(
+            battery_status_message(42, State::Discharging),
+            "My host battery is discharging at 42% charge."
+        );
     }
 }
