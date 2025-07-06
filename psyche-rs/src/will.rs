@@ -72,6 +72,9 @@ pub struct Will<T = serde_json::Value> {
     store: Option<Arc<dyn MemoryStore + Send + Sync>>,
     name: String,
     prompt: String,
+    /// Sleep duration between cycles in milliseconds.
+    ///
+    /// Defaults to `0` so the Will loops continuously.
     delay_ms: u64,
     window_ms: u64,
     /// Minimum delay between LLM calls when the snapshot is unchanged.
@@ -111,7 +114,8 @@ impl<T> Will<T> {
             store: None,
             name: "Will".into(),
             prompt: DEFAULT_PROMPT.to_string(),
-            delay_ms: 1000,
+            // default to zero so the Will loops continuously
+            delay_ms: 0,
             window_ms: 60_000,
             min_llm_interval_ms: 0,
             window: Arc::new(Mutex::new(Vec::new())),
@@ -147,6 +151,9 @@ impl<T> Will<T> {
         self
     }
 
+    /// Set the sleep duration between cycles.
+    ///
+    /// A value of `0` makes the Will loop continuously.
     pub fn delay_ms(mut self, delay: u64) -> Self {
         self.delay_ms = delay;
         self
