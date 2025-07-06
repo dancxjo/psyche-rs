@@ -12,7 +12,7 @@ Latest moment: {latest_moment}
 {situation}
 Relevant memories:
 {memories}
-What's relevant among this? Please respond in a natural way, like: "I remember that last week..."
+What's relevant among this? 
 
 AVAILABLE MOTORS:
 {motors}

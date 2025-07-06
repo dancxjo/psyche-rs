@@ -5,5 +5,5 @@ In the past instant, these things have taken place:
 {template}
 Relevant memories:
 {memories}
-What's relevant among this? Please respond in a natural way, like: "I remember that last week..."
+What's relevant among these memories?
 Narrate that story in natural language. Concisely in about one sentence, in the first person (from the perspective of the character), based on the timeline above, what's happening?
