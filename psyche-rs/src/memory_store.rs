@@ -33,8 +33,10 @@ pub trait MemoryStore {
     /// previously stored sensations.
     async fn store_sensation(&self, sensation: &StoredSensation) -> anyhow::Result<()>;
 
-    /// Insert a new impression. Implementations are responsible for
-    /// persisting the impression and storing its embedding in Qdrant.
+    /// Insert a new impression. Implementations should avoid inserting
+    /// duplicate impressions when the same `id` is provided. They are also
+    /// responsible for persisting the impression and storing its embedding in
+    /// Qdrant.
     async fn store_impression(&self, impression: &StoredImpression) -> anyhow::Result<()>;
 
     /// Insert a summary impression linked to other impressions.
@@ -121,7 +123,8 @@ impl MemoryStore for InMemoryStore {
         self.impressions
             .lock()
             .unwrap()
-            .insert(impression.id.clone(), impression.clone());
+            .entry(impression.id.clone())
+            .or_insert_with(|| impression.clone());
         Ok(())
     }
 
@@ -389,6 +392,24 @@ mod integration_tests {
         let (_, sens, _) = store.load_full_impression("i_dup").await.unwrap();
         assert_eq!(sens.len(), 1);
         assert_eq!(sens[0].data, r#"{"face_id":"abc123"}"#);
+    }
+
+    #[tokio::test]
+    async fn avoids_duplicate_impressions() {
+        let store = InMemoryStore::new();
+        let s = make_sensation("d1");
+        store.store_sensation(&s).await.unwrap();
+
+        let imp = make_impression("i_dup", vec![s.id.clone()]);
+        store.store_impression(&imp).await.unwrap();
+
+        let mut imp2 = imp.clone();
+        imp2.kind = "Changed".into();
+        store.store_impression(&imp2).await.unwrap();
+
+        assert_eq!(store.impression_count(), 1);
+        let (loaded, _, _) = store.load_full_impression("i_dup").await.unwrap();
+        assert_eq!(loaded.kind, "Situation");
     }
 
     #[tokio::test]
