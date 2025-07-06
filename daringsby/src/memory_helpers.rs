@@ -8,14 +8,14 @@ use url::Url;
 /// Persist an impression to the provided store.
 ///
 /// Clones the sensation data to avoid ownership issues.
-pub async fn persist_impression<T: serde::Serialize>(
+pub async fn persist_impression<T: serde::Serialize + Clone>(
     store: &(dyn MemoryStore + Send + Sync),
-    imp: &Impression<T>,
+    imp: Impression<T>,
     kind: &str,
 ) -> anyhow::Result<()> {
     debug!("persisting impression");
     let mut sensation_ids = Vec::new();
-    for s in &imp.what {
+    for s in imp.what {
         let sid = uuid::Uuid::new_v4().to_string();
         sensation_ids.push(sid.clone());
         let stored = StoredSensation {
@@ -33,7 +33,7 @@ pub async fn persist_impression<T: serde::Serialize>(
         id: uuid::Uuid::new_v4().to_string(),
         kind: kind.into(),
         when: Utc::now(),
-        how: imp.how.clone(),
+        how: imp.how,
         sensation_ids,
         impression_ids: Vec::new(),
     };
@@ -122,7 +122,7 @@ mod tests {
             how: "example".into(),
             what: vec![sensation],
         };
-        assert!(persist_impression(&store, &imp, "Instant").await.is_ok());
+        assert!(persist_impression(&store, imp, "Instant").await.is_ok());
     }
 
     #[tokio::test]
