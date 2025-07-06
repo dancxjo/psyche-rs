@@ -350,4 +350,22 @@ mod tests {
         assert!(msgs[0].content.contains("moment"));
         assert!(msgs[0].content.contains("instant"));
     }
+
+    #[tokio::test]
+    async fn custom_prompt_integrates_instant_and_moment() {
+        let llm = Arc::new(CaptureLLM::default());
+        let tpl = "Instant: {instant}, Moment: {moment}";
+        let voice = Voice::new(llm.clone(), 5).system_prompt(tpl).delay_ms(10);
+        let ear = TestEar;
+        let get_situation = Arc::new(|| "".to_string());
+        let get_instant = Arc::new(|| "foo".to_string());
+        let get_moment = Arc::new(|| "bar".to_string());
+        let mut stream = voice
+            .observe(ear, get_situation, get_instant, get_moment)
+            .await;
+        let _ = stream.next().await;
+        let msgs = llm.last.lock().unwrap();
+        assert!(msgs[0].content.contains("foo"));
+        assert!(msgs[0].content.contains("bar"));
+    }
 }
