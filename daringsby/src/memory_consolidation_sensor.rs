@@ -1,8 +1,8 @@
 use async_stream::stream;
 use chrono::{Local, Utc};
-use serde_json::json;
 use std::sync::Arc;
 use tokio::sync::Mutex;
+use tracing::debug;
 
 use psyche_rs::{Sensation, Sensor};
 
@@ -31,17 +31,43 @@ impl Sensor<String> for MemoryConsolidationSensor {
         let status = self.status.clone();
         Box::pin(stream! {
             let s = status.lock().await.clone();
-            let data = json!({
-                "in_progress": s.in_progress,
-                "last_finished": s.last_finished.map(|d| d.to_rfc3339()),
-                "cluster_count": s.cluster_count,
-            });
+            let msg = if s.in_progress {
+                "Memory consolidation is running.".to_string()
+            } else if let Some(finished) = s.last_finished {
+                format!(
+                    "Memory consolidation finished at {} with {} clusters.",
+                    finished.to_rfc3339(),
+                    s.cluster_count
+                )
+            } else {
+                "Memory consolidation has not run yet.".to_string()
+            };
+            debug!(?msg, "memory consolidation status sensed");
             yield vec![Sensation {
                 kind: "memory.consolidation.status".into(),
                 when: Local::now(),
-                what: data.to_string(),
+                what: msg,
                 source: None,
             }];
         })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use futures::StreamExt;
+    use tokio::sync::Mutex;
+
+    #[tokio::test]
+    async fn emits_plain_english() {
+        let status = ConsolidationStatus::default();
+        let mut sensor = MemoryConsolidationSensor::new(Arc::new(Mutex::new(status)));
+        let mut stream = sensor.stream();
+        if let Some(batch) = stream.next().await {
+            assert!(!batch[0].what.starts_with('{'));
+        } else {
+            panic!("no status emitted");
+        }
     }
 }
