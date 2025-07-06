@@ -1,21 +1,53 @@
 use chrono::Local;
 use futures::{FutureExt, StreamExt};
-use once_cell::sync::Lazy;
-use regex::Regex;
 use serde_json::{Map, Value};
 use std::sync::{Arc, Mutex};
 use tokio::sync::mpsc::{UnboundedSender, unbounded_channel};
 use tokio_stream::wrappers::UnboundedReceiverStream;
 use tracing::{debug, error, trace, warn};
+use xmlparser::{ElementEnd, Token as XmlToken, Tokenizer};
 
 use crate::llm::types::{Token, TokenStream};
 use crate::{Action, Intention, Sensation};
 
-static START_RE: Lazy<Regex> =
-    Lazy::new(|| Regex::new(r"^<([a-zA-Z0-9_]+)([^>]*)>").expect("valid regex"));
+fn try_start_tag(buf: &str) -> Option<(usize, String, Map<String, Value>, bool)> {
+    if !buf.starts_with('<') {
+        return None;
+    }
+    let gt = buf.find('>')? + 1;
+    let segment = &buf[..gt];
+    let mut tokenizer = Tokenizer::from_fragment(segment, 0..segment.len());
+    let mut tag = None;
+    let mut attrs = Map::new();
+    let mut self_close = false;
+    let mut saw_end = false;
 
-static ATTR_RE: Lazy<Regex> =
-    Lazy::new(|| Regex::new(r#"([a-zA-Z0-9_]+)="([^"]*)""#).expect("valid regex"));
+    for tok in tokenizer {
+        match tok.ok()? {
+            XmlToken::ElementStart { local, .. } => {
+                tag = Some(local.as_str().to_ascii_lowercase());
+            }
+            XmlToken::Attribute { local, value, .. } => {
+                attrs.insert(
+                    local.as_str().to_string(),
+                    Value::String(value.as_str().to_string()),
+                );
+            }
+            XmlToken::ElementEnd { end, .. } => {
+                self_close = matches!(end, ElementEnd::Empty);
+                saw_end = true;
+                break;
+            }
+            _ => {}
+        }
+    }
+
+    if saw_end {
+        tag.map(|t| (gt, t, attrs, self_close))
+    } else {
+        None
+    }
+}
 
 pub async fn drive_llm_stream<T>(
     name: &str,
@@ -102,7 +134,7 @@ fn parse_buffer<T>(
             }
         }
 
-        if let Some(caps) = START_RE.captures(buf) {
+        if let Some((consumed, tag, map, self_close)) = try_start_tag(buf) {
             if !pending_text.trim().is_empty() {
                 if let Ok(what) =
                     serde_json::from_value::<T>(Value::String(pending_text.trim().to_string()))
@@ -127,16 +159,10 @@ fn parse_buffer<T>(
                 pending_text.clear();
             }
 
-            let tag = caps.get(1).unwrap().as_str().to_ascii_lowercase();
-            let attrs = caps.get(2).map(|m| m.as_str()).unwrap_or("");
-            let mut map = Map::new();
-            for cap in ATTR_RE.captures_iter(attrs) {
-                map.insert(cap[1].to_string(), Value::String(cap[2].to_string()));
-            }
             let closing = format!("</{}>", tag);
             let closing_lower = closing.to_ascii_lowercase();
 
-            let _ = buf.drain(..caps.get(0).unwrap().end());
+            let _ = buf.drain(..consumed);
 
             let (btx, brx) = unbounded_channel();
             let action = Action::new(
@@ -159,7 +185,9 @@ fn parse_buffer<T>(
             });
 
             let _ = tx.send(vec![intention]);
-            *state = Some((tag, closing, closing_lower, btx));
+            if !self_close {
+                *state = Some((tag, closing, closing_lower, btx));
+            }
         } else if let Some(idx) = buf.find('<') {
             let prefix = crate::safe_prefix(buf, idx);
             pending_text.push_str(prefix);
@@ -260,5 +288,27 @@ mod _parse_speak_log_tests {
         assert_eq!(all.len(), 2);
         assert_eq!(all[0].assigned_motor, "speak");
         assert_eq!(all[1].assigned_motor, "log");
+    }
+
+    #[tokio::test]
+    async fn parses_self_closing_intention() {
+        let text = "<read_log_memory/>";
+        let tokens = text
+            .chars()
+            .map(|c| Token {
+                text: c.to_string(),
+            })
+            .collect::<Vec<_>>();
+        let stream = Box::pin(stream::iter(tokens));
+        let window = Arc::new(Mutex::new(Vec::<Sensation<String>>::new()));
+        let (tx, mut rx) = unbounded_channel();
+
+        drive_llm_stream("test", stream, window.clone(), tx, None).await;
+        let mut intentions = rx.recv().await.expect("intentions");
+        assert_eq!(intentions.len(), 1);
+        let mut int = intentions.pop().unwrap();
+        assert_eq!(int.assigned_motor, "read_log_memory");
+        let body = int.action.collect_text().await;
+        assert!(body.is_empty());
     }
 }
