@@ -1,5 +1,5 @@
 use async_trait::async_trait;
-use battery::Manager;
+use battery::{Manager, State};
 use chrono::Local;
 use psyche_rs::{ActionResult, Completion, Intention, Motor, MotorError, Sensation};
 
@@ -14,6 +14,27 @@ pub fn battery_message(pct: u8) -> String {
     format!("My host battery is at {}% charge.", pct)
 }
 
+/// Format a battery status message that includes whether the host is
+/// charging, discharging or full.
+///
+/// # Examples
+/// ```
+/// use battery::State;
+/// use daringsby::battery_motor::battery_status_message;
+/// assert_eq!(battery_status_message(5, State::Charging),
+///            "My host battery is charging at 5% charge.");
+/// ```
+pub fn battery_status_message(pct: u8, state: State) -> String {
+    let status = match state {
+        State::Charging => "charging",
+        State::Discharging => "discharging",
+        State::Full => "full",
+        State::Empty => "empty",
+        _ => "unknown",
+    };
+    format!("My host battery is {} at {}% charge.", status, pct)
+}
+
 /// Read the current system battery percentage.
 pub fn system_battery_percentage() -> Result<u8, MotorError> {
     let manager = Manager::new().map_err(|e| MotorError::Failed(e.to_string()))?;
@@ -22,6 +43,19 @@ pub fn system_battery_percentage() -> Result<u8, MotorError> {
         .map_err(|e| MotorError::Failed(e.to_string()))?;
     match bats.next() {
         Some(Ok(b)) => Ok((b.state_of_charge().value * 100.0).round() as u8),
+        Some(Err(e)) => Err(MotorError::Failed(e.to_string())),
+        None => Err(MotorError::Failed("no battery found".into())),
+    }
+}
+
+/// Read the current system battery percentage and charging state.
+pub fn system_battery_info() -> Result<(u8, State), MotorError> {
+    let manager = Manager::new().map_err(|e| MotorError::Failed(e.to_string()))?;
+    let mut bats = manager
+        .batteries()
+        .map_err(|e| MotorError::Failed(e.to_string()))?;
+    match bats.next() {
+        Some(Ok(b)) => Ok(((b.state_of_charge().value * 100.0).round() as u8, b.state())),
         Some(Err(e)) => Err(MotorError::Failed(e.to_string())),
         None => Err(MotorError::Failed("no battery found".into())),
     }
@@ -79,5 +113,9 @@ mod tests {
     #[test]
     fn message_function() {
         assert_eq!(battery_message(1), "My host battery is at 1% charge.");
+        assert_eq!(
+            battery_status_message(1, State::Charging),
+            "My host battery is charging at 1% charge."
+        );
     }
 }
