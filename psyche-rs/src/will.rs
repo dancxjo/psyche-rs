@@ -101,6 +101,7 @@ struct WillRuntimeConfig<S, T> {
     motor_text: String,
     latest_instant_store: Arc<Mutex<String>>,
     latest_moment_store: Arc<Mutex<String>>,
+    store: Option<Arc<dyn MemoryStore + Send + Sync>>,
     thoughts_tx: Option<tokio::sync::mpsc::UnboundedSender<Vec<Sensation<String>>>>,
     sensors: Vec<S>,
     tx: tokio::sync::mpsc::UnboundedSender<Vec<Intention>>,
@@ -309,6 +310,7 @@ impl<T> Will<T> {
             motor_text: self.motor_text.clone(),
             latest_instant_store: self.latest_instant.clone(),
             latest_moment_store: self.latest_moment.clone(),
+            store: self.store.clone(),
             thoughts_tx: self.thoughts_tx.clone(),
             sensors,
             tx: tx.clone(),
@@ -339,6 +341,7 @@ impl<T> Will<T> {
             motor_text,
             latest_instant_store,
             latest_moment_store,
+            store,
             thoughts_tx,
             sensors,
             tx,
@@ -442,18 +445,45 @@ impl<T> Will<T> {
                         *latest_instant_store.lock().unwrap() = last_instant.clone();
                         *latest_moment_store.lock().unwrap() = last_moment.clone();
 
+                        let mut neighbor_text = String::new();
+                        if let Some(store) = &store {
+                            let mut all = Vec::new();
+                            if !last_instant.is_empty() {
+                                match store.retrieve_related_impressions(&last_instant, 3).await {
+                                    Ok(res) => all.extend(res),
+                                    Err(e) => warn!(?e, "instant neighbor query failed"),
+                                }
+                            }
+                            if !last_moment.is_empty() {
+                                match store.retrieve_related_impressions(&last_moment, 3).await {
+                                    Ok(res) => all.extend(res),
+                                    Err(e) => warn!(?e, "moment neighbor query failed"),
+                                }
+                            }
+                            let all = crate::neighbor::merge_neighbors(all, Vec::new());
+                            if !all.is_empty() {
+                                neighbor_text = all
+                                    .iter()
+                                    .map(|n| format!("- {}", n.how))
+                                    .collect::<Vec<_>>()
+                                    .join("\n");
+                            }
+                        }
+
                         #[derive(serde::Serialize)]
                         struct Ctx<'a> {
                             situation: &'a str,
                             motors: &'a str,
                             latest_instant: &'a str,
                             latest_moment: &'a str,
+                            memories: &'a str,
                         }
                         let ctx = Ctx {
                             situation: &situation,
                             motors: &motor_text,
                             latest_instant: &last_instant,
                             latest_moment: &last_moment,
+                            memories: &neighbor_text,
                         };
                         let prompt = render_template(&template, &ctx).unwrap_or_else(|e| {
                             warn!(error=?e, "template render failed");
@@ -503,7 +533,8 @@ mod tests {
     use super::*;
     use crate::llm::types::{Token, TokenStream};
     use crate::{
-        ActionResult, Intention, MotorError, llm_client::LLMClient, test_helpers::StaticLLM,
+        ActionResult, Impression, Intention, MotorError, Sensor, llm_client::LLMClient,
+        test_helpers::StaticLLM,
     };
     use ollama_rs::generation::chat::ChatMessage;
     use std::sync::Arc;

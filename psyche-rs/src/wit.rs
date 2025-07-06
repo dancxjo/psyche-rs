@@ -6,16 +6,17 @@ use futures::{
 };
 use tokio::sync::mpsc::unbounded_channel;
 use tokio_stream::wrappers::UnboundedReceiverStream;
-use tracing::{debug, trace};
+use tracing::{debug, trace, warn};
 
 use rand::Rng;
 use segtok::segmenter::{SegmentConfig, split_single};
 
-use crate::{Impression, Sensation, Sensor, render_template};
+use crate::{Impression, PlainDescribe, Sensation, Sensor, render_template};
 
 use crate::MemoryStore;
 use crate::llm::types::{Token, TokenStream};
 use crate::llm_client::LLMClient;
+use crate::neighbor::merge_neighbors;
 use ollama_rs::generation::chat::ChatMessage;
 
 /// Default prompt text for [`Wit`].
@@ -143,6 +144,7 @@ struct WitRuntimeConfig<S, T> {
     window_ms: u64,
     window: Arc<Mutex<Vec<Sensation<T>>>>,
     last_frame: Arc<Mutex<String>>,
+    store: Option<Arc<dyn MemoryStore + Send + Sync>>,
     sensors: Vec<S>,
     tx: tokio::sync::mpsc::UnboundedSender<Vec<Impression<T>>>,
     abort: Option<tokio::sync::oneshot::Receiver<()>>,
@@ -185,6 +187,7 @@ where
             window_ms,
             window,
             last_frame,
+            store,
             sensors,
             tx,
             mut abort,
@@ -226,13 +229,51 @@ where
                         }
                         let timeline = crate::build_timeline(&window);
                         let lf = { last_frame.lock().unwrap().clone() };
+
+                        let mut last_instant = String::new();
+                        let mut last_moment = String::new();
+                        for s in &snapshot {
+                            let val = s.to_plain();
+                            match s.kind.as_str() {
+                                "instant" => last_instant = val,
+                                "moment" => last_moment = val,
+                                _ => {}
+                            }
+                        }
+
+                        let mut neighbor_text = String::new();
+                        if let Some(store) = &store {
+                            let mut all = Vec::new();
+                            if !last_instant.is_empty() {
+                                match store.retrieve_related_impressions(&last_instant, 3).await {
+                                    Ok(res) => all.extend(res),
+                                    Err(e) => tracing::warn!(?e, "instant neighbor query failed"),
+                                }
+                            }
+                            if !last_moment.is_empty() {
+                                match store.retrieve_related_impressions(&last_moment, 3).await {
+                                    Ok(res) => all.extend(res),
+                                    Err(e) => tracing::warn!(?e, "moment neighbor query failed"),
+                                }
+                            }
+                            let all = merge_neighbors(all, Vec::new());
+                            if !all.is_empty() {
+                                neighbor_text = all
+                                    .iter()
+                                    .map(|n| format!("- {}", n.how))
+                                    .collect::<Vec<_>>()
+                                    .join("\n");
+                            }
+                        }
+
                         trace!(?timeline, "preparing prompt");
                         #[derive(serde::Serialize)]
                         struct Ctx<'a> {
                             last_frame: &'a str,
                             template: &'a str,
+                            memories: &'a str,
                         }
-                        let ctx = Ctx { last_frame: &lf, template: &timeline };
+                        let ctx = Ctx { last_frame: &lf, template: &timeline, memories: &neighbor_text };
                         let prompt = render_template(&template, &ctx).unwrap_or_else(|e| {
                             trace!(error=?e, "template render failed");
                             template.clone()
@@ -326,6 +367,7 @@ where
             window_ms,
             window,
             last_frame,
+            store: self.store.clone(),
             sensors,
             tx: tx.clone(),
             abort,
