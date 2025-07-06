@@ -55,16 +55,12 @@ pub async fn ensure_impressions_collection_exists(
     let url = qdrant_base_url.join("collections/impressions")?;
     let resp = client.get(url.clone()).send().await?;
 
-    #[cfg(feature = "debug_memory")]
     let (status, body) = {
         let status = resp.status();
         let body = resp.text().await.unwrap_or_default();
         debug!(%status, %body, "qdrant check response");
         (status, body)
     };
-
-    #[cfg(not(feature = "debug_memory"))]
-    let (status, body) = (resp.status(), resp.text().await.unwrap_or_default());
 
     if status.is_success() {
         info!("impressions collection exists");
@@ -85,7 +81,6 @@ pub async fn ensure_impressions_collection_exists(
     });
     let resp = client.put(url).json(&body).send().await?;
 
-    #[cfg(feature = "debug_memory")]
     {
         let status = resp.status();
         let body = resp.text().await.unwrap_or_default();

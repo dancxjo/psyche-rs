@@ -141,11 +141,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         None,
     ));
 
-    let sensors = build_sensors(
-        stream.clone(),
-        #[cfg(feature = "memory-consolidation-sensor")]
-        consolidation_status.clone(),
-    );
+    let sensors = build_sensors(stream.clone(), consolidation_status.clone());
     let ear = build_ear(stream.clone());
     let voice = Voice::new(voice_llm.clone(), 10)
         .name("Voice")

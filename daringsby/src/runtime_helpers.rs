@@ -1,15 +1,12 @@
-#[cfg(feature = "battery-motor")]
 use crate::BatteryMotor;
 use crate::{
     CanvasMotor, LogMemoryMotor, LoggingMotor, Mouth, RecallMotor, SourceReadMotor,
     SourceSearchMotor, SourceTreeMotor, SvgMotor, VisionMotor,
 };
 use futures::StreamExt;
-#[cfg(feature = "moment-feedback")]
 use psyche_rs::Sensation;
 use psyche_rs::{Impression, Intention, Motor};
 use std::sync::Arc;
-#[cfg(feature = "moment-feedback")]
 use tokio::sync::Mutex;
 
 pub async fn drive_combo_stream(
@@ -18,28 +15,23 @@ pub async fn drive_combo_stream(
     + Send
     + 'static,
     _logger: Arc<LoggingMotor>,
-    #[cfg(feature = "moment-feedback")] sens_tx: tokio::sync::mpsc::UnboundedSender<
-        Vec<Sensation<String>>,
-    >,
-    #[cfg(feature = "moment-feedback")] moment: Arc<Mutex<Vec<Impression<Impression<String>>>>>,
+    sens_tx: tokio::sync::mpsc::UnboundedSender<Vec<Sensation<String>>>,
+    moment: Arc<Mutex<Vec<Impression<Impression<String>>>>>,
 ) {
     while let Some(_imps) = combo_stream.next().await {
-        #[cfg(feature = "moment-feedback")]
-        {
-            let mut guard = moment.lock().await;
-            *guard = _imps.clone();
-            drop(guard);
-            let sensed: Vec<Sensation<String>> = _imps
-                .iter()
-                .map(|imp| Sensation {
-                    kind: "impression".into(),
-                    when: chrono::Local::now(),
-                    what: imp.how.clone(),
-                    source: None,
-                })
-                .collect();
-            let _ = sens_tx.send(sensed);
-        }
+        let mut guard = moment.lock().await;
+        *guard = _imps.clone();
+        drop(guard);
+        let sensed: Vec<Sensation<String>> = _imps
+            .iter()
+            .map(|imp| Sensation {
+                kind: "impression".into(),
+                when: chrono::Local::now(),
+                what: imp.how.clone(),
+                source: None,
+            })
+            .collect();
+        let _ = sens_tx.send(sensed);
     }
 }
 
@@ -55,7 +47,7 @@ pub async fn drive_will_stream<M>(
     source_read: Arc<SourceReadMotor>,
     source_search: Arc<SourceSearchMotor>,
     source_tree: Arc<SourceTreeMotor>,
-    #[cfg(feature = "battery-motor")] battery: Arc<BatteryMotor>,
+    battery: Arc<BatteryMotor>,
 ) where
     M: psyche_rs::MemoryStore + Send + Sync + 'static,
 {
@@ -107,7 +99,6 @@ pub async fn drive_will_stream<M>(
                         .await
                         .expect("source tree motor failed");
                 }
-                #[cfg(feature = "battery-motor")]
                 "battery" => {
                     battery.perform(intent).await.expect("battery motor failed");
                 }
