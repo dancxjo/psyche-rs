@@ -160,6 +160,9 @@ where
     T: Clone + Default + Send + 'static + serde::Serialize + for<'de> serde::Deserialize<'de>,
 {
     /// Run the psyche until interrupted.
+    ///
+    /// This method must stay non-blocking; any expensive I/O is spawned onto
+    /// background tasks so the main event loop remains responsive.
     pub async fn run(mut self) {
         debug!("starting psyche");
         let mut wit_streams = Vec::new();
@@ -209,6 +212,9 @@ where
             merged_wills.map(PsycheEvent::Intentions),
         );
 
+        // I/O heavy operations like memory persistence must not block this
+        // loop. Offload them to separate tasks so the main thread remains
+        // responsive.
         loop {
             trace!("psyche loop tick");
             tokio::select! {
@@ -222,9 +228,17 @@ where
                             trace!(batch_len = batch.len(), "psyche received impressions");
                             if let Some(store) = &self.store {
                                 for imp in batch {
-                                    if let Err(e) = persist_impression(store.as_ref(), &imp, "Instant").await {
-                                        warn!(?e, "failed to persist impression");
-                                    }
+                                    let store = Arc::clone(store);
+                                    let imp = imp.clone();
+                                    // Spawn persistence on a background task to avoid
+                                    // blocking the event loop.
+                                    tokio::spawn(async move {
+                                        if let Err(e) =
+                                            persist_impression(store.as_ref(), imp, "Instant").await
+                                        {
+                                            warn!(?e, "failed to persist impression");
+                                        }
+                                    });
                                 }
                             }
                         }
@@ -242,14 +256,14 @@ where
     }
 }
 
-async fn persist_impression<T: serde::Serialize>(
+async fn persist_impression<T: serde::Serialize + Clone>(
     store: &(dyn MemoryStore + Send + Sync),
-    imp: &Impression<T>,
+    imp: Impression<T>,
     kind: &str,
 ) -> anyhow::Result<()> {
     debug!("persisting impression");
     let mut sensation_ids = Vec::new();
-    for s in &imp.what {
+    for s in imp.what {
         let sid = uuid::Uuid::new_v4().to_string();
         sensation_ids.push(sid.clone());
         let stored = StoredSensation {
@@ -267,7 +281,7 @@ async fn persist_impression<T: serde::Serialize>(
         id: uuid::Uuid::new_v4().to_string(),
         kind: kind.into(),
         when: Utc::now(),
-        how: imp.how.clone(),
+        how: imp.how,
         sensation_ids,
         impression_ids: Vec::new(),
     };

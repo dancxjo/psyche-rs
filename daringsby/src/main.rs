@@ -45,11 +45,18 @@ async fn run_impression_loop<T: serde::Serialize + Clone + Send + 'static>(
     name: &str,
 ) {
     tracing::debug!("{} task started", name);
+    // Avoid blocking here; persistence runs on background tasks so the
+    // main thread can continue processing impressions.
     while let Some(batch) = stream.next().await {
         for imp in &batch {
-            if let Err(e) = persist_impression(store.as_ref(), imp, kind).await {
-                tracing::warn!(error=?e, "persist failed");
-            }
+            let store = Arc::clone(&store);
+            let imp = imp.clone();
+            // Offload persistence so this loop never blocks on I/O.
+            tokio::spawn(async move {
+                if let Err(e) = persist_impression(store.as_ref(), imp, kind).await {
+                    tracing::warn!(error=?e, "persist failed");
+                }
+            });
         }
         if tx.send(batch).is_err() {
             break;
