@@ -39,6 +39,18 @@ pub trait MemoryStore {
     /// previously stored sensations.
     async fn store_sensation(&self, sensation: &StoredSensation) -> anyhow::Result<()>;
 
+    /// Look up a previously stored sensation by `kind` and `data`.
+    ///
+    /// Implementations may return `Ok(None)` when no matching sensation
+    /// exists. The default implementation always returns `Ok(None)`.
+    async fn find_sensation(
+        &self,
+        _kind: &str,
+        _data: &str,
+    ) -> anyhow::Result<Option<StoredSensation>> {
+        Ok(None)
+    }
+
     /// Insert a new impression. Implementations should avoid inserting
     /// duplicate impressions when the same `id` is provided. They are also
     /// responsible for persisting the impression and storing its embedding in
@@ -123,6 +135,18 @@ impl MemoryStore for InMemoryStore {
             .entry(sensation.id.clone())
             .or_insert_with(|| sensation.clone());
         Ok(())
+    }
+
+    async fn find_sensation(
+        &self,
+        kind: &str,
+        data: &str,
+    ) -> anyhow::Result<Option<StoredSensation>> {
+        let sens = self.sensations.lock().unwrap();
+        Ok(sens
+            .values()
+            .find(|s| s.kind == kind && s.data == data)
+            .cloned())
     }
 
     async fn store_impression(&self, impression: &StoredImpression) -> anyhow::Result<()> {
@@ -237,6 +261,14 @@ where
 {
     async fn store_sensation(&self, s: &StoredSensation) -> anyhow::Result<()> {
         (**self).store_sensation(s).await
+    }
+
+    async fn find_sensation(
+        &self,
+        kind: &str,
+        data: &str,
+    ) -> anyhow::Result<Option<StoredSensation>> {
+        (**self).find_sensation(kind, data).await
     }
 
     async fn store_impression(&self, i: &StoredImpression) -> anyhow::Result<()> {
@@ -542,5 +574,19 @@ mod integration_tests {
 
         assert_eq!(store.impression_count(), 2);
         assert_eq!(store.sensation_count(), 1);
+    }
+
+    #[tokio::test]
+    async fn find_sensation_matches_by_data() {
+        let store = InMemoryStore::new();
+        let s = make_sensation("f1");
+        store.store_sensation(&s).await.unwrap();
+
+        let found = store
+            .find_sensation(&s.kind, &s.data)
+            .await
+            .unwrap()
+            .expect("sensation found");
+        assert_eq!(found.id, s.id);
     }
 }

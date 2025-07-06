@@ -74,6 +74,50 @@ impl MemoryStore for NeoQdrantMemoryStore {
         self.post_neo_async(query, params).await
     }
 
+    async fn find_sensation(
+        &self,
+        kind: &str,
+        data: &str,
+    ) -> anyhow::Result<Option<StoredSensation>> {
+        let query = "MATCH (s:Sensation {kind:$kind, data:$data}) RETURN s LIMIT 1";
+        let params = json!({"kind": kind, "data": data});
+        let payload = json!({"statements":[{"statement": query, "parameters": params}]});
+        let resp = self
+            .client
+            .post(format!("{}/db/neo4j/tx/commit", self.neo4j_url))
+            .basic_auth(&self.neo_user, Some(&self.neo_pass))
+            .json(&payload)
+            .send()
+            .await
+            .context("neo4j find sensation failed")?;
+        if !resp.status().is_success() {
+            let status = resp.status();
+            let body = resp.text().await.unwrap_or_default();
+            error!(status = %status, %body, "neo4j error");
+            return Err(anyhow!("neo4j error: {}", body));
+        }
+        #[derive(Deserialize)]
+        struct R {
+            results: Vec<R1>,
+        }
+        #[derive(Deserialize)]
+        struct R1 {
+            data: Vec<R2>,
+        }
+        #[derive(Deserialize)]
+        struct R2 {
+            row: (StoredSensation,),
+        }
+        let res: R = resp.json().await.context("parse neo4j find sensation")?;
+        let sens = res
+            .results
+            .into_iter()
+            .flat_map(|r| r.data)
+            .next()
+            .map(|r| r.row.0);
+        Ok(sens)
+    }
+
     async fn store_impression(&self, impression: &StoredImpression) -> anyhow::Result<()> {
         debug!(id = %impression.id, "store impression");
         let query = r#"
@@ -472,5 +516,57 @@ mod tests {
         let err = store.fetch_recent_impressions(5).await.unwrap_err();
         assert!(err.to_string().contains("not json"));
         assert_eq!(neo_mock.hits(), 1);
+    }
+
+    #[tokio::test]
+    async fn persist_impression_reuses_sensations_neo() {
+        use crate::psyche::persist_impression;
+        use crate::{Impression, Sensation};
+        let neo = MockServer::start();
+        let qdrant = MockServer::start();
+
+        let neo_mock = neo.mock(|when, then| {
+            when.method(POST);
+            then.status(200).json_body(json!({
+                "results": [{
+                    "data": [{
+                        "row": [{
+                            "id": "s1",
+                            "kind": "t",
+                            "when": Utc::now().to_rfc3339(),
+                            "data": "\"foo\""
+                        }]
+                    }]
+                }]
+            }));
+        });
+        let q_mock = qdrant.mock(|when, then| {
+            when.method(PUT);
+            then.status(200);
+        });
+
+        let llm = std::sync::Arc::new(StaticLLM::new(""));
+        let store = NeoQdrantMemoryStore::new(neo.url(""), "u", "p", qdrant.url(""), llm);
+
+        // seed existing sensation
+        let sens = StoredSensation {
+            id: "s1".into(),
+            kind: "t".into(),
+            when: Utc::now(),
+            data: "\"foo\"".into(),
+        };
+        store.store_sensation(&sens).await.unwrap();
+
+        let s = Sensation::<String> {
+            kind: "t".into(),
+            when: chrono::Local::now(),
+            what: "foo".into(),
+            source: None,
+        };
+        let imp = Impression::new(vec![s], "hi").unwrap();
+        persist_impression(&store, imp, "Instant").await.unwrap();
+
+        assert_eq!(neo_mock.hits(), 3);
+        assert_eq!(q_mock.hits(), 1);
     }
 }

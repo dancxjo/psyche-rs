@@ -16,18 +16,23 @@ pub async fn persist_impression<T: serde::Serialize + Clone>(
     debug!("persisting impression");
     let mut sensation_ids = Vec::new();
     for s in imp.what {
-        let sid = uuid::Uuid::new_v4().to_string();
-        sensation_ids.push(sid.clone());
-        let stored = StoredSensation {
-            id: sid,
-            kind: s.kind.clone(),
-            when: s.when.with_timezone(&Utc),
-            data: serde_json::to_string(&s.what)?,
-        };
-        store.store_sensation(&stored).await.map_err(|e| {
-            error!(?e, "store_sensation failed");
-            e
-        })?;
+        let data = serde_json::to_string(&s.what)?;
+        if let Some(existing) = store.find_sensation(&s.kind, &data).await? {
+            sensation_ids.push(existing.id);
+        } else {
+            let sid = uuid::Uuid::new_v4().to_string();
+            sensation_ids.push(sid.clone());
+            let stored = StoredSensation {
+                id: sid,
+                kind: s.kind.clone(),
+                when: s.when.with_timezone(&Utc),
+                data,
+            };
+            store.store_sensation(&stored).await.map_err(|e| {
+                error!(?e, "store_sensation failed");
+                e
+            })?;
+        }
     }
     let stored_imp = StoredImpression {
         id: uuid::Uuid::new_v4().to_string(),
@@ -112,7 +117,6 @@ mod tests {
     use chrono::Local;
     use httpmock::prelude::*;
     use psyche_rs::{InMemoryStore, Sensation};
-    use serde_json::json;
     use url::Url;
 
     #[tokio::test]
@@ -129,6 +133,32 @@ mod tests {
             what: vec![sensation],
         };
         assert!(persist_impression(&store, imp, "Instant").await.is_ok());
+    }
+
+    #[tokio::test]
+    async fn reuses_existing_sensations() {
+        let store = InMemoryStore::new();
+        let s = Sensation {
+            kind: "test".into(),
+            when: Local::now(),
+            what: "foo".to_string(),
+            source: None,
+        };
+        let imp1 = Impression {
+            how: "one".into(),
+            what: vec![s.clone()],
+        };
+        persist_impression(&store, imp1, "Instant").await.unwrap();
+
+        let imp2 = Impression {
+            how: "two".into(),
+            what: vec![s],
+        };
+        persist_impression(&store, imp2, "Instant").await.unwrap();
+
+        let recent = store.fetch_recent_impressions(2).await.unwrap();
+        let sid = &recent[0].sensation_ids[0];
+        assert!(recent.iter().all(|i| i.sensation_ids.contains(sid)));
     }
 
     #[tokio::test]

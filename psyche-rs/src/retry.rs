@@ -99,6 +99,16 @@ where
         self.policy.retry(|| self.inner.store_sensation(s)).await
     }
 
+    async fn find_sensation(
+        &self,
+        kind: &str,
+        data: &str,
+    ) -> anyhow::Result<Option<crate::memory_store::StoredSensation>> {
+        self.policy
+            .retry(|| self.inner.find_sensation(kind, data))
+            .await
+    }
+
     async fn store_impression(
         &self,
         i: &crate::memory_store::StoredImpression,

@@ -269,7 +269,7 @@ where
     }
 }
 
-async fn persist_impression<T: serde::Serialize + Clone>(
+pub(crate) async fn persist_impression<T: serde::Serialize + Clone>(
     store: &(dyn MemoryStore + Send + Sync),
     imp: Impression<T>,
     kind: &str,
@@ -277,18 +277,23 @@ async fn persist_impression<T: serde::Serialize + Clone>(
     debug!("persisting impression");
     let mut sensation_ids = Vec::new();
     for s in imp.what {
-        let sid = uuid::Uuid::new_v4().to_string();
-        sensation_ids.push(sid.clone());
-        let stored = StoredSensation {
-            id: sid,
-            kind: s.kind.clone(),
-            when: s.when.with_timezone(&Utc),
-            data: serde_json::to_string(&s.what)?,
-        };
-        store.store_sensation(&stored).await.map_err(|e| {
-            error!(?e, "store_sensation failed");
-            e
-        })?;
+        let data = serde_json::to_string(&s.what)?;
+        if let Some(existing) = store.find_sensation(&s.kind, &data).await? {
+            sensation_ids.push(existing.id);
+        } else {
+            let sid = uuid::Uuid::new_v4().to_string();
+            sensation_ids.push(sid.clone());
+            let stored = StoredSensation {
+                id: sid,
+                kind: s.kind.clone(),
+                when: s.when.with_timezone(&Utc),
+                data,
+            };
+            store.store_sensation(&stored).await.map_err(|e| {
+                error!(?e, "store_sensation failed");
+                e
+            })?;
+        }
     }
     let stored_imp = StoredImpression {
         id: uuid::Uuid::new_v4().to_string(),
@@ -595,6 +600,28 @@ mod tests {
     async fn run_requires_will() {
         let psyche: Psyche = Psyche::new();
         let _ = psyche.run().await;
+    }
+
+    #[tokio::test]
+    async fn persist_impression_reuses_sensations() {
+        use crate::memory_store::InMemoryStore;
+        let store = InMemoryStore::new();
+        let s = Sensation::<String> {
+            kind: "t".into(),
+            when: chrono::Local::now(),
+            what: "foo".into(),
+            source: None,
+        };
+        let imp1 = Impression::new(vec![s.clone()], "first.").unwrap();
+        persist_impression(&store, imp1, "Instant").await.unwrap();
+        let imps = store.fetch_recent_impressions(1).await.unwrap();
+        let sid = imps[0].sensation_ids[0].clone();
+
+        let imp2 = Impression::new(vec![s.clone()], "second.").unwrap();
+        persist_impression(&store, imp2, "Instant").await.unwrap();
+        let recent = store.fetch_recent_impressions(2).await.unwrap();
+        assert_eq!(store.sensation_count(), 1);
+        assert!(recent.iter().all(|i| i.sensation_ids.contains(&sid)));
     }
 
     /*
