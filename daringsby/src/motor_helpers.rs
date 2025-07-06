@@ -1,8 +1,15 @@
 use std::{collections::HashMap, sync::Arc};
-use tokio::sync::mpsc::unbounded_channel;
+use tokio::sync::{Mutex, mpsc::unbounded_channel};
 
 use crate::Mouth;
-use psyche_rs::{LLMClient, MemoryStore, Motor, Sensation};
+#[cfg(feature = "memory-consolidation-motor")]
+use crate::memory_consolidation_motor::MemoryConsolidationMotor;
+#[cfg(any(
+    feature = "memory-consolidation-motor",
+    feature = "memory-consolidation-sensor"
+))]
+use crate::memory_consolidation_sensor::ConsolidationStatus;
+use psyche_rs::{ClusterAnalyzer, LLMClient, MemoryStore, Motor, Sensation};
 
 #[cfg(feature = "vision")]
 use crate::{VisionMotor, VisionSensor};
@@ -47,9 +54,25 @@ pub fn build_motors(
     #[cfg(feature = "vision")] vision: Arc<VisionSensor>,
     #[cfg(feature = "canvas-motor")] canvas: Arc<CanvasStream>,
     store: Arc<dyn MemoryStore + Send + Sync>,
-) -> (Vec<Arc<dyn Motor>>, Arc<HashMap<String, Arc<dyn Motor>>>) {
+) -> (
+    Vec<Arc<dyn Motor>>,
+    Arc<HashMap<String, Arc<dyn Motor>>>,
+    Option<Arc<Mutex<ConsolidationStatus>>>,
+) {
     let mut motors: Vec<Arc<dyn Motor>> = Vec::new();
     let mut map: HashMap<String, Arc<dyn Motor>> = HashMap::new();
+
+    #[cfg(any(
+        feature = "memory-consolidation-motor",
+        feature = "memory-consolidation-sensor"
+    ))]
+    let status: Option<Arc<Mutex<ConsolidationStatus>>> =
+        Some(Arc::new(Mutex::new(ConsolidationStatus::default())));
+    #[cfg(not(any(
+        feature = "memory-consolidation-motor",
+        feature = "memory-consolidation-sensor"
+    )))]
+    let status: Option<Arc<Mutex<ConsolidationStatus>>> = None;
 
     // let logging_motor: Arc<dyn Motor> = Arc::new(LoggingMotor);
     // motors.push(logging_motor.clone());
@@ -106,6 +129,19 @@ pub fn build_motors(
         map.insert("read_log_memory".into(), log_memory_motor);
     }
 
+    #[cfg(feature = "memory-consolidation-motor")]
+    {
+        let (mc_tx, _) = unbounded_channel::<Vec<Sensation<String>>>();
+        let analyzer = Arc::new(ClusterAnalyzer::new(store.clone(), llms.memory.clone()));
+        let mc_motor = Arc::new(MemoryConsolidationMotor::new(
+            analyzer,
+            status.as_ref().unwrap().clone(),
+            mc_tx,
+        ));
+        motors.push(mc_motor.clone());
+        map.insert("consolidate".into(), mc_motor);
+    }
+
     #[cfg(feature = "source-read-motor")]
     {
         let (read_tx, _) = unbounded_channel::<Vec<Sensation<String>>>();
@@ -137,5 +173,5 @@ pub fn build_motors(
         map.insert("battery".into(), battery_motor);
     }
 
-    (motors, Arc::new(map))
+    (motors, Arc::new(map), status)
 }
