@@ -62,14 +62,25 @@ pub async fn ensure_impressions_collection_exists(
         debug!(%status, %body, "qdrant check response");
     }
 
-    if resp.status().is_success() {
+    // resp is moved above in debug_memory, so we need to get status and body before consuming resp
+    #[cfg(not(feature = "debug_memory"))]
+    let status = resp.status();
+    #[cfg(not(feature = "debug_memory"))]
+    let body = resp.text().await.unwrap_or_default();
+
+    #[cfg(feature = "debug_memory")]
+    let (status, body) = {
+        // These are already handled in the debug block above, so just set dummy values
+        (reqwest::StatusCode::OK, String::new())
+    };
+
+    if status.is_success() {
         info!("impressions collection exists");
         return Ok(());
     }
 
-    if resp.status() != reqwest::StatusCode::NOT_FOUND {
-        let status = resp.status();
-        let body = resp.text().await.unwrap_or_default();
+    if status != reqwest::StatusCode::NOT_FOUND {
+        // resp has already been consumed, use the previously extracted status and body
         error!(%status, %body, "failed to query collection");
         anyhow::bail!("qdrant check failed: {status}");
     }
@@ -87,14 +98,22 @@ pub async fn ensure_impressions_collection_exists(
         let status = resp.status();
         let body = resp.text().await.unwrap_or_default();
         debug!(%status, %body, "qdrant create response");
+        // resp is consumed here, so we need to return after debug or refetch
+        return if status.is_success() {
+            info!("impressions collection created");
+            Ok(())
+        } else {
+            error!(%status, %body, "failed to create collection");
+            anyhow::bail!("failed to create collection: {status}");
+        };
     }
 
-    if resp.status().is_success() {
+    let status = resp.status();
+    let body = resp.text().await.unwrap_or_default();
+    if status.is_success() {
         info!("impressions collection created");
         Ok(())
     } else {
-        let status = resp.status();
-        let body = resp.text().await.unwrap_or_default();
         error!(%status, %body, "failed to create collection");
         anyhow::bail!("failed to create collection: {status}");
     }

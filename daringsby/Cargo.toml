@@ -70,6 +70,11 @@ battery-sensor = []
 battery-motor = []
 default = [
     "logging-motor",
+    "log-memory-motor",
+    "self-discovery-sensor",
+    "source-discovery-sensor",
+    "moment-feedback",
+    "debug_memory",
     "canvas-motor",
     "svg-motor",
     "canvas-stream",
