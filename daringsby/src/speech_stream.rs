@@ -55,8 +55,13 @@ impl SpeechStream {
         tokio::spawn(async move {
             let mut src = text_rx;
             while let Ok(t) = src.recv().await {
-                let _ = text_tx.send(t.clone());
-                let _ = heard_tx.send(t);
+                let desc = format!("text {} bytes", t.len());
+                if let Err(e) = text_tx.send(t.clone()) {
+                    warn!(target: "speech_stream", error=?e, what=%desc, "broadcast send failed");
+                }
+                if let Err(e) = heard_tx.send(t) {
+                    warn!(target: "speech_stream", error=?e, what=%desc, "broadcast send failed");
+                }
             }
         });
 
@@ -183,14 +188,16 @@ impl SpeechStream {
         while let Some(Ok(msg)) = socket.next().await {
             match msg {
                 Message::Text(t) => {
-                    if self.heard_tx.send(t).is_err() {
-                        warn!("heard_tx receiver dropped");
+                    let desc = format!("heard text {} bytes", t.len());
+                    if let Err(e) = self.heard_tx.send(t) {
+                        warn!(target: "speech_stream", error=?e, what=%desc, "broadcast send failed");
                     }
                 }
                 Message::Binary(b) => {
                     if let Ok(t) = String::from_utf8(b) {
-                        if self.heard_tx.send(t).is_err() {
-                            warn!("heard_tx receiver dropped");
+                        let desc = format!("heard text {} bytes", t.len());
+                        if let Err(e) = self.heard_tx.send(t) {
+                            warn!(target: "speech_stream", error=?e, what=%desc, "broadcast send failed");
                         }
                     }
                 }
@@ -204,14 +211,16 @@ impl SpeechStream {
         while let Some(Ok(msg)) = socket.next().await {
             match msg {
                 Message::Text(t) => {
-                    if self.user_tx.send(t).is_err() {
-                        warn!("user_tx receiver dropped");
+                    let desc = format!("user text {} bytes", t.len());
+                    if let Err(e) = self.user_tx.send(t) {
+                        warn!(target: "speech_stream", error=?e, what=%desc, "broadcast send failed");
                     }
                 }
                 Message::Binary(b) => {
                     if let Ok(t) = String::from_utf8(b) {
-                        if self.user_tx.send(t).is_err() {
-                            warn!("user_tx receiver dropped");
+                        let desc = format!("user text {} bytes", t.len());
+                        if let Err(e) = self.user_tx.send(t) {
+                            warn!(target: "speech_stream", error=?e, what=%desc, "broadcast send failed");
                         }
                     }
                 }

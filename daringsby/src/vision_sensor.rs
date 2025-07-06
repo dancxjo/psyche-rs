@@ -6,6 +6,7 @@ use axum::{
 use futures::StreamExt;
 use std::sync::Arc;
 use tokio::sync::broadcast::{self, Receiver, Sender};
+use tracing::warn;
 
 /// WebSocket streamer for webcam snapshots.
 ///
@@ -32,7 +33,10 @@ impl VisionSensor {
 
     /// Request a snapshot from all connected clients.
     pub fn request_snap(&self) {
-        let _ = self.cmd.send("snap".into());
+        let desc = "snap command";
+        if let Err(e) = self.cmd.send("snap".into()) {
+            warn!(target: "vision_sensor", error=?e, what=%desc, "broadcast command send failed");
+        }
     }
 
     /// Build a router exposing the vision WebSocket endpoint.
@@ -52,7 +56,10 @@ impl VisionSensor {
             tokio::select! {
                 Some(Ok(msg)) = socket.next() => {
                     if let Message::Binary(data) = msg {
-                        let _ = self.tx.send(data);
+                        let desc = format!("vision snapshot JPEG {} bytes", data.len());
+                        if let Err(e) = self.tx.send(data) {
+                            warn!(target: "vision_sensor", error=?e, what=%desc, "broadcast send failed");
+                        }
                     }
                 }
                 Ok(cmd) = cmd_rx.recv() => {
@@ -71,6 +78,7 @@ mod tests {
     use super::*;
     use futures::{SinkExt, StreamExt};
     use tokio_tungstenite::{connect_async, tungstenite::Message as WsMessage};
+    use tracing_test::traced_test;
 
     async fn start_server(stream: Arc<VisionSensor>) -> std::net::SocketAddr {
         let app = stream.router();
@@ -93,5 +101,13 @@ mod tests {
         stream.request_snap();
         let msg = ws.next().await.unwrap().unwrap();
         assert_eq!(msg, WsMessage::Text("snap".into()));
+    }
+
+    #[traced_test]
+    #[tokio::test]
+    async fn warns_when_snap_fails() {
+        let sensor = VisionSensor::default();
+        sensor.request_snap();
+        assert!(logs_contain("broadcast command send failed"));
     }
 }

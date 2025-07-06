@@ -6,7 +6,7 @@ use std::io::Cursor;
 use std::sync::Arc;
 use tokio::sync::Mutex as TokioMutex;
 use tokio::sync::broadcast::{self, Receiver, Sender};
-use tracing::{debug, error, trace};
+use tracing::{debug, error, trace, warn};
 
 use crate::speech_segment::SpeechSegment;
 #[cfg(test)]
@@ -209,7 +209,10 @@ The Will sends the text to the TTS service with the given voice and language."
                 }
                 for sent in sents {
                     trace!(%sent, "tts sentence");
-                    let _ = text_tx.send(sent.clone());
+                    let desc = format!("tts text {} bytes", sent.len());
+                    if let Err(e) = text_tx.send(sent.clone()) {
+                        warn!(target: "mouth", error=?e, what=%desc, "broadcast send failed");
+                    }
                     let url = match Mouth::tts_url(&base, &sent, &speaker_id, &lang) {
                         Ok(u) => u,
                         Err(e) => {
@@ -233,20 +236,31 @@ The Will sends the text to the TTS service with the given voice and language."
                             match Mouth::wav_to_pcm(&body) {
                                 Ok(pcm) => {
                                     let seg = SpeechSegment::new(&sent, &pcm);
-                                    let _ = segment_tx.send(seg);
-                                    let _ = tx.send(pcm);
+                                    let seg_desc = format!("speech segment {} bytes", pcm.len());
+                                    if let Err(e) = segment_tx.send(seg) {
+                                        warn!(target: "mouth", error=?e, what=%seg_desc, "broadcast send failed");
+                                    }
+                                    let audio_desc = format!("pcm {} bytes", pcm.len());
+                                    if let Err(e) = tx.send(pcm) {
+                                        warn!(target: "mouth", error=?e, what=%audio_desc, "broadcast send failed");
+                                    }
                                 }
                                 Err(e) => error!(error=?e, "wav decode failed"),
                             }
                         }
                         Err(e) => error!(error=?e, "tts request failed"),
                     }
-                    let _ = tx.send(Bytes::new());
+                    if let Err(e) = tx.send(Bytes::new()) {
+                        warn!(target: "mouth", error=?e, what="silence frame", "broadcast send failed");
+                    }
                 }
             }
             if !buf.trim().is_empty() {
                 trace!(sentence = %buf, "tts final sentence");
-                let _ = text_tx.send(buf.clone());
+                let desc = format!("tts text {} bytes", buf.len());
+                if let Err(e) = text_tx.send(buf.clone()) {
+                    warn!(target: "mouth", error=?e, what=%desc, "broadcast send failed");
+                }
                 if let Ok(url) = Mouth::tts_url(&base, &buf, &speaker_id, &lang) {
                     match client.get(url).send().await {
                         Ok(resp) => {
@@ -264,8 +278,14 @@ The Will sends the text to the TTS service with the given voice and language."
                             match Mouth::wav_to_pcm(&body) {
                                 Ok(pcm) => {
                                     let seg = SpeechSegment::new(&buf, &pcm);
-                                    let _ = segment_tx.send(seg);
-                                    let _ = tx.send(pcm);
+                                    let seg_desc = format!("speech segment {} bytes", pcm.len());
+                                    if let Err(e) = segment_tx.send(seg) {
+                                        warn!(target: "mouth", error=?e, what=%seg_desc, "broadcast send failed");
+                                    }
+                                    let audio_desc = format!("pcm {} bytes", pcm.len());
+                                    if let Err(e) = tx.send(pcm) {
+                                        warn!(target: "mouth", error=?e, what=%audio_desc, "broadcast send failed");
+                                    }
                                 }
                                 Err(e) => error!(error=?e, "wav decode failed"),
                             }
@@ -276,7 +296,9 @@ The Will sends the text to the TTS service with the given voice and language."
                     // invalid URL, skip final sentence
                 }
             }
-            let _ = tx.send(Bytes::new());
+            if let Err(e) = tx.send(Bytes::new()) {
+                warn!(target: "mouth", error=?e, what="silence frame", "broadcast send failed");
+            }
         }
         let completion = Completion::of_action(action);
         debug!(

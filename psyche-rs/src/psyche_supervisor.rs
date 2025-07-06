@@ -4,7 +4,7 @@ use std::sync::{Arc, Mutex};
 use std::thread::JoinHandle;
 
 use tokio::sync::broadcast;
-use tracing::{debug, error};
+use tracing::{debug, error, warn};
 
 use crate::{Genius, ThreadLocalContext, launch_genius};
 
@@ -149,7 +149,9 @@ where
 
     /// Broadcast a stop signal and wait for all threads to finish.
     pub async fn shutdown(&mut self) {
-        let _ = self.stop_tx.send(());
+        if let Err(e) = self.stop_tx.send(()) {
+            warn!(target: "psyche_supervisor", error=?e, what="shutdown", "broadcast send failed");
+        }
         for entry in self.entries.values() {
             if let Some(handle) = entry.handle.lock().unwrap().take() {
                 let _ = tokio::task::spawn_blocking(move || handle.join()).await;
