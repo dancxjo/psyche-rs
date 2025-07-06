@@ -134,6 +134,41 @@ impl MemoryStore for InMemoryStore {
         Ok(())
     }
 
+    async fn store_summary_impression(
+        &self,
+        summary: &StoredImpression,
+        linked_ids: &[String],
+    ) -> anyhow::Result<()> {
+        let mut to_remove_sids = Vec::new();
+        {
+            let imps = self.impressions.lock().unwrap();
+            for id in linked_ids {
+                if let Some(imp) = imps.get(id) {
+                    to_remove_sids.extend(imp.sensation_ids.iter().cloned());
+                }
+            }
+        }
+        {
+            let mut imps = self.impressions.lock().unwrap();
+            for id in linked_ids {
+                imps.remove(id);
+            }
+            imps.entry(summary.id.clone())
+                .or_insert_with(|| summary.clone());
+        }
+        let imps = self.impressions.lock().unwrap();
+        let mut sensations = self.sensations.lock().unwrap();
+        for sid in to_remove_sids {
+            let still_used = imps
+                .values()
+                .any(|imp| imp.sensation_ids.iter().any(|s| s == &sid));
+            if !still_used {
+                sensations.remove(&sid);
+            }
+        }
+        Ok(())
+    }
+
     async fn add_lifecycle_stage(
         &self,
         impression_id: &str,
@@ -451,5 +486,61 @@ mod integration_tests {
         }
         assert_eq!(store.sensation_count(), 10);
         assert_eq!(store.impression_count(), 10);
+    }
+
+    #[tokio::test]
+    async fn summary_replaces_details_and_sensations() {
+        let store = InMemoryStore::new();
+        let s1 = make_sensation("s1");
+        let s2 = make_sensation("s2");
+        store.store_sensation(&s1).await.unwrap();
+        store.store_sensation(&s2).await.unwrap();
+        let i1 = make_impression("i1", vec![s1.id.clone()]);
+        let i2 = make_impression("i2", vec![s2.id.clone()]);
+        store.store_impression(&i1).await.unwrap();
+        store.store_impression(&i2).await.unwrap();
+
+        let summary = StoredImpression {
+            id: "sum".into(),
+            kind: "Summary".into(),
+            when: Utc::now(),
+            how: "summary".into(),
+            sensation_ids: Vec::new(),
+            impression_ids: vec!["i1".into(), "i2".into()],
+        };
+        store
+            .store_summary_impression(&summary, &summary.impression_ids)
+            .await
+            .unwrap();
+
+        assert_eq!(store.impression_count(), 1);
+        assert_eq!(store.sensation_count(), 0);
+    }
+
+    #[tokio::test]
+    async fn summary_preserves_shared_sensations() {
+        let store = InMemoryStore::new();
+        let s = make_sensation("s1");
+        store.store_sensation(&s).await.unwrap();
+        let i1 = make_impression("i1", vec![s.id.clone()]);
+        let i2 = make_impression("i2", vec![s.id.clone()]);
+        store.store_impression(&i1).await.unwrap();
+        store.store_impression(&i2).await.unwrap();
+
+        let summary = StoredImpression {
+            id: "sum".into(),
+            kind: "Summary".into(),
+            when: Utc::now(),
+            how: "summary".into(),
+            sensation_ids: Vec::new(),
+            impression_ids: vec!["i1".into()],
+        };
+        store
+            .store_summary_impression(&summary, &summary.impression_ids)
+            .await
+            .unwrap();
+
+        assert_eq!(store.impression_count(), 2);
+        assert_eq!(store.sensation_count(), 1);
     }
 }
