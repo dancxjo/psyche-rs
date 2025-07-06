@@ -13,6 +13,7 @@ use segtok::segmenter::{SegmentConfig, split_single};
 
 use crate::{Impression, Sensation, Sensor, render_template};
 
+use crate::MemoryStore;
 use crate::llm::types::{Token, TokenStream};
 use crate::llm_client::LLMClient;
 use ollama_rs::generation::chat::ChatMessage;
@@ -27,6 +28,7 @@ const DEFAULT_PROMPT: &str = "";
 #[derive(Clone)]
 pub struct Wit<T = serde_json::Value> {
     llm: Arc<dyn LLMClient>,
+    store: Option<Arc<dyn MemoryStore + Send + Sync>>,
     name: String,
     prompt: String,
     delay_ms: u64,
@@ -41,6 +43,7 @@ impl<T> Wit<T> {
     pub fn new(llm: Arc<dyn LLMClient>) -> Self {
         Self {
             llm,
+            store: None,
             name: "Wit".into(),
             prompt: DEFAULT_PROMPT.to_string(),
             delay_ms: 1000,
@@ -60,6 +63,18 @@ impl<T> Wit<T> {
     /// Overrides the prompt template.
     pub fn prompt(mut self, template: impl Into<String>) -> Self {
         self.prompt = template.into();
+        self
+    }
+
+    /// Replace the LLM client.
+    pub fn llm(mut self, llm: Arc<dyn LLMClient>) -> Self {
+        self.llm = llm;
+        self
+    }
+
+    /// Attach a memory store used by this wit.
+    pub fn memory_store(mut self, store: Arc<dyn MemoryStore + Send + Sync>) -> Self {
+        self.store = Some(store);
         self
     }
 
@@ -551,5 +566,14 @@ mod tests {
         let line = tl.lines().next().unwrap();
         let ts = &line[..19];
         chrono::NaiveDateTime::parse_from_str(ts, "%Y-%m-%d %H:%M:%S").unwrap();
+    }
+
+    #[test]
+    fn builder_sets_store() {
+        use crate::InMemoryStore;
+        let llm = Arc::new(StaticLLM { reply: "".into() });
+        let store = Arc::new(InMemoryStore::new());
+        let wit: Wit<String> = Wit::new(llm).memory_store(store.clone());
+        assert!(wit.store.is_some());
     }
 }

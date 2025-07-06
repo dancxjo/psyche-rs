@@ -4,6 +4,8 @@ use std::time::Duration;
 
 use tracing::{debug, error, info};
 
+use core_affinity::CoreId;
+
 use crate::ThreadLocalContext;
 use crate::genius::Genius;
 
@@ -14,11 +16,22 @@ use crate::genius::Genius;
 /// single-threaded Tokio runtime. If `delay_ms` is provided, the runtime
 /// sleeps for that duration after each iteration of [`Genius::run`]. The
 /// returned [`JoinHandle`] can be detached or joined by the caller.
-pub fn launch_genius<G>(genius: Arc<G>, delay_ms: Option<u64>) -> JoinHandle<()>
+pub fn launch_genius<G>(
+    genius: Arc<G>,
+    delay_ms: Option<u64>,
+    core: Option<usize>,
+) -> JoinHandle<()>
 where
     G: Genius,
 {
     thread::spawn(move || {
+        if let Some(core_index) = core {
+            if let Some(ids) = core_affinity::get_core_ids() {
+                if let Some(id) = ids.into_iter().find(|c| c.id == core_index) {
+                    let _ = core_affinity::set_for_current(id);
+                }
+            }
+        }
         info!(name = %genius.name(), "starting genius thread");
         let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
             let rt = tokio::runtime::Builder::new_current_thread()
@@ -88,7 +101,7 @@ mod tests {
         let genius = Arc::new(TestGenius {
             count: count.clone(),
         });
-        let handle = launch_genius(genius, Some(1));
+        let handle = launch_genius(genius, Some(1), None);
         tokio::time::sleep(Duration::from_millis(5)).await;
         assert!(count.load(Ordering::SeqCst) >= 1);
         drop(handle);
