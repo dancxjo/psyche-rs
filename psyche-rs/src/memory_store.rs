@@ -16,12 +16,18 @@ pub struct StoredSensation {
 /// Represents an impression stored in memory.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct StoredImpression {
+    /// Unique identifier for the impression.  Neo4j stores this under the
+    /// `uuid` property so we alias that name for deserialisation.
+    #[serde(alias = "uuid")]
     pub id: String,
     pub kind: String,
     pub when: DateTime<Utc>,
     pub how: String,
+    /// IDs of attached sensations.  When fetching minimal records from Neo4j
+    /// these are omitted, so default to an empty list on deserialisation.
+    #[serde(default)]
     pub sensation_ids: Vec<String>,
-    /// IDs of impressions summarized by this one. Empty for regular impressions.
+    /// IDs of impressions summarised by this one. Empty for regular impressions.
     #[serde(rename = "summary_of", default)]
     pub impression_ids: Vec<String>,
 }

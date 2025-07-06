@@ -33,7 +33,7 @@ static DEVELOPMENT_SENTENCES: Lazy<Vec<String>> = Lazy::new(|| {
 ///     let mut sensor = DevelopmentStatus;
 ///     let mut stream = sensor.stream();
 ///     if let Some(batch) = stream.next().await {
-///         assert!(batch[0].what.contains("still under development"));
+///         assert!(batch[0].what.contains("help you understand"));
 ///     }
 /// });
 /// ```
@@ -76,7 +76,7 @@ mod tests {
         let mut sensor = DevelopmentStatus;
         let mut stream = sensor.stream();
         let batch1 = stream.next().await.expect("first batch");
-        assert!(batch1[0].what.contains("still under development"));
+        assert!(batch1[0].what.contains("help you understand"));
 
         let batch2 = stream.next().await.expect("second batch");
         assert_ne!(batch2[0].what, batch1[0].what);
