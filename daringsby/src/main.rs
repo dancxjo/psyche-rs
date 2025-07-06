@@ -3,7 +3,7 @@ use daringsby::args::Args;
 use std::sync::Arc;
 
 use daringsby::memory_helpers::{ensure_impressions_collection_exists, persist_impression};
-use daringsby::{CanvasStream, VisionSensor};
+use daringsby::{CanvasStream, LookSensor, VisionSensor};
 use daringsby::{
     llm_helpers::{build_ollama_clients, build_voice_llm},
     logger,
@@ -121,7 +121,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     ));
     let qdrant_url = Url::parse(&args.qdrant_url)?;
     ensure_impressions_collection_exists(&Client::new(), &qdrant_url).await?;
-    let (motors, _motor_map, consolidation_status, mut svg_rx) = build_motors(
+    let (motors, _motor_map, consolidation_status, mut svg_rx, mut look_rx) = build_motors(
         &llms,
         mouth.clone(),
         vision.clone(),
@@ -141,7 +141,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         None,
     ));
 
-    let sensors = build_sensors(stream.clone(), consolidation_status.clone());
+    let mut sensors = build_sensors(stream.clone(), consolidation_status.clone());
+    if let Some(rx) = look_rx.take() {
+        sensors.push(Box::new(LookSensor::new(rx)) as Box<dyn Sensor<String> + Send>);
+    }
     let ear = build_ear(stream.clone());
     let voice = Voice::new(voice_llm.clone(), 10)
         .name("Voice")
