@@ -28,5 +28,5 @@ fn default_voice_url_is_localhost() {
 #[test]
 fn default_voice_model_is_gemma3() {
     let args = Args::parse_from(["test"]);
-    assert_eq!(args.voice_model, "gemma3:27b".to_string());
+    assert_eq!(args.voice_model, "gemma3n".to_string());
 }
