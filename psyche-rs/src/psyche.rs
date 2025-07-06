@@ -206,10 +206,14 @@ where
                 let ear = SharedSensor::new(sensor.clone());
                 let window = will.window_arc();
                 let get_situation = Arc::new(move || crate::build_timeline(&window));
-                let latest = will.latest_instant_arc();
-                let get_instant = Arc::new(move || latest.lock().unwrap().clone());
+                let latest_instant = will.latest_instant_arc();
+                let latest_moment = will.latest_moment_arc();
+                let get_instant = Arc::new(move || latest_instant.lock().unwrap().clone());
+                let get_moment = Arc::new(move || latest_moment.lock().unwrap().clone());
                 voice.set_recent_actions(action_log.clone());
-                let vstream = voice.observe(ear, get_situation, get_instant).await;
+                let vstream = voice
+                    .observe(ear, get_situation, get_instant, get_moment)
+                    .await;
                 intention_streams.push(vstream);
             }
         }
