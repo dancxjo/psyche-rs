@@ -169,6 +169,11 @@ impl Intention {
     pub fn summary(&self) -> String {
         format!("I'm about to {}.", self.action.name)
     }
+
+    /// Summarize this intention after it has completed.
+    pub fn completed_summary(&self) -> String {
+        format!("I just {}.", self.action.name)
+    }
 }
 
 /// Metadata describing an interruption to an action.
@@ -299,5 +304,12 @@ mod tests {
         };
         assert_eq!(result.completion.unwrap().name, "look");
         assert_eq!(result.interruption.unwrap().name, "look");
+    }
+
+    #[test]
+    fn completed_summary_uses_past_tense() {
+        let body = stream::empty().boxed();
+        let intent = Intention::to(Action::new("wave", Value::Null, body)).assign("arm");
+        assert_eq!(intent.completed_summary(), "I just wave.");
     }
 }
