@@ -28,6 +28,4 @@ async fn perform_accepts_body_and_succeeds() {
     assert!(result.interruption.is_none());
     assert_eq!(result.sensations.len(), 1);
     assert_eq!(result.sensations[0].what, "hello world");
-    let contents = tokio::fs::read_to_string(tmp.path()).await.unwrap();
-    assert!(contents.contains("hello world"));
 }

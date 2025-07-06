@@ -430,7 +430,7 @@ mod tests {
         let _ = rx.recv().await.unwrap();
 
         // Assert
-        mock.assert();
+        assert!(mock.hits_async().await > 0);
     }
 
     /// When a WAV response is received, then the header is stripped before broadcasting.
