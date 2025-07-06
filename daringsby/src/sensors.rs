@@ -16,6 +16,8 @@ pub use crate::heard_self_sensor::HeardSelfSensor;
 pub use crate::heard_user_sensor::HeardUserSensor;
 #[cfg(feature = "heartbeat-sensor")]
 pub use crate::heartbeat::{Heartbeat, heartbeat_message};
+#[cfg(feature = "memory-consolidation-sensor")]
+pub use crate::memory_consolidation_sensor::MemoryConsolidationSensor;
 #[cfg(feature = "recall-motor")]
 pub use crate::recall_sensor::RecallSensor;
 #[cfg(feature = "self-discovery-sensor")]

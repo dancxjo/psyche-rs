@@ -21,6 +21,10 @@ pub mod log_file;
 pub mod log_memory_motor;
 #[cfg(feature = "logging-motor")]
 pub mod logging_motor;
+#[cfg(feature = "memory-consolidation-motor")]
+pub mod memory_consolidation_motor;
+#[cfg(feature = "memory-consolidation-sensor")]
+pub mod memory_consolidation_sensor;
 pub mod memory_helpers;
 #[cfg(feature = "mouth")]
 pub mod mouth;

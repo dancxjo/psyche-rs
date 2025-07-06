@@ -68,6 +68,8 @@ moment-feedback = []
 debug_memory = []
 battery-sensor = []
 battery-motor = []
+memory-consolidation-motor = []
+memory-consolidation-sensor = []
 default = [
     "logging-motor",
     "log-memory-motor",
@@ -91,4 +93,6 @@ default = [
     "heartbeat-sensor",
     "battery-sensor",
     "battery-motor",
+    "memory-consolidation-motor",
+    "memory-consolidation-sensor",
 ]

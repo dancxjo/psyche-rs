@@ -49,12 +49,12 @@ use std::sync::Arc;
 ///     analyzer.summarize(vec![vec!["i1".to_string()]]).await.unwrap();
 /// });
 /// ```
-pub struct ClusterAnalyzer<M: MemoryStore + Send + Sync, C: LLMClient> {
+pub struct ClusterAnalyzer<M: MemoryStore + Send + Sync, C: LLMClient + ?Sized> {
     pub store: M,
     llm: Arc<C>,
 }
 
-impl<M: MemoryStore + Send + Sync, C: LLMClient> ClusterAnalyzer<M, C> {
+impl<M: MemoryStore + Send + Sync, C: LLMClient + ?Sized> ClusterAnalyzer<M, C> {
     /// Create a new analyzer.
     pub fn new(store: M, llm: Arc<C>) -> Self {
         Self { store, llm }

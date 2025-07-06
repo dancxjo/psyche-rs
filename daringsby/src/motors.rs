@@ -12,6 +12,8 @@ pub use crate::log_memory_motor::LogMemoryMotor;
 /// ```
 #[cfg(feature = "logging-motor")]
 pub use crate::logging_motor::LoggingMotor;
+#[cfg(feature = "memory-consolidation-motor")]
+pub use crate::memory_consolidation_motor::MemoryConsolidationMotor;
 #[cfg(feature = "mouth")]
 pub use crate::mouth::Mouth;
 #[cfg(feature = "recall-motor")]

@@ -121,7 +121,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     ));
     let qdrant_url = Url::parse(&args.qdrant_url)?;
     ensure_impressions_collection_exists(&Client::new(), &qdrant_url).await?;
-    let (motors, _motor_map) = build_motors(
+    let (motors, _motor_map, consolidation_status) = build_motors(
         &llms,
         mouth.clone(),
         vision.clone(),
@@ -141,7 +141,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         None,
     ));
 
-    let sensors = build_sensors(stream.clone());
+    let sensors = build_sensors(
+        stream.clone(),
+        #[cfg(feature = "memory-consolidation-sensor")]
+        consolidation_status.clone(),
+    );
     let ear = build_ear(stream.clone());
     let voice = Voice::new(voice_llm.clone(), 10)
         .name("Voice")
