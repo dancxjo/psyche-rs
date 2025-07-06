@@ -6,6 +6,7 @@ use axum::{
 use futures::StreamExt;
 use std::sync::Arc;
 use tokio::sync::broadcast::{self, Receiver, Sender};
+use tracing::warn;
 
 /// WebSocket streamer for canvas snapshots.
 ///
@@ -48,17 +49,26 @@ impl CanvasStream {
 
     /// Request a snapshot from all connected clients.
     pub fn request_snap(&self) {
-        let _ = self.cmd.send("snap".into());
+        let desc = "snap command";
+        if let Err(e) = self.cmd.send("snap".into()) {
+            warn!(target: "canvas_stream", error=?e, what=%desc, "broadcast command send failed");
+        }
     }
 
     /// Broadcast an SVG drawing to all connected clients.
     pub fn broadcast_svg(&self, svg: String) {
-        let _ = self.svg_tx.send(svg);
+        let desc = format!("svg {} bytes", svg.len());
+        if let Err(e) = self.svg_tx.send(svg) {
+            warn!(target: "canvas_stream", error=?e, what=%desc, "broadcast send failed");
+        }
     }
 
     /// Inject an image into the stream. Intended for tests.
     pub fn push_image(&self, img: Vec<u8>) {
-        let _ = self.tx.send(img);
+        let desc = format!("jpeg {} bytes", img.len());
+        if let Err(e) = self.tx.send(img) {
+            warn!(target: "canvas_stream", error=?e, what=%desc, "broadcast send failed");
+        }
     }
 
     /// Build a router exposing the canvas WebSocket endpoint.
@@ -88,7 +98,10 @@ impl CanvasStream {
             tokio::select! {
                 Some(Ok(msg)) = socket.next() => {
                     if let Message::Binary(data) = msg {
-                        let _ = self.tx.send(data);
+                        let desc = format!("jpeg {} bytes", data.len());
+                        if let Err(e) = self.tx.send(data) {
+                            warn!(target: "canvas_stream", error=?e, what=%desc, "broadcast send failed");
+                        }
                     }
                 }
                 Ok(cmd) = cmd_rx.recv() => {
@@ -116,6 +129,7 @@ mod tests {
     use super::*;
     use futures::{SinkExt, StreamExt};
     use tokio_tungstenite::{connect_async, tungstenite::Message as WsMessage};
+    use tracing_test::traced_test;
 
     async fn start_server(stream: Arc<CanvasStream>) -> std::net::SocketAddr {
         let app = stream.router();
@@ -154,5 +168,13 @@ mod tests {
         stream.broadcast_svg("<svg/>".into());
         let msg = ws.next().await.unwrap().unwrap();
         assert_eq!(msg, WsMessage::Text("<svg/>".into()));
+    }
+
+    #[traced_test]
+    #[tokio::test]
+    async fn warns_when_svg_send_fails() {
+        let stream = CanvasStream::default();
+        stream.broadcast_svg("<svg/>".into());
+        assert!(logs_contain("broadcast send failed"));
     }
 }

@@ -44,6 +44,7 @@ tower = { version = "0.4", features = ["util"] }
 tokio-tungstenite = "0.21"
 tempfile = "3"
 serial_test = "2"
+tracing-test = { version = "0.2", features = ["no-env-filter"] }
 
 [features]
 logging-motor = []
