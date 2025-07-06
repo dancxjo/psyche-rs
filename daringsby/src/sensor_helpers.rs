@@ -2,6 +2,7 @@ use crate::BatterySensor;
 use crate::development_status::DevelopmentStatus;
 use crate::memory_consolidation_sensor::{ConsolidationStatus, MemoryConsolidationSensor};
 use crate::{Ear, HeardSelfSensor, HeardUserSensor, Heartbeat, SpeechStream};
+use crate::{SelfDiscovery, SourceDiscovery};
 use psyche_rs::Sensor;
 use std::sync::Arc;
 use tokio::sync::Mutex;
@@ -35,6 +36,8 @@ pub fn build_sensors(
         Box::new(Heartbeat) as Box<dyn Sensor<String> + Send>,
         Box::new(HeardSelfSensor::new(stream.subscribe_heard())) as Box<dyn Sensor<String> + Send>,
         Box::new(HeardUserSensor::new(stream.subscribe_user())) as Box<dyn Sensor<String> + Send>,
+        Box::new(SelfDiscovery::default()) as Box<dyn Sensor<String> + Send>,
+        Box::new(SourceDiscovery::default()) as Box<dyn Sensor<String> + Send>,
     ];
     {
         sensors.push(Box::new(BatterySensor::default()) as Box<dyn Sensor<String> + Send>);
@@ -81,5 +84,23 @@ mod tests {
             }
         }
         assert!(found, "development status sensor not included");
+    }
+
+    #[tokio::test]
+    async fn discovery_sensors_report() {
+        unsafe { std::env::set_var("FAST_TEST", "1") };
+        let (_a_tx, a_rx) = broadcast::channel(1);
+        let (_t_tx, t_rx) = broadcast::channel(1);
+        let (_s_tx, s_rx) = broadcast::channel(1);
+        let stream = Arc::new(SpeechStream::new(a_rx, t_rx, s_rx));
+        let sensors = build_sensors(stream, None);
+        let mut kinds = Vec::new();
+        for mut sensor in sensors {
+            if let Some(batch) = sensor.stream().next().await {
+                kinds.extend(batch.iter().map(|s| s.kind.clone()));
+            }
+        }
+        assert!(kinds.contains(&"self_discovery".to_string()));
+        assert!(kinds.contains(&"self_source".to_string()));
     }
 }
