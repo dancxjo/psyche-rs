@@ -1,6 +1,7 @@
+use futures::Future;
+use psyche_rs::AbortGuard;
 use std::net::SocketAddr;
 use std::sync::Arc;
-use tokio::task::JoinHandle;
 
 use crate::{CanvasStream, SpeechStream, VisionSensor, args::Args};
 
@@ -10,7 +11,8 @@ pub async fn run_server(
     vision: Arc<VisionSensor>,
     canvas: Arc<CanvasStream>,
     args: &Args,
-) -> JoinHandle<()> {
+    mut shutdown: impl Future<Output = ()> + Send + 'static,
+) -> AbortGuard {
     let app = stream
         .clone()
         .router()
@@ -19,11 +21,20 @@ pub async fn run_server(
     let addr: SocketAddr = format!("{}:{}", args.host, args.port)
         .parse()
         .expect("invalid addr");
-    tokio::spawn(async move {
+    let handle = tokio::spawn(async move {
+        let mut shutdown = Box::pin(shutdown);
         tracing::info!(%addr, "serving speech stream");
         let listener = tokio::net::TcpListener::bind(addr)
             .await
             .expect("failed to bind TcpListener");
-        axum::serve(listener, app).await.expect("axum serve failed");
-    })
+        tokio::select! {
+            res = axum::serve(listener, app) => {
+                if let Err(e) = res { tracing::error!(?e, "axum serve failed"); }
+            }
+            _ = &mut shutdown => {
+                tracing::info!("Shutting down Axum server");
+            }
+        }
+    });
+    AbortGuard::new(handle)
 }

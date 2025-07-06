@@ -10,6 +10,9 @@ use tracing::warn;
 
 /// WebSocket streamer for webcam snapshots.
 ///
+/// Spawns:
+/// - WebSocket session task per client connection
+///
 /// The server broadcasts "snap" commands to connected clients and
 /// receives JPEG image bytes in response.
 pub struct VisionSensor {
@@ -62,9 +65,21 @@ impl VisionSensor {
                         }
                     }
                 }
-                Ok(cmd) = cmd_rx.recv() => {
-                    if socket.send(Message::Text(cmd)).await.is_err() {
-                        break;
+                cmd = cmd_rx.recv() => {
+                    match cmd {
+                        Ok(cmd) => {
+                            if socket.send(Message::Text(cmd)).await.is_err() {
+                                break;
+                            }
+                        }
+                        Err(broadcast::error::RecvError::Closed) => {
+                            tracing::info!("vision command channel closed, exiting");
+                            break;
+                        }
+                        Err(broadcast::error::RecvError::Lagged(count)) => {
+                            warn!(%count, "vision command channel lagged");
+                            continue;
+                        }
                     }
                 }
                 else => break,

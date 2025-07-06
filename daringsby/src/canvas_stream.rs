@@ -10,6 +10,9 @@ use tracing::warn;
 
 /// WebSocket streamer for canvas snapshots.
 ///
+/// Spawns:
+/// - WebSocket session task per client connection
+///
 /// The server broadcasts `"snap"` commands to connected clients and
 /// receives JPEG image bytes in response. Connected clients receive
 /// `"snap"` commands and respond with JPEG bytes.
@@ -116,9 +119,21 @@ impl CanvasStream {
 
     async fn stream_svg(self: Arc<Self>, mut socket: WebSocket) {
         let mut rx = self.svg_tx.subscribe();
-        while let Ok(svg) = rx.recv().await {
-            if socket.send(Message::Text(svg)).await.is_err() {
-                break;
+        loop {
+            match rx.recv().await {
+                Ok(svg) => {
+                    if socket.send(Message::Text(svg)).await.is_err() {
+                        break;
+                    }
+                }
+                Err(broadcast::error::RecvError::Closed) => {
+                    tracing::info!("svg channel closed, exiting");
+                    break;
+                }
+                Err(broadcast::error::RecvError::Lagged(count)) => {
+                    warn!(%count, "svg channel lagged");
+                    continue;
+                }
             }
         }
     }

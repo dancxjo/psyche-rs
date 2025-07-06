@@ -74,7 +74,7 @@ async fn run_voice(
 ) {
     let stream = voice.observe(ear, get_situation, get_instant).await;
     let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
-    tokio::spawn(run_sensor_loop(stream, tx, "voice"));
+    let _guard = psyche_rs::AbortGuard::new(tokio::spawn(run_sensor_loop(stream, tx, "voice")));
     while let Some(ints) = rx.recv().await {
         for intent in ints {
             executor.spawn_intention(intent);
@@ -100,7 +100,14 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let (mouth, stream) = build_mouth(&args).await?;
     let vision = Arc::new(VisionSensor::default());
     let canvas = Arc::new(CanvasStream::default());
-    let server_handle = run_server(stream.clone(), vision.clone(), canvas.clone(), &args).await;
+    let mut server_handle = run_server(
+        stream.clone(),
+        vision.clone(),
+        canvas.clone(),
+        &args,
+        shutdown_signal(),
+    )
+    .await;
 
     let store = Arc::new(NeoQdrantMemoryStore::new(
         &args.neo4j_url,
@@ -203,6 +210,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             if let Some(h) = combob.take() { h.abort(); }
             if let Some(h) = will.take() { h.abort(); }
             if let Some(h) = voice_handle.take() { h.abort(); }
+            stream.abort_tasks();
             tracing::info!("Tasks aborted");
         }
         res = async {
@@ -220,8 +228,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
     }
 
+    stream.abort_tasks();
     server_handle.abort();
-    let _ = server_handle.await;
     tracing::info!("Server aborted");
     Ok(())
 }
@@ -260,7 +268,7 @@ async fn run_will(
     let mut will = will.memory_store(store);
     let stream = will.observe(sensors).await;
     let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
-    tokio::spawn(run_sensor_loop(stream, tx, "will"));
+    let _guard = psyche_rs::AbortGuard::new(tokio::spawn(run_sensor_loop(stream, tx, "will")));
 
     while let Some(ints) = rx.recv().await {
         for intent in ints {
