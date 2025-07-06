@@ -1,8 +1,9 @@
 use super::genius::Genius;
 use crate::genius_queue::{GeniusSender, bounded_channel};
+use crate::memory_store::MemoryStore;
 use async_trait::async_trait;
 use futures::{StreamExt, stream};
-use std::sync::Mutex;
+use std::sync::{Arc, Mutex};
 use tokio::sync::mpsc::{Receiver, UnboundedSender};
 use tracing::{debug, trace};
 
@@ -23,6 +24,8 @@ pub struct InstantOutput {
 pub struct QuickGenius {
     input_rx: Mutex<Option<Receiver<InstantInput>>>,
     output_tx: UnboundedSender<InstantOutput>,
+    store: Option<Arc<dyn MemoryStore + Send + Sync>>,
+    top_k: usize,
 }
 
 impl QuickGenius {
@@ -34,6 +37,8 @@ impl QuickGenius {
         Self {
             input_rx: Mutex::new(Some(input_rx)),
             output_tx,
+            store: None,
+            top_k: 3,
         }
     }
 
@@ -46,8 +51,44 @@ impl QuickGenius {
         (Self::new(rx, output_tx), tx)
     }
 
+    /// Attach a memory store used to fetch neighbors for each instant.
+    pub fn memory_store(mut self, store: Arc<dyn MemoryStore + Send + Sync>) -> Self {
+        self.store = Some(store);
+        self
+    }
+
+    /// Set the number of neighbors to retrieve when using a memory store.
+    pub fn top_k(mut self, k: usize) -> Self {
+        self.top_k = k;
+        self
+    }
+
     async fn generate_prompt(&self, input: &InstantInput) -> String {
-        format!("Describe this instant: {}", input.description)
+        let mut neighbors = String::new();
+        if let Some(store) = &self.store {
+            match store
+                .retrieve_related_impressions(&input.description, self.top_k)
+                .await
+            {
+                Ok(n) if !n.is_empty() => {
+                    neighbors = n
+                        .iter()
+                        .map(|imp| format!("- {}", imp.how))
+                        .collect::<Vec<_>>()
+                        .join("\n");
+                }
+                Ok(_) => {}
+                Err(e) => tracing::warn!(?e, "quick neighbor query failed"),
+            }
+        }
+        if neighbors.is_empty() {
+            format!("Describe this instant: {}", input.description)
+        } else {
+            format!(
+                "Describe this instant: {}\nRelevant memories:\n{}",
+                input.description, neighbors
+            )
+        }
     }
 
     async fn call_llm(&self, prompt: String) -> InstantOutput {
