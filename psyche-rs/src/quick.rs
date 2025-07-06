@@ -1,8 +1,9 @@
 use super::genius::Genius;
+use crate::genius_queue::{GeniusSender, bounded_channel};
 use async_trait::async_trait;
 use futures::{StreamExt, stream};
 use std::sync::Mutex;
-use tokio::sync::mpsc::{UnboundedReceiver, UnboundedSender};
+use tokio::sync::mpsc::{Receiver, UnboundedSender};
 use tracing::{debug, trace};
 
 /// Basic input type describing the latest instant for [`QuickGenius`].
@@ -20,20 +21,29 @@ pub struct InstantOutput {
 
 /// Example genius that turns [`InstantInput`]s into short summaries using an LLM.
 pub struct QuickGenius {
-    input_rx: Mutex<Option<UnboundedReceiver<InstantInput>>>,
+    input_rx: Mutex<Option<Receiver<InstantInput>>>,
     output_tx: UnboundedSender<InstantOutput>,
 }
 
 impl QuickGenius {
-    /// Create a new [`QuickGenius`] with the provided channels.
+    /// Create a new [`QuickGenius`] with the provided bounded input receiver.
     pub fn new(
-        input_rx: UnboundedReceiver<InstantInput>,
+        input_rx: Receiver<InstantInput>,
         output_tx: UnboundedSender<InstantOutput>,
     ) -> Self {
         Self {
             input_rx: Mutex::new(Some(input_rx)),
             output_tx,
         }
+    }
+
+    /// Construct a [`QuickGenius`] and input channel with the given capacity.
+    pub fn with_capacity(
+        capacity: usize,
+        output_tx: UnboundedSender<InstantOutput>,
+    ) -> (Self, GeniusSender<InstantInput>) {
+        let (tx, rx) = bounded_channel(capacity, "Quick");
+        (Self::new(rx, output_tx), tx)
     }
 
     async fn generate_prompt(&self, input: &InstantInput) -> String {
@@ -95,14 +105,14 @@ impl Genius for QuickGenius {
 ///
 /// #[tokio::main]
 /// async fn main() {
-///     let (in_tx, in_rx) = unbounded_channel();
 ///     let (out_tx, mut out_rx) = unbounded_channel();
-///     let quick = Arc::new(QuickGenius::new(in_rx, out_tx));
+///     let (quick, in_tx) = QuickGenius::with_capacity(4, out_tx);
+///     let quick = Arc::new(quick);
 ///     tokio::spawn({
 ///         let quick = Arc::clone(&quick);
 ///         async move { quick.run().await }
 ///     });
-///     in_tx.send(InstantInput { description: "ping".into() }).unwrap();
+///     in_tx.send(InstantInput { description: "ping".into() });
 ///     if let Some(out) = out_rx.recv().await {
 ///         println!("{}", out.description);
 ///     }
@@ -116,14 +126,12 @@ mod tests {
 
     #[tokio::test]
     async fn produces_output() {
-        let (tx, rx) = unbounded_channel();
         let (out_tx, mut out_rx) = unbounded_channel();
-        let genius = QuickGenius::new(rx, out_tx);
+        let (genius, tx) = QuickGenius::with_capacity(4, out_tx);
         let handle = tokio::spawn(async move { genius.run().await });
         tx.send(InstantInput {
             description: "foo".into(),
-        })
-        .unwrap();
+        });
         let out = out_rx.recv().await.unwrap();
         assert!(out.description.contains("foo"));
         handle.abort();
