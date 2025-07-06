@@ -84,10 +84,7 @@ Available options (see `main.rs`):
 * `--language-id`: Language identifier for TTS (optional)
 * `--speaker-id`: Speaker ID for TTS (default: `p234`)
 
-`daringsby` always feeds raw sensations into the Quick wit first to form
-an **instant**. Impressions of each instant are then collected by the
-Combobulator to create a **moment**. Moments loop back through the
-Combobulator so higher level impressions continue to build over time.
+`daringsby` feeds raw sensations directly into the Combobulator, which summarizes them into moments. Moments loop back through the Combobulator so higher level impressions continue to build over time.
 
 ### Supervising genii
 
