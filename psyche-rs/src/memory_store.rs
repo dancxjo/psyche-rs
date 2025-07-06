@@ -7,6 +7,9 @@ use async_trait::async_trait;
 /// Represents a sensation stored in memory.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct StoredSensation {
+    /// Unique identifier for the sensation. Neo4j stores this under the `uuid`
+    /// property so we alias that name for deserialisation.
+    #[serde(alias = "uuid")]
     pub id: String,
     pub kind: String,
     pub when: DateTime<Utc>,
