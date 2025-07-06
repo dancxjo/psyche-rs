@@ -10,6 +10,7 @@ pub use crate::ear::Ear;
 pub use crate::heard_self_sensor::HeardSelfSensor;
 pub use crate::heard_user_sensor::HeardUserSensor;
 pub use crate::heartbeat::{Heartbeat, heartbeat_message};
+pub use crate::look_sensor::LookSensor;
 pub use crate::memory_consolidation_sensor::MemoryConsolidationSensor;
 pub use crate::recall_sensor::RecallSensor;
 pub use crate::self_discovery::SelfDiscovery;

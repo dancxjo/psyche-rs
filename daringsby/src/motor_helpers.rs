@@ -48,10 +48,12 @@ pub fn build_motors(
     Arc<HashMap<String, Arc<dyn Motor>>>,
     Option<Arc<Mutex<ConsolidationStatus>>>,
     Option<UnboundedReceiver<String>>,
+    Option<UnboundedReceiver<Vec<Sensation<String>>>>,
 ) {
     let mut motors: Vec<Arc<dyn Motor>> = Vec::new();
     let mut map: HashMap<String, Arc<dyn Motor>> = HashMap::new();
     let mut svg_rx_opt: Option<UnboundedReceiver<String>> = None;
+    let mut look_rx_opt: Option<UnboundedReceiver<Vec<Sensation<String>>>> = None;
 
     let status: Option<Arc<Mutex<ConsolidationStatus>>> =
         Some(Arc::new(Mutex::new(ConsolidationStatus::default())));
@@ -61,7 +63,8 @@ pub fn build_motors(
     // map.insert("log".into(), logging_motor);
 
     {
-        let (look_tx, _) = unbounded_channel::<Vec<Sensation<String>>>();
+        let (look_tx, look_rx) = unbounded_channel::<Vec<Sensation<String>>>();
+        look_rx_opt = Some(look_rx);
         let vision_motor = Arc::new(VisionMotor::new(vision, llms.quick.clone(), look_tx));
         motors.push(vision_motor.clone());
         map.insert("look".into(), vision_motor);
@@ -145,5 +148,5 @@ pub fn build_motors(
         map.insert("battery".into(), battery_motor);
     }
 
-    (motors, Arc::new(map), status, svg_rx_opt)
+    (motors, Arc::new(map), status, svg_rx_opt, look_rx_opt)
 }
