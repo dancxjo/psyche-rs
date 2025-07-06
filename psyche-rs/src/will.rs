@@ -232,6 +232,11 @@ impl<T> Will<T> {
         self.latest_instant.clone()
     }
 
+    /// Latest moment recorded by this Will.
+    pub fn latest_moment_arc(&self) -> Arc<Mutex<String>> {
+        self.latest_moment.clone()
+    }
+
     pub fn timeline(&self) -> String
     where
         T: serde::Serialize + Clone,

@@ -19,7 +19,7 @@ use crate::{
 use ollama_rs::generation::chat::ChatMessage;
 
 /// Default system prompt template for [`Voice`].
-const DEFAULT_PROMPT: &str = "You are Pete, an artificial being capable of natural, thoughtful speech. (Other parts of your mind are responsible for controlling your actions. Your job is to speak on Pete's behalf. Only use information from the following situation and instant (and general knowledge).\n\nCurrent situation: {situation}\nRecent actions: {recent_actions}\nCurrent instant: {instant}\n\nSpeak aloud as yourself, Pete. Respond in clear, natural language.\n\n✅ Return only what Pete would actually *say* out loud—no stage directions, no asterisks, no emoji, no XML or other tags.\n✅ Prefer responses of one or at most two complete sentences at a time.\n✅ Keep your speech fluid, friendly, and coherent.\n✅ Do not include internal thoughts, descriptions of actions, or system notes—only speakable dialogue.";
+const DEFAULT_PROMPT: &str = "You are Pete, an artificial being capable of natural, thoughtful speech. (Other parts of your mind are responsible for controlling your actions. Your job is to speak on Pete's behalf. Only use information from the following situation, moment and instant (and general knowledge).\n\nCurrent situation: {situation}\nCurrent moment: {moment}\nRecent actions: {recent_actions}\nCurrent instant: {instant}\n\nSpeak aloud as yourself, Pete. Respond in clear, natural language.\n\n✅ Return only what Pete would actually *say* out loud—no stage directions, no asterisks, no emoji, no XML or other tags.\n✅ Prefer responses of one or at most two complete sentences at a time.\n✅ Keep your speech fluid, friendly, and coherent.\n✅ Do not include internal thoughts, descriptions of actions, or system notes—only speakable dialogue.";
 
 /// LLM-powered conversational reflex.
 pub struct Voice {
@@ -86,6 +86,7 @@ impl Voice {
         mut ear: impl Sensor<String> + Send + 'static,
         get_situation: Arc<dyn Fn() -> String + Send + Sync>,
         get_instant: Arc<dyn Fn() -> String + Send + Sync>,
+        get_moment: Arc<dyn Fn() -> String + Send + Sync>,
     ) -> BoxStream<'static, Vec<Intention>> {
         let (tx, rx) = unbounded_channel();
         let llm = self.llm.clone();
@@ -112,9 +113,11 @@ impl Voice {
                     convo.lock().unwrap().push_user(&s.what);
                     let situation = (get_situation)();
                     let instant = (get_instant)();
+                    let moment = (get_moment)();
                     #[derive(serde::Serialize)]
                     struct Ctx<'a> {
                         situation: &'a str,
+                        moment: &'a str,
                         instant: &'a str,
                         recent_actions: &'a str,
                     }
@@ -125,6 +128,7 @@ impl Voice {
                     };
                     let ctx = Ctx {
                         situation: &situation,
+                        moment: &moment,
                         instant: &instant,
                         recent_actions: &actions_text,
                     };
@@ -284,7 +288,10 @@ mod tests {
         let ear = TestEar;
         let get_situation = Arc::new(|| "".to_string());
         let get_instant = Arc::new(|| "".to_string());
-        let mut stream = voice.observe(ear, get_situation, get_instant).await;
+        let get_moment = Arc::new(|| "".to_string());
+        let mut stream = voice
+            .observe(ear, get_situation, get_instant, get_moment)
+            .await;
         let batch = stream.next().await.unwrap();
         assert!(!batch.is_empty());
         assert_eq!(batch[0].assigned_motor, "speak");
@@ -297,7 +304,10 @@ mod tests {
         let ear = TestEar;
         let get_situation = Arc::new(|| "".to_string());
         let get_instant = Arc::new(|| "".to_string());
-        let mut stream = voice.observe(ear, get_situation, get_instant).await;
+        let get_moment = Arc::new(|| "".to_string());
+        let mut stream = voice
+            .observe(ear, get_situation, get_instant, get_moment)
+            .await;
         let a = stream.next().await.unwrap();
         let b = stream.next().await.unwrap();
         assert_eq!(a[0].assigned_motor, "speak");
@@ -315,9 +325,29 @@ mod tests {
         let ear = TestEar;
         let get_situation = Arc::new(|| "".to_string());
         let get_instant = Arc::new(|| "".to_string());
-        let mut stream = voice.observe(ear, get_situation, get_instant).await;
+        let get_moment = Arc::new(|| "".to_string());
+        let mut stream = voice
+            .observe(ear, get_situation, get_instant, get_moment)
+            .await;
         let _ = stream.next().await;
         let msgs = llm.last.lock().unwrap();
         assert!(msgs[0].content.contains("I waved"));
+    }
+
+    #[tokio::test]
+    async fn moment_and_instant_in_prompt() {
+        let llm = Arc::new(CaptureLLM::default());
+        let voice = Voice::new(llm.clone(), 5).delay_ms(10);
+        let ear = TestEar;
+        let get_situation = Arc::new(|| "".to_string());
+        let get_instant = Arc::new(|| "instant".to_string());
+        let get_moment = Arc::new(|| "moment".to_string());
+        let mut stream = voice
+            .observe(ear, get_situation, get_instant, get_moment)
+            .await;
+        let _ = stream.next().await;
+        let msgs = llm.last.lock().unwrap();
+        assert!(msgs[0].content.contains("moment"));
+        assert!(msgs[0].content.contains("instant"));
     }
 }

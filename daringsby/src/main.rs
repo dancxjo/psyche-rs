@@ -70,9 +70,12 @@ async fn run_voice(
     ear: daringsby::Ear,
     get_situation: Arc<dyn Fn() -> String + Send + Sync>,
     get_instant: Arc<dyn Fn() -> String + Send + Sync>,
+    get_moment: Arc<dyn Fn() -> String + Send + Sync>,
     executor: Arc<MotorExecutor>,
 ) {
-    let stream = voice.observe(ear, get_situation, get_instant).await;
+    let stream = voice
+        .observe(ear, get_situation, get_instant, get_moment)
+        .await;
     let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
     tokio::spawn(run_sensor_loop(stream, tx, "voice"));
     while let Some(ints) = rx.recv().await {
@@ -168,7 +171,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             .name("Will")
             .prompt(include_str!("prompts/will_prompt.txt"));
         let window = will.window_arc();
-        let latest = will.latest_instant_arc();
+        let latest_instant = will.latest_instant_arc();
+        let latest_moment = will.latest_moment_arc();
         let task = tokio::spawn(run_will(
             will,
             vec![Box::new(combo_sensor)],
@@ -176,18 +180,20 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             motors_send.clone(),
             store.clone(),
         ));
-        (task, window, latest)
+        (task, window, latest_instant, latest_moment)
     };
 
-    let (will_task, window, latest) = will_task;
+    let (will_task, window, latest_instant, latest_moment) = will_task;
 
     let get_situation = Arc::new(move || psyche_rs::build_timeline(&window));
-    let get_instant = Arc::new(move || latest.lock().unwrap().clone());
+    let get_instant = Arc::new(move || latest_instant.lock().unwrap().clone());
+    let get_moment = Arc::new(move || latest_moment.lock().unwrap().clone());
     let voice_task = tokio::spawn(run_voice(
         voice,
         ear,
         get_situation,
         get_instant,
+        get_moment,
         executor.clone(),
     ));
 
