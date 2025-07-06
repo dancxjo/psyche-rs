@@ -84,10 +84,10 @@ Available options (see `main.rs`):
 * `--language-id`: Language identifier for TTS (optional)
 * `--speaker-id`: Speaker ID for TTS (default: `p234`)
 
-The `daringsby` crate exposes a `single-wit` feature that is enabled by
-default. When enabled, only the Combobulator wit runs and raw sensations
-are fed directly into it. Disable the feature to keep the legacy Quick
-pipeline.
+`daringsby` always feeds raw sensations into the Quick wit first to form
+an **instant**. Impressions of each instant are then collected by the
+Combobulator to create a **moment**. Moments loop back through the
+Combobulator so higher level impressions continue to build over time.
 
 ### Supervising genii
 
