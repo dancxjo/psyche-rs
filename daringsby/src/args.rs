@@ -19,7 +19,7 @@ pub struct Args {
     pub quick_model: String,
     #[arg(long = "combob-model", default_value = "gemma3n")]
     pub combob_model: String,
-    #[arg(long = "will-model", default_value = "gemma3n")]
+    #[arg(long = "will-model", default_value = "gemma3:27b")]
     pub will_model: String,
     #[arg(long = "memory-model", default_value = "gemma3n")]
     pub memory_model: String,
