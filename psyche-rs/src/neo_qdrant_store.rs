@@ -169,6 +169,61 @@ MERGE (i)-[:HAS_SENSATION]->(s)
         }
     }
 
+    async fn store_summary_impression(
+        &self,
+        summary: &StoredImpression,
+        linked_ids: &[String],
+    ) -> anyhow::Result<()> {
+        debug!(id = %summary.id, ?linked_ids, "store summary impression");
+        let query = r#"
+MERGE (i:Impression {uuid:$id})
+SET i.kind=$kind, i.when=datetime($when), i.how=$how, i.summary_of=$imps
+WITH i
+UNWIND $imps AS iid
+MATCH (o:Impression {uuid:iid})
+MERGE (i)-[:SUMMARIZES]->(o)
+WITH i
+UNWIND $sids AS sid
+MATCH (s:Sensation {uuid:sid})
+MERGE (i)-[:HAS_SENSATION]->(s)
+"#;
+        let params = json!({
+            "id": summary.id,
+            "kind": summary.kind,
+            "when": summary.when.to_rfc3339(),
+            "how": summary.how,
+            "sids": summary.sensation_ids,
+            "imps": linked_ids,
+        });
+        self.post_neo_async(query, params).await?;
+
+        let vector = self.llm.embed(&summary.how).await.map_err(|e| anyhow!(e))?;
+        let qbody = json!({
+            "points": [{
+                "id": summary.id,
+                "vector": vector,
+                "payload": {"how": summary.how}
+            }]
+        });
+        let url = format!("{}/collections/impressions/points", self.qdrant_url);
+        debug!(url = %url, "storing embedding to qdrant");
+        let resp = self
+            .client
+            .put(url)
+            .json(&qbody)
+            .send()
+            .await
+            .context("qdrant insert failed")?;
+        if resp.status().is_success() {
+            Ok(())
+        } else {
+            let status = resp.status();
+            let body = resp.text().await.unwrap_or_default();
+            error!(status = %status, %body, "qdrant error");
+            Err(anyhow!("qdrant error: {}", body))
+        }
+    }
+
     async fn add_lifecycle_stage(
         &self,
         impression_id: &str,
@@ -420,6 +475,43 @@ mod tests {
         store.store_impression(&imp).await.unwrap();
 
         assert_eq!(neo_mock.hits(), 2);
+        assert_eq!(q_mock.hits(), 1);
+    }
+
+    #[tokio::test]
+    async fn store_summary_impression_creates_links() {
+        let neo = MockServer::start();
+        let qdrant = MockServer::start();
+
+        let neo_mock = neo.mock(|when, then| {
+            when.method(POST)
+                .path("/db/neo4j/tx/commit")
+                .body_contains("SUMMARIZES");
+            then.status(200);
+        });
+        let q_mock = qdrant.mock(|when, then| {
+            when.method(PUT);
+            then.status(200);
+        });
+
+        let llm = std::sync::Arc::new(StaticLLM::new(""));
+        let store = NeoQdrantMemoryStore::new(neo.url(""), "u", "p", qdrant.url(""), llm);
+
+        let summary = StoredImpression {
+            id: "s".into(),
+            kind: "Summary".into(),
+            when: Utc::now(),
+            how: "sum".into(),
+            sensation_ids: Vec::new(),
+            impression_ids: vec!["i1".into(), "i2".into()],
+        };
+
+        store
+            .store_summary_impression(&summary, &summary.impression_ids)
+            .await
+            .unwrap();
+
+        assert_eq!(neo_mock.hits(), 1);
         assert_eq!(q_mock.hits(), 1);
     }
 

@@ -164,35 +164,13 @@ impl MemoryStore for InMemoryStore {
     async fn store_summary_impression(
         &self,
         summary: &StoredImpression,
-        linked_ids: &[String],
+        _linked_ids: &[String],
     ) -> anyhow::Result<()> {
-        let mut to_remove_sids = Vec::new();
-        {
-            let imps = self.impressions.lock().unwrap();
-            for id in linked_ids {
-                if let Some(imp) = imps.get(id) {
-                    to_remove_sids.extend(imp.sensation_ids.iter().cloned());
-                }
-            }
-        }
-        {
-            let mut imps = self.impressions.lock().unwrap();
-            for id in linked_ids {
-                imps.remove(id);
-            }
-            imps.entry(summary.id.clone())
-                .or_insert_with(|| summary.clone());
-        }
-        let imps = self.impressions.lock().unwrap();
-        let mut sensations = self.sensations.lock().unwrap();
-        for sid in to_remove_sids {
-            let still_used = imps
-                .values()
-                .any(|imp| imp.sensation_ids.iter().any(|s| s == &sid));
-            if !still_used {
-                sensations.remove(&sid);
-            }
-        }
+        self.impressions
+            .lock()
+            .unwrap()
+            .entry(summary.id.clone())
+            .or_insert_with(|| summary.clone());
         Ok(())
     }
 
@@ -548,8 +526,8 @@ mod integration_tests {
             .await
             .unwrap();
 
-        assert_eq!(store.impression_count(), 1);
-        assert_eq!(store.sensation_count(), 0);
+        assert_eq!(store.impression_count(), 3);
+        assert_eq!(store.sensation_count(), 2);
     }
 
     #[tokio::test]
@@ -575,7 +553,7 @@ mod integration_tests {
             .await
             .unwrap();
 
-        assert_eq!(store.impression_count(), 2);
+        assert_eq!(store.impression_count(), 3);
         assert_eq!(store.sensation_count(), 1);
     }
 
