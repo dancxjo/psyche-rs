@@ -13,6 +13,7 @@ pub mod logging_motor;
 pub mod look_sensor;
 pub mod memory_consolidation_motor;
 pub mod memory_consolidation_sensor;
+pub mod memory_consolidation_service;
 pub mod memory_helpers;
 pub mod mouth;
 pub mod recall_motor;

@@ -2,6 +2,7 @@ use clap::Parser;
 use daringsby::args::Args;
 use std::sync::Arc;
 
+use daringsby::memory_consolidation_service::MemoryConsolidationService;
 use daringsby::memory_helpers::{ensure_impressions_collection_exists, persist_impression};
 use daringsby::{CanvasStream, LookSensor, VisionSensor};
 use daringsby::{
@@ -14,7 +15,7 @@ use daringsby::{
 };
 use futures::StreamExt;
 use futures::stream::BoxStream;
-use psyche_rs::MemoryStore;
+use psyche_rs::{ClusterAnalyzer, MemoryStore};
 use psyche_rs::{
     Combobulator, Impression, ImpressionStreamSensor, Motor, MotorExecutor, NeoQdrantMemoryStore,
     Sensor, Voice, Will, Wit, shutdown_signal,
@@ -152,6 +153,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .delay_ms(0);
 
     let (situ_tx, situ_rx) = unbounded_channel();
+    let mut consolidation_guard = consolidation_status.clone().map(|status| {
+        let analyzer = Arc::new(ClusterAnalyzer::new(store.clone(), llms.memory.clone()));
+        MemoryConsolidationService::new(analyzer, status, std::time::Duration::from_secs(60))
+            .spawn()
+    });
 
     let mut svg_guard = svg_rx.take().map(|mut rx| {
         let stream = canvas.clone();
@@ -232,6 +238,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     }
 
     if let Some(mut g) = svg_guard {
+        g.abort();
+    }
+    if let Some(mut g) = consolidation_guard {
         g.abort();
     }
     stream.abort_tasks();
