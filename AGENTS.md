@@ -51,3 +51,4 @@
 - Use `tracing-test` with the `no-env-filter` feature when verifying log output.
 - Ensure `persist_impression` checks for existing sensations via `find_sensation` to avoid duplicates.
 - When mapping Neo4j nodes to structs, alias the `uuid` property to the `id` field.
+- Link summary impressions to originals using a :SUMMARIZES relationship in Neo4j.
