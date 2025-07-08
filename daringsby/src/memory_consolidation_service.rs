@@ -17,8 +17,6 @@ use crate::memory_consolidation_sensor::ConsolidationStatus;
 /// use psyche_rs::{ClusterAnalyzer, InMemoryStore, StoredImpression, MemoryStore};
 /// use chrono::Utc;
 /// use std::sync::Arc;
-/// use std::time::Duration;
-/// use tokio::sync::Mutex;
 /// use futures::stream;
 /// struct EchoLLM;
 /// #[async_trait::async_trait]
