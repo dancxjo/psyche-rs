@@ -1,4 +1,4 @@
-use crate::llm::types::{Token, TokenStream};
+use crate::llm::types::Token;
 use crate::{
     LLMClient,
     memory_store::{MemoryStore, StoredImpression},
@@ -76,7 +76,7 @@ impl<M: MemoryStore + Send + Sync, C: LLMClient + ?Sized> ClusterAnalyzer<M, C> 
                 sentences.push(imp.how);
             }
             let prompt = format!(
-                "Summarize the following related memories into one natural sentence that best describes their common theme:\n{}",
+                "Summarize the following related memories into one natural sentence that best describes their common theme. If they are irrelevant, repetitive, or incorrect, reply with {{DELETE}} instead:\n{}",
                 sentences.join("\n")
             );
             tracing::trace!(?prompt, "summary_prompt");
@@ -92,18 +92,25 @@ impl<M: MemoryStore + Send + Sync, C: LLMClient + ?Sized> ClusterAnalyzer<M, C> 
                 out.push_str(&text);
             }
             tracing::debug!(%out, "llm full response");
-            let summary = StoredImpression {
-                id: uuid::Uuid::new_v4().to_string(),
-                kind: "Summary".into(),
-                when: Utc::now(),
-                how: out.trim().to_string(),
-                sensation_ids: Vec::new(),
-                impression_ids: cluster.clone(),
-            };
-            self.store
-                .store_summary_impression(&summary, &cluster)
-                .await?;
-            summaries.push(summary);
+            let out_trim = out.trim();
+            if out_trim == "{{DELETE}}" {
+                for id in &cluster {
+                    self.store.delete_impression(id).await?;
+                }
+            } else {
+                let summary = StoredImpression {
+                    id: uuid::Uuid::new_v4().to_string(),
+                    kind: "Summary".into(),
+                    when: Utc::now(),
+                    how: out_trim.to_string(),
+                    sensation_ids: Vec::new(),
+                    impression_ids: cluster.clone(),
+                };
+                self.store
+                    .store_summary_impression(&summary, &cluster)
+                    .await?;
+                summaries.push(summary);
+            }
         }
         Ok(summaries)
     }
@@ -177,5 +184,34 @@ mod tests {
         let sum = &sums[0];
         assert_eq!(sum.kind, "Summary");
         assert_eq!(sum.impression_ids, vec!["i1", "i2"]);
+    }
+
+    #[tokio::test]
+    async fn deletes_cluster_when_llm_requests() {
+        let store = InMemoryStore::new();
+        let imp = StoredImpression {
+            id: "del1".into(),
+            kind: "Instant".into(),
+            when: Utc::now(),
+            how: "noise".into(),
+            sensation_ids: Vec::new(),
+            impression_ids: Vec::new(),
+        };
+        store.store_impression(&imp).await.unwrap();
+
+        let llm = Arc::new(StaticLLM {
+            reply: "{{DELETE}}".into(),
+        });
+        let analyzer = ClusterAnalyzer::new(store, llm);
+        analyzer.summarize(vec![vec!["del1".into()]]).await.unwrap();
+        assert_eq!(
+            analyzer
+                .store
+                .fetch_recent_impressions(1)
+                .await
+                .unwrap()
+                .len(),
+            0
+        );
     }
 }

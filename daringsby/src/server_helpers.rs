@@ -11,7 +11,7 @@ pub async fn run_server(
     vision: Arc<VisionSensor>,
     canvas: Arc<CanvasStream>,
     args: &Args,
-    mut shutdown: impl Future<Output = ()> + Send + 'static,
+    shutdown: impl Future<Output = ()> + Send + 'static,
 ) -> AbortGuard {
     let app = stream
         .clone()

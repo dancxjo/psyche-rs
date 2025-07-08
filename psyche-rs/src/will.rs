@@ -46,6 +46,7 @@ pub fn safe_prefix(s: &str, max_bytes: usize) -> &str {
 
 /// Build a case-insensitive [`Regex`] matching any of the provided motor names
 /// as an opening XML tag.
+#[allow(dead_code)]
 pub fn build_motor_regex(motors: &[MotorDescription]) -> Regex {
     if motors.is_empty() {
         // Match nothing when no motors are registered.

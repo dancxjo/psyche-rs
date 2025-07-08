@@ -456,6 +456,30 @@ RETURN i, collect(DISTINCT s) AS sens, collect(DISTINCT l) AS stages
         }
         Ok((imp, sens, stages))
     }
+
+    async fn delete_impression(&self, impression_id: &str) -> anyhow::Result<()> {
+        let query = "MATCH (i:Impression {uuid:$id}) DETACH DELETE i";
+        let params = json!({"id": impression_id});
+        self.post_neo_async(query, params).await?;
+
+        let url = format!("{}/collections/impressions/points/delete", self.qdrant_url);
+        let body = json!({"points": [impression_id]});
+        let resp = self
+            .client
+            .post(url)
+            .json(&body)
+            .send()
+            .await
+            .context("qdrant delete failed")?;
+        if resp.status().is_success() {
+            Ok(())
+        } else {
+            let status = resp.status();
+            let text = resp.text().await.unwrap_or_default();
+            error!(status = %status, %text, "qdrant error");
+            Err(anyhow!("qdrant error: {}", text))
+        }
+    }
 }
 
 #[cfg(test)]

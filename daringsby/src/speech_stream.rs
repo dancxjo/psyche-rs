@@ -31,6 +31,7 @@ use tracing::{error, warn};
 pub struct SpeechStream {
     tts_rx: Arc<Mutex<Receiver<Bytes>>>,
     text_rx: Arc<Mutex<Receiver<String>>>,
+    #[allow(dead_code)]
     text_tx: Sender<String>,
     segment_rx: Arc<Mutex<Receiver<SpeechSegment>>>,
     heard_tx: Sender<String>,
@@ -48,7 +49,7 @@ impl SpeechStream {
         let (heard_tx, _) = broadcast::channel(32);
         let (user_tx, _) = broadcast::channel(32);
         let (text_tx, text_rx_out) = broadcast::channel(32);
-        let mut stream = Self {
+        let stream = Self {
             tts_rx: Arc::new(Mutex::new(audio_rx)),
             text_rx: Arc::new(Mutex::new(text_rx_out)),
             text_tx: text_tx.clone(),

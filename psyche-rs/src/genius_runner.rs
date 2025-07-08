@@ -4,9 +4,6 @@ use std::time::Duration;
 
 use tracing::{debug, error, info};
 
-use core_affinity::CoreId;
-
-use crate::ThreadLocalContext;
 use crate::genius::Genius;
 
 /// Launches a [`Genius`] on its own OS thread.

@@ -52,8 +52,8 @@ pub fn build_motors(
 ) {
     let mut motors: Vec<Arc<dyn Motor>> = Vec::new();
     let mut map: HashMap<String, Arc<dyn Motor>> = HashMap::new();
-    let mut svg_rx_opt: Option<UnboundedReceiver<String>> = None;
-    let mut look_rx_opt: Option<UnboundedReceiver<Vec<Sensation<String>>>> = None;
+    let svg_rx_opt: Option<UnboundedReceiver<String>>;
+    let look_rx_opt: Option<UnboundedReceiver<Vec<Sensation<String>>>>;
 
     let status: Option<Arc<Mutex<ConsolidationStatus>>> =
         Some(Arc::new(Mutex::new(ConsolidationStatus::default())));

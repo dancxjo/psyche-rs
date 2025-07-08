@@ -12,6 +12,7 @@ pub mod log_memory_motor;
 pub mod log_sensation_layer;
 pub mod logging_motor;
 pub mod look_sensor;
+pub mod memory_cleanup_service;
 pub mod memory_consolidation_motor;
 pub mod memory_consolidation_sensor;
 pub mod memory_consolidation_service;
