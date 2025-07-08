@@ -38,6 +38,27 @@ impl NeoQdrantMemoryStore {
         }
     }
 
+    /// Sanitize a string so it can be safely used as a Neo4j label.
+    ///
+    /// This replaces any character that is not alphanumeric with an underscore
+    /// and ensures the label starts with an alphabetic character. The returned
+    /// label is safe to embed directly in a Cypher query.
+    fn sanitize_label(label: &str) -> String {
+        let mut out: String = label
+            .chars()
+            .map(|c| if c.is_alphanumeric() { c } else { '_' })
+            .collect();
+        if out
+            .chars()
+            .next()
+            .map(|c| !c.is_ascii_alphabetic())
+            .unwrap_or(true)
+        {
+            out.insert(0, 'L');
+        }
+        out
+    }
+
     async fn post_neo_async(&self, query: &str, params: serde_json::Value) -> anyhow::Result<()> {
         debug!(?query, "posting cypher");
         let payload = json!({"statements":[{"statement": query, "parameters": params}]});
@@ -64,14 +85,18 @@ impl NeoQdrantMemoryStore {
 impl MemoryStore for NeoQdrantMemoryStore {
     async fn store_sensation(&self, sensation: &StoredSensation) -> anyhow::Result<()> {
         debug!(id = %sensation.id, "store sensation");
-        let query = "MERGE (s:Sensation {uuid: $id}) SET s.kind=$kind, s.when=datetime($when), s.data=$data";
+        let label = Self::sanitize_label(&sensation.kind);
+        let query = format!(
+            "MERGE (s:Sensation:`{}` {{uuid: $id}}) SET s.kind=$kind, s.when=datetime($when), s.data=$data",
+            label
+        );
         let params = json!({
             "id": sensation.id,
             "kind": sensation.kind,
             "when": sensation.when.to_rfc3339(),
             "data": sensation.data,
         });
-        self.post_neo_async(query, params).await
+        self.post_neo_async(&query, params).await
     }
 
     async fn find_sensation(
@@ -120,14 +145,15 @@ impl MemoryStore for NeoQdrantMemoryStore {
 
     async fn store_impression(&self, impression: &StoredImpression) -> anyhow::Result<()> {
         debug!(id = %impression.id, "store impression");
-        let query = r#"
-MERGE (i:Impression {uuid:$id})
+        let label = Self::sanitize_label(&impression.kind);
+        let query = format!(
+            r#"MERGE (i:Impression:`{label}` {{uuid:$id}})
 SET i.kind=$kind, i.when=datetime($when), i.how=$how, i.summary_of=$imps
 WITH i
 UNWIND $sids AS sid
-MATCH (s:Sensation {uuid:sid})
-MERGE (i)-[:HAS_SENSATION]->(s)
-"#;
+MATCH (s:Sensation {{uuid:sid}})
+MERGE (i)-[:HAS_SENSATION]->(s)"#
+        );
         let params = json!({
             "id": impression.id,
             "kind": impression.kind,
@@ -136,7 +162,7 @@ MERGE (i)-[:HAS_SENSATION]->(s)
             "sids": impression.sensation_ids,
             "imps": impression.impression_ids,
         });
-        self.post_neo_async(query, params).await?;
+        self.post_neo_async(&query, params).await?;
 
         let vector = self
             .llm
@@ -175,18 +201,19 @@ MERGE (i)-[:HAS_SENSATION]->(s)
         linked_ids: &[String],
     ) -> anyhow::Result<()> {
         debug!(id = %summary.id, ?linked_ids, "store summary impression");
-        let query = r#"
-MERGE (i:Impression {uuid:$id})
+        let label = Self::sanitize_label(&summary.kind);
+        let query = format!(
+            r#"MERGE (i:Impression:`{label}` {{uuid:$id}})
 SET i.kind=$kind, i.when=datetime($when), i.how=$how, i.summary_of=$imps
 WITH i
 UNWIND $imps AS iid
-MATCH (o:Impression {uuid:iid})
+MATCH (o:Impression {{uuid:iid}})
 MERGE (i)-[:SUMMARIZES]->(o)
 WITH i
 UNWIND $sids AS sid
-MATCH (s:Sensation {uuid:sid})
-MERGE (i)-[:HAS_SENSATION]->(s)
-"#;
+MATCH (s:Sensation {{uuid:sid}})
+MERGE (i)-[:HAS_SENSATION]->(s)"#
+        );
         let params = json!({
             "id": summary.id,
             "kind": summary.kind,
@@ -195,7 +222,7 @@ MERGE (i)-[:HAS_SENSATION]->(s)
             "sids": summary.sensation_ids,
             "imps": linked_ids,
         });
-        self.post_neo_async(query, params).await?;
+        self.post_neo_async(&query, params).await?;
 
         let vector = self.llm.embed(&summary.how).await.map_err(|e| anyhow!(e))?;
         let qbody = json!({
@@ -444,8 +471,12 @@ mod tests {
         let neo = MockServer::start();
         let qdrant = MockServer::start();
 
-        let neo_mock = neo.mock(|when, then| {
-            when.method(POST);
+        let neo_sens_mock = neo.mock(|when, then| {
+            when.method(POST).body_contains("Sensation:`test`");
+            then.status(200);
+        });
+        let neo_imp_mock = neo.mock(|when, then| {
+            when.method(POST).body_contains(":`Situation`");
             then.status(200);
         });
         let q_mock = qdrant.mock(|when, then| {
@@ -474,8 +505,33 @@ mod tests {
         };
         store.store_impression(&imp).await.unwrap();
 
-        assert_eq!(neo_mock.hits(), 2);
+        assert_eq!(neo_sens_mock.hits(), 1);
+        assert_eq!(neo_imp_mock.hits(), 1);
         assert_eq!(q_mock.hits(), 1);
+    }
+
+    #[tokio::test]
+    async fn store_sensation_uses_kind_label() {
+        let neo = MockServer::start();
+        let qdrant = MockServer::start();
+
+        let neo_mock = neo.mock(|when, then| {
+            when.method(POST).body_contains(":`test`");
+            then.status(200);
+        });
+
+        let llm = std::sync::Arc::new(StaticLLM::new(""));
+        let store = NeoQdrantMemoryStore::new(neo.url(""), "u", "p", qdrant.url(""), llm);
+
+        let sens = StoredSensation {
+            id: "s1".into(),
+            kind: "test".into(),
+            when: Utc::now(),
+            data: "{}".into(),
+        };
+        store.store_sensation(&sens).await.unwrap();
+
+        assert_eq!(neo_mock.hits(), 1);
     }
 
     #[tokio::test]
@@ -486,7 +542,8 @@ mod tests {
         let neo_mock = neo.mock(|when, then| {
             when.method(POST)
                 .path("/db/neo4j/tx/commit")
-                .body_contains("SUMMARIZES");
+                .body_contains("SUMMARIZES")
+                .body_contains(":`Summary`");
             then.status(200);
         });
         let q_mock = qdrant.mock(|when, then| {
