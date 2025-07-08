@@ -52,3 +52,5 @@
 - Ensure `persist_impression` checks for existing sensations via `find_sensation` to avoid duplicates.
 - When mapping Neo4j nodes to structs, alias the `uuid` property to the `id` field.
 - Link summary impressions to originals using a :SUMMARIZES relationship in Neo4j.
+- Forward `info`, `warn`, and `error` logs to the Combobulator as
+  `log.system` sensations using `LogSensationLayer`.

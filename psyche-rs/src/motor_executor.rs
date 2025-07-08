@@ -119,8 +119,9 @@ impl MotorExecutor {
 
     /// Queue an intention for execution.
     pub fn spawn_intention(&self, intention: Intention) {
+        let summary = intention.summary();
         if let Err(e) = self.tx.try_send(intention) {
-            warn!(?e, "Motor queue full; dropping intention");
+            warn!(?e, "Motor queue full; dropping intention {}", summary);
         }
     }
 }

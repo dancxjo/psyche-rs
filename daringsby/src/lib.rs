@@ -9,6 +9,7 @@ pub mod heard_user_sensor;
 pub mod heartbeat;
 pub mod log_file;
 pub mod log_memory_motor;
+pub mod log_sensation_layer;
 pub mod logging_motor;
 pub mod look_sensor;
 pub mod memory_cleanup_service;

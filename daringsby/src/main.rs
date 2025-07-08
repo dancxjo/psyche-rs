@@ -18,7 +18,7 @@ use futures::stream::BoxStream;
 use psyche_rs::{ClusterAnalyzer, MemoryStore};
 use psyche_rs::{
     Combobulator, Impression, ImpressionStreamSensor, Motor, MotorExecutor, NeoQdrantMemoryStore,
-    Sensor, Voice, Will, Wit, shutdown_signal,
+    SensationSensor, Sensor, Voice, Will, shutdown_signal,
 };
 use reqwest::Client;
 use tokio::sync::mpsc::unbounded_channel;
@@ -89,7 +89,8 @@ async fn run_voice(
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    logger::init();
+    let (log_tx, log_rx) = tokio::sync::mpsc::unbounded_channel();
+    logger::try_init_with_sender(log_tx).expect("logger init");
     let args = Args::parse();
 
     let (quick_llm, combob_llm, will_llm, memory_llm) = build_ollama_clients(&args);
@@ -143,6 +144,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     ));
 
     let mut sensors = build_sensors(stream.clone(), consolidation_status.clone());
+    sensors.push(Box::new(SensationSensor::new(log_rx)) as Box<dyn Sensor<String> + Send>);
     if let Some(rx) = look_rx.take() {
         sensors.push(Box::new(LookSensor::new(rx)) as Box<dyn Sensor<String> + Send>);
     }
