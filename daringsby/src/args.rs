@@ -15,13 +15,13 @@ pub struct Args {
     /// Base URL of the server used for memory operations.
     #[arg(long = "memory-url", default_value = "http://localhost:11434")]
     pub memory_url: String,
-    #[arg(long = "quick-model", default_value = "gemma3n")]
+    #[arg(long = "quick-model", default_value = "gemma3:27b")]
     pub quick_model: String,
-    #[arg(long = "combob-model", default_value = "gemma3n")]
+    #[arg(long = "combob-model", default_value = "gemma3:27b")]
     pub combob_model: String,
     #[arg(long = "will-model", default_value = "gemma3:27b")]
     pub will_model: String,
-    #[arg(long = "memory-model", default_value = "gemma3n")]
+    #[arg(long = "memory-model", default_value = "gemma3:27b")]
     pub memory_model: String,
     /// Base URL of the Ollama server dedicated to the voice loop.
     #[arg(long = "voice-url", default_value = "http://localhost:11434")]
