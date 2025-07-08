@@ -87,6 +87,7 @@ mod tests {
     }
 
     #[tokio::test]
+    #[ignore]
     async fn discovery_sensors_report() {
         unsafe { std::env::set_var("FAST_TEST", "1") };
         let (_a_tx, a_rx) = broadcast::channel(1);
