@@ -14,7 +14,9 @@ use crate::{
 pub struct MotorExecutor {
     tx: mpsc::Sender<Intention>,
     _guards: Vec<AbortGuard>,
+    #[allow(dead_code)]
     store: Option<Arc<dyn MemoryStore + Send + Sync>>,
+    #[allow(dead_code)]
     actions: Option<Arc<RecentActionsLog>>,
 }
 

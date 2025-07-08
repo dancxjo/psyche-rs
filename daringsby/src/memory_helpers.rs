@@ -85,23 +85,9 @@ pub async fn ensure_impressions_collection_exists(
         }
     });
     let resp = client.put(url).json(&body).send().await?;
-
-    {
-        let status = resp.status();
-        let body = resp.text().await.unwrap_or_default();
-        debug!(%status, %body, "qdrant create response");
-        // resp is consumed here, so we need to return after debug or refetch
-        return if status.is_success() {
-            info!("impressions collection created");
-            Ok(())
-        } else {
-            error!(%status, %body, "failed to create collection");
-            anyhow::bail!("failed to create collection: {status}");
-        };
-    }
-
     let status = resp.status();
     let body = resp.text().await.unwrap_or_default();
+    debug!(%status, %body, "qdrant create response");
     if status.is_success() {
         info!("impressions collection created");
         Ok(())

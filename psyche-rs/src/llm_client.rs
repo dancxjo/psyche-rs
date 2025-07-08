@@ -4,7 +4,7 @@ use std::sync::Arc;
 
 use ollama_rs::generation::chat::ChatMessage;
 
-use crate::llm::types::{Token, TokenStream};
+use crate::llm::types::TokenStream;
 
 /// Common interface for chat-based LLMs.
 #[async_trait]

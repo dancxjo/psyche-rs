@@ -4,7 +4,7 @@ use serde_json::{Map, Value};
 use std::sync::{Arc, Mutex};
 use tokio::sync::mpsc::{UnboundedSender, unbounded_channel};
 use tokio_stream::wrappers::UnboundedReceiverStream;
-use tracing::{debug, error, trace, warn};
+use tracing::{debug, trace, warn};
 use xmlparser::{ElementEnd, Token as XmlToken, Tokenizer};
 
 use crate::llm::types::{Token, TokenStream};
@@ -16,7 +16,7 @@ fn try_start_tag(buf: &str) -> Option<(usize, String, Map<String, Value>, bool)>
     }
     let gt = buf.find('>')? + 1;
     let segment = &buf[..gt];
-    let mut tokenizer = Tokenizer::from_fragment(segment, 0..segment.len());
+    let tokenizer = Tokenizer::from_fragment(segment, 0..segment.len());
     let mut tag = None;
     let mut attrs = Map::new();
     let mut self_close = false;

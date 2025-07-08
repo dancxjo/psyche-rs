@@ -101,6 +101,14 @@ pub trait MemoryStore {
         Vec<StoredSensation>,
         HashMap<String, String>,
     )>;
+
+    /// Delete an impression and any related lifecycle stages or vector
+    /// embeddings. Implementations should handle missing impressions
+    /// gracefully by returning `Ok(())`.
+    async fn delete_impression(&self, impression_id: &str) -> anyhow::Result<()> {
+        let _ = impression_id;
+        Ok(())
+    }
 }
 
 /// Simple in-memory implementation used for tests. This does **not** provide
@@ -233,6 +241,12 @@ impl MemoryStore for InMemoryStore {
             .unwrap_or_default();
         Ok((imp, sens, stages))
     }
+
+    async fn delete_impression(&self, impression_id: &str) -> anyhow::Result<()> {
+        self.impressions.lock().unwrap().remove(impression_id);
+        self.lifecycle.lock().unwrap().remove(impression_id);
+        Ok(())
+    }
 }
 
 #[async_trait]
@@ -301,6 +315,10 @@ where
         HashMap<String, String>,
     )> {
         (**self).load_full_impression(impression_id).await
+    }
+
+    async fn delete_impression(&self, impression_id: &str) -> anyhow::Result<()> {
+        (**self).delete_impression(impression_id).await
     }
 }
 
@@ -569,5 +587,17 @@ mod integration_tests {
             .unwrap()
             .expect("sensation found");
         assert_eq!(found.id, s.id);
+    }
+
+    #[tokio::test]
+    async fn delete_impression_removes_it() {
+        let store = InMemoryStore::new();
+        let s = make_sensation("d1");
+        store.store_sensation(&s).await.unwrap();
+        let imp = make_impression("i_del", vec![s.id.clone()]);
+        store.store_impression(&imp).await.unwrap();
+        assert_eq!(store.impression_count(), 1);
+        store.delete_impression(&imp.id).await.unwrap();
+        assert_eq!(store.impression_count(), 0);
     }
 }
