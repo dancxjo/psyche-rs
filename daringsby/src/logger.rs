@@ -1,4 +1,8 @@
-use tracing_subscriber::{EnvFilter, fmt};
+use tokio::sync::mpsc::UnboundedSender;
+use tracing_subscriber::{EnvFilter, fmt, prelude::*};
+
+use crate::log_sensation_layer::LogSensationLayer;
+use psyche_rs::Sensation;
 
 /// Initializes tracing using the `RUST_LOG` environment variable.
 ///
@@ -22,4 +26,17 @@ pub fn init() {
 pub fn try_init() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     let filter = EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("debug"));
     fmt().with_env_filter(filter).try_init().map_err(Into::into)
+}
+
+/// Initializes tracing with an additional [`LogSensationLayer`].
+pub fn try_init_with_sender(
+    tx: UnboundedSender<Vec<Sensation<String>>>,
+) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+    let filter = EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("debug"));
+    tracing_subscriber::registry()
+        .with(filter)
+        .with(fmt::layer())
+        .with(LogSensationLayer::new(tx))
+        .try_init()
+        .map_err(Into::into)
 }

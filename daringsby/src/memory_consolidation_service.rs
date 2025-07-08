@@ -10,7 +10,9 @@ use crate::memory_consolidation_sensor::ConsolidationStatus;
 /// Periodically consolidates memories into summaries using [`ClusterAnalyzer`].
 ///
 /// # Example
-/// ```
+/// ```no_run
+/// use tokio::sync::Mutex;
+/// use std::time::Duration;
 /// use daringsby::memory_consolidation_service::MemoryConsolidationService;
 /// use psyche_rs::{ClusterAnalyzer, InMemoryStore, StoredImpression, MemoryStore};
 /// use chrono::Utc;
