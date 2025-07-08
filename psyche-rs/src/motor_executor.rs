@@ -40,8 +40,16 @@ impl MotorExecutor {
             let semaphore = semaphore.clone();
             let actions = actions_cloned;
             async move {
-                while let Some(intention) = rx.recv().await {
-                    let permit = semaphore.clone().acquire_owned().await.unwrap();
+                loop {
+                    // Wait for an available worker before pulling from the queue
+                    let permit = match semaphore.clone().acquire_owned().await {
+                        Ok(p) => p,
+                        Err(_) => break,
+                    };
+                    let Some(intention) = rx.recv().await else {
+                        drop(permit);
+                        break;
+                    };
                     let motors = motors.clone();
                     let store = store_cloned.clone();
                     let actions = actions.clone();
