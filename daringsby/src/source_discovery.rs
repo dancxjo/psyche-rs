@@ -21,7 +21,7 @@ fn interval_secs() -> u64 {
     if std::env::var("FAST_TEST").is_ok() {
         0
     } else {
-        60
+        420
     }
 }
 
@@ -69,8 +69,8 @@ pub fn set_fast_test_env() {
 /// Each batch contains a single sensation with the text
 /// `"I know that this is from my own source code: {chunk}"` where `{chunk}`
 /// is the contents of a Rust source file. The sensor cycles through all
-/// `.rs` files in the crate, sleeping for one or two seconds (with jitter)
-/// between emissions.
+/// `.rs` files in the crate, sleeping for roughly seven minutes between
+/// emissions.
 ///
 /// Set `SOURCE_DISCOVERY_ABORT=1` to abort the stream early or
 /// `SOURCE_DISCOVERY_CYCLES=N` to stop after `N` full iterations over all
