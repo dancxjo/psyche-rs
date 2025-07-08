@@ -10,11 +10,14 @@ use crate::memory_consolidation_sensor::ConsolidationStatus;
 /// Periodically consolidates memories into summaries using [`ClusterAnalyzer`].
 ///
 /// # Example
-/// ```
+/// ```no_run
 /// use daringsby::memory_consolidation_service::MemoryConsolidationService;
 /// use psyche_rs::{ClusterAnalyzer, InMemoryStore, StoredImpression, MemoryStore};
 /// use chrono::Utc;
 /// use std::sync::Arc;
+/// use std::time::Duration;
+/// use tokio::sync::Mutex;
+/// use futures::stream;
 /// struct EchoLLM;
 /// #[async_trait::async_trait]
 /// impl psyche_rs::LLMClient for EchoLLM {
