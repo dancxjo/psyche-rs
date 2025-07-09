@@ -18,6 +18,7 @@ pub mod memory_consolidation_sensor;
 pub mod memory_consolidation_service;
 pub mod memory_graph;
 pub mod memory_helpers;
+pub mod memory_projection;
 pub mod mouth;
 pub mod recall_motor;
 pub mod recall_sensor;
@@ -47,6 +48,7 @@ pub mod streams;
 
 pub use face_embedding_service::{FaceData, FaceEmbedder, FaceEmbeddingService};
 pub use memory_graph::MemoryGraph;
+pub use memory_projection::MemoryProjectionService;
 pub use motors::*;
 pub use sensors::*;
 pub use streams::*;
