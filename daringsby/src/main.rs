@@ -9,6 +9,7 @@ use daringsby::memory_helpers::{
 };
 use daringsby::{LookSensor, VisionSensor};
 use daringsby::{
+    face_gallery::FaceGallery,
     llm_helpers::{build_ollama_clients, build_voice_llm},
     logger,
     memory_graph::MemoryGraph,
@@ -118,11 +119,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         llms.memory.clone(),
     ));
     let memory_router = Arc::new(MemoryGraph::new(store.clone())).router();
+    let face_router = Arc::new(FaceGallery::new(store.clone())).router();
 
     let mut server_guard = run_server(
         stream.clone(),
         vision.clone(),
-        memory_router,
+        memory_router.merge(face_router),
         &args,
         shutdown_signal(),
     )
