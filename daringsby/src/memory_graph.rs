@@ -37,13 +37,20 @@ impl MemoryGraph {
     }
 
     pub fn router(self: Arc<Self>) -> Router {
-        Router::new().route(
-            "/memory_graph.json",
-            get(move || {
-                let this = self.clone();
-                async move { Json(this.build_graph().await.unwrap_or_default()) }
-            }),
-        )
+        Router::new()
+            .route(
+                "/memory_graph.json",
+                get(move || {
+                    let this = self.clone();
+                    async move { Json(this.build_graph().await.unwrap_or_default()) }
+                }),
+            )
+            .route("/memory_viz.html", get(Self::viz))
+    }
+
+    async fn viz() -> impl axum::response::IntoResponse {
+        const PAGE: &str = include_str!("memory_viz.html");
+        axum::response::Html(PAGE)
     }
 
     async fn build_graph(&self) -> anyhow::Result<Vec<Node>> {
