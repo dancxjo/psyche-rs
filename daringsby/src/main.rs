@@ -135,10 +135,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .cloned()
         .map(|m| m as Arc<dyn Motor + Send + Sync>)
         .collect();
+    // Increased worker pool and queue capacity to handle bursts of
+    // intentions without dropping them.
     let executor = Arc::new(MotorExecutor::new(
         motors_send.clone(),
-        4,
-        16,
+        8,
+        64,
         Some(store.clone()),
         None,
     ));
