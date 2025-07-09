@@ -484,12 +484,20 @@ impl<T> Will<T> {
                             latest_moment: &'a str,
                             memories: &'a str,
                         }
+                        let memory_section = if neighbor_text.is_empty() {
+                            String::new()
+                        } else {
+                            format!(
+                                "Relevant memories:\n{}\nWhat's relevant among this?",
+                                neighbor_text
+                            )
+                        };
                         let ctx = Ctx {
                             situation: &situation,
                             motors: &motor_text,
                             latest_instant: &last_instant,
                             latest_moment: &last_moment,
-                            memories: &neighbor_text,
+                            memories: &memory_section,
                         };
                         let prompt = render_template(&template, &ctx).unwrap_or_else(|e| {
                             warn!(error=?e, "template render failed");
