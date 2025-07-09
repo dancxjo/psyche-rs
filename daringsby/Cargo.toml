@@ -40,13 +40,9 @@ qdrant-client = "1"
 tonic = "0.12"
 smartcore = "0.4"
 num-traits = "0.2"
-image = { version = "0.24", optional = true }
-opencv = { version = "0.88", optional = true }
-ort = { version = "2.0.0-rc.10", optional = true }
-
-[features]
-default = ["face-embedder"]
-face-embedder = ["image", "opencv", "ort"]
+image = { version = "0.24" }
+ort = { version = "2.0.0-rc.10" }
+opencv = "0.95.0"
 
 [dev-dependencies]
 httpmock = "0.7"
@@ -59,4 +55,5 @@ tokio-tungstenite = "0.21"
 tempfile = "3"
 serial_test = "2"
 tracing-test = { version = "0.2", features = ["no-env-filter"] }
+
 

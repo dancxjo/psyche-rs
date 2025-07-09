@@ -1045,17 +1045,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "derive_destructure2"
-version = "0.1.3"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "64b697ac90ff296f0fc031ee5a61c7ac31fb9fff50e3fb32873b09223613fc0c"
-dependencies = [
- "proc-macro2",
- "quote",
- "syn 2.0.104",
-]
-
-[[package]]
 name = "digest"
 version = "0.10.7"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1774,7 +1763,7 @@ dependencies = [
  "js-sys",
  "log",
  "wasm-bindgen",
- "windows-core",
+ "windows-core 0.61.2",
 ]
 
 [[package]]
@@ -2010,20 +1999,6 @@ checksum = "38f262f097c174adebe41eb73d66ae9c06b2844fb0da69969647bbddd9b0538a"
 dependencies = [
  "getrandom 0.3.3",
  "libc",
-]
-
-[[package]]
-name = "jobslot"
-version = "0.2.22"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "a3973e0bac2c73405dccca5630494c594f6e6b44b250335750b873246c29ecd6"
-dependencies = [
- "cfg-if",
- "derive_destructure2",
- "getrandom 0.3.3",
- "libc",
- "scopeguard",
- "windows-sys 0.60.2",
 ]
 
 [[package]]
@@ -2459,13 +2434,13 @@ checksum = "a4895175b425cb1f87721b59f0f286c2092bd4af812243672510e1ac53e2e0ad"
 
 [[package]]
 name = "opencv"
-version = "0.88.9"
+version = "0.95.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "1adf831acddcefe251e825b01d84bbd1142a6977e3ec1ba02edfbdbc17e863af"
+checksum = "72cb56a46a3c0c153bd07eb82c8d23da340c0dc876d6572d4d1ae6078558b0d4"
 dependencies = [
  "cc",
  "dunce",
- "jobslot",
+ "jobserver",
  "libc",
  "num-traits",
  "once_cell",
@@ -2474,13 +2449,14 @@ dependencies = [
  "semver",
  "shlex",
  "vcpkg",
+ "windows",
 ]
 
 [[package]]
 name = "opencv-binding-generator"
-version = "0.84.0"
+version = "0.97.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "6e842c276fd00b26100de550e2b47f6ded4f06213c62f0575cb7242aecde2efd"
+checksum = "010a78e4cc47ff85cf58fb1cbbbab9dcdb8e5e6718917eac26623f077872d012"
 dependencies = [
  "clang",
  "clang-sys",
@@ -2488,6 +2464,7 @@ dependencies = [
  "once_cell",
  "percent-encoding",
  "regex",
+ "shlex",
 ]
 
 [[package]]
@@ -4606,16 +4583,50 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "712e227841d057c1ee1cd2fb22fa7e5a5461ae8e48fa2ca79ec42cfc1931183f"
 
 [[package]]
+name = "windows"
+version = "0.59.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "7f919aee0a93304be7f62e8e5027811bbba96bcb1de84d6618be56e43f8a32a1"
+dependencies = [
+ "windows-core 0.59.0",
+ "windows-targets 0.53.2",
+]
+
+[[package]]
+name = "windows-core"
+version = "0.59.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "810ce18ed2112484b0d4e15d022e5f598113e220c53e373fb31e67e21670c1ce"
+dependencies = [
+ "windows-implement 0.59.0",
+ "windows-interface",
+ "windows-result",
+ "windows-strings 0.3.1",
+ "windows-targets 0.53.2",
+]
+
+[[package]]
 name = "windows-core"
 version = "0.61.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c0fdd3ddb90610c7638aa2b3a3ab2904fb9e5cdbecc643ddb3647212781c4ae3"
 dependencies = [
- "windows-implement",
+ "windows-implement 0.60.0",
  "windows-interface",
  "windows-link",
  "windows-result",
- "windows-strings",
+ "windows-strings 0.4.2",
+]
+
+[[package]]
+name = "windows-implement"
+version = "0.59.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "83577b051e2f49a058c308f17f273b570a6a758386fc291b5f6a934dd84e48c1"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn 2.0.104",
 ]
 
 [[package]]
@@ -4654,7 +4665,7 @@ checksum = "5b8a9ed28765efc97bbc954883f4e6796c33a06546ebafacbabee9696967499e"
 dependencies = [
  "windows-link",
  "windows-result",
- "windows-strings",
+ "windows-strings 0.4.2",
 ]
 
 [[package]]
@@ -4662,6 +4673,15 @@ name = "windows-result"
 version = "0.3.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "56f42bd332cc6c8eac5af113fc0c1fd6a8fd2aa08a0119358686e5160d0586c6"
+dependencies = [
+ "windows-link",
+]
+
+[[package]]
+name = "windows-strings"
+version = "0.3.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "87fa48cc5d406560701792be122a10132491cff9d0aeb23583cc2dcafc847319"
 dependencies = [
  "windows-link",
 ]
