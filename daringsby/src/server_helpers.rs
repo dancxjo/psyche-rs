@@ -4,12 +4,14 @@ use std::net::SocketAddr;
 use std::sync::Arc;
 
 use crate::{CanvasStream, SpeechStream, VisionSensor, args::Args};
+use axum::Router;
 
 /// Run the HTTP server exposing speech and vision streams.
 pub async fn run_server(
     stream: Arc<SpeechStream>,
     vision: Arc<VisionSensor>,
     canvas: Arc<CanvasStream>,
+    memory: Router,
     args: &Args,
     shutdown: impl Future<Output = ()> + Send + 'static,
 ) -> AbortGuard {
@@ -17,7 +19,8 @@ pub async fn run_server(
         .clone()
         .router()
         .merge(vision.clone().router())
-        .merge(canvas.clone().router());
+        .merge(canvas.clone().router())
+        .merge(memory);
     let addr: SocketAddr = format!("{}:{}", args.host, args.port)
         .parse()
         .expect("invalid addr");

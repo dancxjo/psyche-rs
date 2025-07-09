@@ -8,6 +8,7 @@ use daringsby::{CanvasStream, LookSensor, VisionSensor};
 use daringsby::{
     llm_helpers::{build_ollama_clients, build_voice_llm},
     logger,
+    memory_graph::MemoryGraph,
     motor_helpers::{LLMClients, build_motors},
     mouth_helpers::build_mouth,
     sensor_helpers::{build_ear, build_sensors},
@@ -105,14 +106,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let (mouth, stream) = build_mouth(&args).await?;
     let vision = Arc::new(VisionSensor::default());
     let canvas = Arc::new(CanvasStream::default());
-    let mut server_handle = run_server(
-        stream.clone(),
-        vision.clone(),
-        canvas.clone(),
-        &args,
-        shutdown_signal(),
-    )
-    .await;
 
     let store = Arc::new(NeoQdrantMemoryStore::new(
         &args.neo4j_url,
@@ -121,6 +114,18 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         &args.qdrant_url,
         llms.memory.clone(),
     ));
+    let memory_router = Arc::new(MemoryGraph::new(store.clone())).router();
+
+    let mut server_handle = run_server(
+        stream.clone(),
+        vision.clone(),
+        canvas.clone(),
+        memory_router,
+        &args,
+        shutdown_signal(),
+    )
+    .await;
+
     let qdrant_url = Url::parse(&args.qdrant_url)?;
     ensure_impressions_collection_exists(&Client::new(), &qdrant_url).await?;
     let (motors, _motor_map, consolidation_status, mut svg_rx, mut look_rx) = build_motors(
