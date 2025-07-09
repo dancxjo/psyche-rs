@@ -186,10 +186,12 @@ where
         for m in self.motors.iter() {
             will.register_motor(m.as_ref());
         }
+        // Use a larger worker pool and queue to reduce dropped intentions when
+        // motors are slow to respond.
         let executor = crate::MotorExecutor::new(
             self.motors.clone(),
-            4,
-            16,
+            8,
+            64,
             self.store.clone(),
             Some(action_log.clone()),
         );
