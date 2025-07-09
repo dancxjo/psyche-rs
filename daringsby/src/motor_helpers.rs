@@ -21,6 +21,9 @@ use crate::SourceSearchMotor;
 
 use crate::BatteryMotor;
 use crate::SourceTreeMotor;
+use crate::identify_motor::IdentifyMotor;
+use reqwest::Client;
+use url::Url;
 
 /// Container for the four LLM clients used by Daringsby.
 pub struct LLMClients {
@@ -38,6 +41,9 @@ pub fn build_motors(
     mouth: Arc<Mouth>,
     vision: Arc<VisionSensor>,
     store: Arc<dyn MemoryStore + Send + Sync>,
+    neo4j_url: Url,
+    neo4j_user: String,
+    neo4j_pass: String,
 ) -> (
     Vec<Arc<dyn Motor>>,
     Arc<HashMap<String, Arc<dyn Motor>>>,
@@ -118,6 +124,19 @@ pub fn build_motors(
         let source_tree_motor = Arc::new(SourceTreeMotor::new(tree_tx));
         motors.push(source_tree_motor.clone());
         map.insert("source_tree".into(), source_tree_motor);
+    }
+
+    {
+        let (id_tx, _) = unbounded_channel::<Vec<Sensation<serde_json::Value>>>();
+        let identify_motor = Arc::new(IdentifyMotor::new(
+            Client::new(),
+            neo4j_url.clone(),
+            neo4j_user.clone(),
+            neo4j_pass.clone(),
+            id_tx,
+        ));
+        motors.push(identify_motor.clone());
+        map.insert("identify".into(), identify_motor);
     }
 
     {

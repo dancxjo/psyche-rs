@@ -137,8 +137,15 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         std::time::Duration::from_secs(60),
     )
     .spawn();
-    let (motors, _motor_map, consolidation_status, mut look_rx) =
-        build_motors(&llms, mouth.clone(), vision.clone(), store.clone());
+    let (motors, _motor_map, consolidation_status, mut look_rx) = build_motors(
+        &llms,
+        mouth.clone(),
+        vision.clone(),
+        store.clone(),
+        Url::parse(&args.neo4j_url)?,
+        args.neo4j_user.clone(),
+        args.neo4j_pass.clone(),
+    );
     let motors_send: Vec<Arc<dyn Motor + Send + Sync>> = motors
         .iter()
         .cloned()
