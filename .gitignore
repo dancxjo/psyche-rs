@@ -33,3 +33,4 @@ whisper-base.en.bin
 /vendor/
 cert.pem
 key.pem
+scripts/embedding_positions.json

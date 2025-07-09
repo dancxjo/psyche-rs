@@ -19,10 +19,11 @@ def main():
     args = parser.parse_args()
 
     client = QdrantClient(url=args.qdrant)
-    points, _ = client.scroll(collection_name="impressions", with_payload=True, limit=args.limit)
+    points, _ = client.scroll(collection_name="impressions", with_payload=True, limit=args.limit, with_vectors=True)
     if not points:
         print("No embeddings found")
         return
+    print(f"Found {len(points)} embeddings {points[10]}")
     ids = [p.id for p in points]
     vecs = [p.vector for p in points]
 
