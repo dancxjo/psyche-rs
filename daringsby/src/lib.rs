@@ -1,5 +1,6 @@
 pub mod battery_motor;
 pub mod battery_sensor;
+pub mod canvas_stream;
 pub mod development_status;
 pub mod ear;
 pub mod heard_self_sensor;

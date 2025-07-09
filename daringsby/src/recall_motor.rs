@@ -12,7 +12,8 @@ use psyche_rs::{
     SensorDirectingMotor, StoredImpression,
 };
 
-/// Motor that recalls related impressions and summarizes them.
+/// Motor that recalls impressions related to a provided sentence and
+/// summarizes them.
 ///
 /// The associated sensor emits a `neighbor.summary` sensation containing the
 /// one-sentence summary.
@@ -39,7 +40,7 @@ impl<M: MemoryStore + Send + Sync> RecallMotor<M> {
         }
     }
 
-    async fn discover_and_summarize(&self) -> Result<String, MotorError> {
+    async fn discover_and_summarize_recent(&self) -> Result<String, MotorError> {
         let recents = self
             .store
             .fetch_recent_impressions(self.batch_size)
@@ -103,14 +104,69 @@ impl<M: MemoryStore + Send + Sync> RecallMotor<M> {
         let _ = self.tx.send(vec![s]);
         Ok(summary.to_string())
     }
+
+    async fn discover_and_summarize_for(&self, sentence: &str) -> Result<String, MotorError> {
+        let neighbors = self
+            .store
+            .retrieve_related_impressions(sentence, self.batch_size)
+            .await
+            .map_err(|e| MotorError::Failed(e.to_string()))?;
+        if neighbors.is_empty() {
+            return Err(MotorError::Failed("no related impressions".into()));
+        }
+        let ctx = json!({
+            "sentence": sentence,
+            "neighbors": neighbors.iter().map(|n| n.how.clone()).collect::<Vec<_>>()
+        });
+        let prompt = format!(
+            "These memories may be relevant to this sentence:\n{}\nSummarize them in one sentence.",
+            ctx
+        );
+        trace!(%prompt, "neighbor_discovery_prompt");
+        let msgs = [ollama_rs::generation::chat::ChatMessage::user(prompt)];
+        let mut stream = self
+            .llm
+            .chat_stream(&msgs)
+            .await
+            .map_err(|e| MotorError::Failed(e.to_string()))?;
+        let mut out = String::new();
+        while let Some(tok) = stream.next().await {
+            trace!(token = %tok.text, "neighbor_llm_token");
+            out.push_str(&tok.text);
+        }
+        let summary = out.trim();
+        if summary.is_empty() {
+            return Err(MotorError::Failed("empty summary".into()));
+        }
+        let stored = StoredImpression {
+            id: Uuid::new_v4().to_string(),
+            kind: "neighbor.summary".into(),
+            when: Utc::now(),
+            how: summary.to_string(),
+            sensation_ids: Vec::new(),
+            impression_ids: neighbors.iter().map(|m| m.id.clone()).collect(),
+        };
+        self.store
+            .store_summary_impression(&stored, &stored.impression_ids)
+            .await
+            .map_err(|e| MotorError::Failed(e.to_string()))?;
+        let s = Sensation {
+            kind: "neighbor.summary".into(),
+            when: Local::now(),
+            what: summary.to_string(),
+            source: None,
+        };
+        let _ = self.tx.send(vec![s]);
+        Ok(summary.to_string())
+    }
 }
 
 #[async_trait]
 impl<M: MemoryStore + Send + Sync> Motor for RecallMotor<M> {
     fn description(&self) -> &'static str {
-        "Recalls related impressions for recent moments and summarizes them.\n\
+        "Recall memories related to a sentence and summarize them.\n\
 Example:\n\
-<recall></recall>"
+<recall>I saw a red scarf on the bench.</recall>"
     }
 
     fn name(&self) -> &'static str {
@@ -121,8 +177,12 @@ Example:\n\
         if intention.action.name != "recall" {
             return Err(MotorError::Unrecognized);
         }
-        let action = intention.action;
-        match self.discover_and_summarize().await {
+        let mut action = intention.action;
+        let sentence = action.collect_text().await;
+        if sentence.trim().is_empty() {
+            return Err(MotorError::Failed("missing sentence".into()));
+        }
+        match self.discover_and_summarize_for(sentence.trim()).await {
             Ok(_) => {
                 let completion = Completion::of_action(action);
                 debug!(?completion, "action completed");
@@ -154,7 +214,7 @@ impl<M: MemoryStore + Send + Sync> SensorDirectingMotor for RecallMotor<M> {
                 sensor_name
             )));
         }
-        let _ = self.discover_and_summarize().await?;
+        let _ = self.discover_and_summarize_recent().await?;
         Ok(())
     }
 }
