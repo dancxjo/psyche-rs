@@ -322,7 +322,7 @@ mod tests {
         assert_eq!(resp.status(), axum::http::StatusCode::OK);
         let body = BodyExt::collect(resp.into_body()).await.unwrap().to_bytes();
         let html = std::str::from_utf8(&body).unwrap();
-        assert!(html.contains("ws://"));
+        assert!(html.contains("wsScheme"));
         assert!(html.contains("/speech-segments-out"));
         assert!(html.contains("id=\"start\""));
     }

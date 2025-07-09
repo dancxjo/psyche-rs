@@ -54,6 +54,8 @@ let lookWs;
 let lookVideo;
 let lookCanvas;
 let lookStreamPromise = null;
+// Determine the correct WebSocket scheme based on page protocol.
+const wsScheme = location.protocol === 'https:' ? 'wss' : 'ws';
 // Queues of audio PCM buffers and corresponding text waiting to be played.
 let queue = [];
 let texts = [];
@@ -188,7 +190,7 @@ function play() {
 
 function start() {
   audioEl = document.getElementById('audio-player');
-  segWs = openSocket(segWs, `ws://${location.host}/speech-segments-out`);
+  segWs = openSocket(segWs, `${wsScheme}://${location.host}/speech-segments-out`);
   if (segWs.readyState <= WebSocket.OPEN)
     segWs.onmessage = ev => {
       const seg = JSON.parse(ev.data);
@@ -199,16 +201,16 @@ function start() {
       texts.push(seg.text);
       play();
     };
-  heardWs = openSocket(heardWs, `ws://${location.host}/speech-text-self-in`);
+  heardWs = openSocket(heardWs, `${wsScheme}://${location.host}/speech-text-self-in`);
   heardWs.onopen = () => console.log("heardWs connected");
   heardWs.onerror = e => console.error("heardWs error", e);
   heardWs.onclose = () => console.warn("heardWs closed");
-  userWs = openSocket(userWs, `ws://${location.host}/speech-text-user-in`);
+  userWs = openSocket(userWs, `${wsScheme}://${location.host}/speech-text-user-in`);
   userWs.onopen = () => console.log('userWs connected');
   userWs.onerror = e => console.error('userWs error', e);
   userWs.onclose = () => console.warn('userWs closed');
   /* canvas features removed */
-  lookWs = openSocket(lookWs, `ws://${location.host}/vision-jpeg-in`, 'arraybuffer');
+  lookWs = openSocket(lookWs, `${wsScheme}://${location.host}/vision-jpeg-in`, 'arraybuffer');
   if (lookWs.readyState <= WebSocket.OPEN)
     lookWs.onmessage = ev => {
       if (ev.data === 'snap') capture();
