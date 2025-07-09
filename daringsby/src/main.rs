@@ -111,7 +111,14 @@ async fn run_voice(
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    rustls::crypto::CryptoProvider::install_default().expect("install rustls crypto provider");
+    // No need to import CryptoProvider directly
+    if rustls::crypto::CryptoProvider::get_default().is_none() {
+        if let Err(e) = rustls::crypto::CryptoProvider::install_default(
+            rustls::crypto::ring::default_provider(),
+        ) {
+            return Err(format!("Failed to install default CryptoProvider: {:?}", e).into());
+        }
+    }
     let (log_tx, log_rx) = tokio::sync::mpsc::unbounded_channel();
     logger::try_init_with_sender(log_tx).expect("logger init");
     let args = Args::parse();
