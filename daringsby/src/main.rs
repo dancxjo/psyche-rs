@@ -30,6 +30,7 @@ use psyche_rs::{
 };
 use qdrant_client::qdrant::points_client::PointsClient;
 use reqwest::Client;
+use rustls::crypto::CryptoProvider;
 use std::time::Duration;
 use tokio::sync::mpsc::unbounded_channel;
 use tonic::transport::{Channel, Endpoint};
@@ -110,6 +111,7 @@ async fn run_voice(
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
+    rustls::crypto::CryptoProvider::install_default().expect("install rustls crypto provider");
     let (log_tx, log_rx) = tokio::sync::mpsc::unbounded_channel();
     logger::try_init_with_sender(log_tx).expect("logger init");
     let args = Args::parse();
