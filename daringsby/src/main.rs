@@ -9,10 +9,10 @@ use daringsby::memory_helpers::{
 };
 use daringsby::{LookSensor, VisionSensor};
 use daringsby::{
-    canvas_stream::CanvasStream,
     llm_helpers::{build_ollama_clients, build_voice_llm},
     logger,
     memory_graph::MemoryGraph,
+    memory_projection::MemoryProjectionService,
     motor_helpers::{LLMClients, build_motors},
     mouth_helpers::build_mouth,
     sensor_helpers::{build_ear, build_sensors},
@@ -131,6 +131,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     ensure_impressions_collection_exists(&Client::new(), &qdrant_url).await?;
     let qdrant_client = Qdrant::from_url(&args.qdrant_url).build()?;
     ensure_face_embeddings_collection_exists(&qdrant_client).await?;
+    let _projection_guard = MemoryProjectionService::new(
+        qdrant_client,
+        store.clone(),
+        std::time::Duration::from_secs(60),
+    )
+    .spawn();
     let (motors, _motor_map, consolidation_status, mut look_rx) =
         build_motors(&llms, mouth.clone(), vision.clone(), store.clone());
     let motors_send: Vec<Arc<dyn Motor + Send + Sync>> = motors

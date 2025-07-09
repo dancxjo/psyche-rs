@@ -37,6 +37,8 @@ axum-server = { version = "0.7", features = ["tls-rustls"] }
 rcgen = "0.11"
 hyper = "1"
 qdrant-client = "1"
+smartcore = "0.4"
+num-traits = "0.2"
 
 [dev-dependencies]
 httpmock = "0.7"

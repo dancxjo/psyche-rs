@@ -54,3 +54,4 @@
 - Link summary impressions to originals using a :SUMMARIZES relationship in Neo4j.
 - Forward `info`, `warn`, and `error` logs to the Combobulator as
   `log.system` sensations using `LogSensationLayer`.
+- Prefer `smartcore` over `linfa` for ML tasks to avoid heavy dependencies.
