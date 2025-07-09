@@ -27,10 +27,22 @@ use psyche_rs::{
     Combobulator, Impression, ImpressionStreamSensor, Motor, MotorExecutor, NeoQdrantMemoryStore,
     SensationSensor, Sensor, Voice, Will, shutdown_signal,
 };
-use qdrant_client::Qdrant;
+use qdrant_client::qdrant::points_client::PointsClient;
 use reqwest::Client;
+use std::time::Duration;
 use tokio::sync::mpsc::unbounded_channel;
+use tonic::transport::{Channel, Endpoint};
 use url::Url;
+
+async fn connect_qdrant(url: &str) -> anyhow::Result<Channel> {
+    let endpoint = Endpoint::from_shared(url.to_string())?
+        .keep_alive_timeout(Duration::from_secs(30))
+        .keep_alive_while_idle(true)
+        .initial_connection_window_size(Some(2 * 1024 * 1024))
+        .initial_stream_window_size(Some(2 * 1024 * 1024));
+    let channel = endpoint.connect().await?;
+    Ok(channel)
+}
 
 async fn run_sensor_loop<I>(
     mut stream: BoxStream<'static, Vec<I>>,
@@ -132,10 +144,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     .await;
     let qdrant_url = Url::parse(&args.qdrant_url)?;
     ensure_impressions_collection_exists(&Client::new(), &qdrant_url).await?;
-    let qdrant_client = Qdrant::from_url(&args.qdrant_url).build()?;
-    ensure_face_embeddings_collection_exists(&qdrant_client).await?;
+    let channel = connect_qdrant(&args.qdrant_url).await?;
+    ensure_face_embeddings_collection_exists(&channel).await?;
     let _projection_guard = MemoryProjectionService::new(
-        qdrant_client,
+        PointsClient::new(channel.clone()),
         store.clone(),
         std::time::Duration::from_secs(60),
     )
