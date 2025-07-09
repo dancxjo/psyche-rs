@@ -13,5 +13,4 @@ pub use crate::heartbeat::{Heartbeat, heartbeat_message};
 pub use crate::look_sensor::LookSensor;
 pub use crate::memory_consolidation_sensor::MemoryConsolidationSensor;
 pub use crate::recall_sensor::RecallSensor;
-pub use crate::self_discovery::SelfDiscovery;
 pub use crate::source_discovery::SourceDiscovery;

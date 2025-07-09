@@ -15,7 +15,7 @@ const README_TEXT: &str = include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/../
 
 /// The source code chunks that will be revealed sequentially.
 /// Maximum number of lines yielded in a single chunk.
-const MAX_LINES: usize = 20;
+const MAX_LINES: usize = 60;
 
 fn interval_secs() -> u64 {
     if std::env::var("FAST_TEST").is_ok() {

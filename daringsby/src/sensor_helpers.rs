@@ -1,8 +1,8 @@
 use crate::BatterySensor;
+use crate::SourceDiscovery;
 use crate::development_status::DevelopmentStatus;
 use crate::memory_consolidation_sensor::{ConsolidationStatus, MemoryConsolidationSensor};
 use crate::{Ear, HeardSelfSensor, HeardUserSensor, Heartbeat, SpeechStream};
-use crate::{SelfDiscovery, SourceDiscovery};
 use psyche_rs::Sensor;
 use std::sync::Arc;
 use tokio::sync::Mutex;
@@ -36,7 +36,6 @@ pub fn build_sensors(
         Box::new(Heartbeat) as Box<dyn Sensor<String> + Send>,
         Box::new(HeardSelfSensor::new(stream.subscribe_heard())) as Box<dyn Sensor<String> + Send>,
         Box::new(HeardUserSensor::new(stream.subscribe_user())) as Box<dyn Sensor<String> + Send>,
-        Box::new(SelfDiscovery::default()) as Box<dyn Sensor<String> + Send>,
         Box::new(SourceDiscovery::default()) as Box<dyn Sensor<String> + Send>,
     ];
     {
@@ -101,7 +100,6 @@ mod tests {
                 kinds.extend(batch.iter().map(|s| s.kind.clone()));
             }
         }
-        assert!(kinds.contains(&"self_discovery".to_string()));
         assert!(kinds.contains(&"self_source".to_string()));
     }
 }

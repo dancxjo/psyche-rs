@@ -1,7 +1,5 @@
 pub mod battery_motor;
 pub mod battery_sensor;
-pub mod canvas_motor;
-pub mod canvas_stream;
 pub mod development_status;
 pub mod ear;
 pub mod heard_self_sensor;
@@ -27,7 +25,6 @@ pub mod source_search_motor;
 pub mod source_tree_motor;
 pub mod speech_segment;
 pub mod speech_stream;
-pub mod svg_motor;
 pub mod vision_motor;
 pub mod vision_sensor;
 
