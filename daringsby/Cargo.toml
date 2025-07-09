@@ -39,6 +39,12 @@ hyper = "1"
 qdrant-client = "1"
 smartcore = "0.4"
 num-traits = "0.2"
+image = { version = "0.24", optional = true }
+opencv = { version = "0.88", optional = true }
+ort = { version = "2.0.0-rc.10", optional = true }
+
+[features]
+face-embedder = ["image", "opencv", "ort"]
 
 [dev-dependencies]
 httpmock = "0.7"

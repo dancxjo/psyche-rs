@@ -3,6 +3,7 @@ pub mod battery_sensor;
 pub mod canvas_stream;
 pub mod development_status;
 pub mod ear;
+pub mod face_embedding_service;
 pub mod heard_self_sensor;
 pub mod heard_user_sensor;
 pub mod heartbeat;
@@ -45,6 +46,7 @@ pub mod motors;
 pub mod sensors;
 pub mod streams;
 
+pub use face_embedding_service::{FaceData, FaceEmbedder, FaceEmbeddingService};
 pub use memory_graph::MemoryGraph;
 pub use memory_projection::MemoryProjectionService;
 pub use motors::*;
