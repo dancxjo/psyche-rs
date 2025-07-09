@@ -1,6 +1,7 @@
 use clap::Parser;
 use daringsby::args::Args;
 use qdrant_client::Qdrant;
+use rustls::crypto::CryptoProvider;
 use std::sync::Arc;
 
 use daringsby::memory_consolidation_service::MemoryConsolidationService;
@@ -100,6 +101,9 @@ async fn run_voice(
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let (log_tx, log_rx) = tokio::sync::mpsc::unbounded_channel();
     logger::try_init_with_sender(log_tx).expect("logger init");
+    // Install the default CryptoProvider for rustls before any TLS
+    // configuration to avoid runtime panics.
+    CryptoProvider::install_default(CryptoProvider::get_default());
     let args = Args::parse();
 
     let (quick_llm, combob_llm, will_llm, memory_llm) = build_ollama_clients(&args);
