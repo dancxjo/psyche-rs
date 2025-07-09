@@ -1,5 +1,8 @@
+use async_trait::async_trait;
 use chrono::Utc;
 use psyche_rs::{Impression, MemoryStore, StoredImpression, StoredSensation};
+use qdrant_client::qdrant::{CreateCollectionBuilder, Distance, VectorParamsBuilder};
+use qdrant_client::{Qdrant, QdrantError};
 use reqwest::Client;
 use serde_json::json;
 use tracing::{debug, error, info};
@@ -95,6 +98,48 @@ pub async fn ensure_impressions_collection_exists(
         error!(%status, %body, "failed to create collection");
         anyhow::bail!("failed to create collection: {status}");
     }
+}
+
+/// Trait for managing the face embeddings collection in Qdrant.
+#[async_trait]
+pub trait FaceCollectionClient {
+    /// Check whether the `face_embeddings` collection exists.
+    async fn collection_exists(&self) -> anyhow::Result<bool>;
+
+    /// Create the `face_embeddings` collection.
+    async fn create_collection(&self) -> anyhow::Result<()>;
+}
+
+#[async_trait]
+impl FaceCollectionClient for Qdrant {
+    async fn collection_exists(&self) -> anyhow::Result<bool> {
+        self.collection_exists("face_embeddings")
+            .await
+            .map_err(|e| anyhow::Error::new(e))
+    }
+
+    async fn create_collection(&self) -> anyhow::Result<()> {
+        self.create_collection(
+            CreateCollectionBuilder::new("face_embeddings")
+                .vectors_config(VectorParamsBuilder::new(512, Distance::Cosine)),
+        )
+        .await
+        .map(|_| ())
+        .map_err(|e| anyhow::Error::new(e))
+    }
+}
+
+/// Ensure the `face_embeddings` collection exists in Qdrant.
+pub async fn ensure_face_embeddings_collection_exists(
+    client: &(impl FaceCollectionClient + Sync),
+) -> anyhow::Result<()> {
+    if client.collection_exists().await? {
+        info!("face_embeddings collection exists");
+        return Ok(());
+    }
+    client.create_collection().await?;
+    info!("face_embeddings collection created");
+    Ok(())
 }
 
 #[cfg(test)]
@@ -213,5 +258,46 @@ mod tests {
                 .await
                 .is_err()
         );
+    }
+
+    struct StubFaceClient {
+        exists: bool,
+        created: std::sync::Mutex<bool>,
+    }
+
+    #[async_trait]
+    impl FaceCollectionClient for StubFaceClient {
+        async fn collection_exists(&self) -> anyhow::Result<bool> {
+            Ok(self.exists)
+        }
+
+        async fn create_collection(&self) -> anyhow::Result<()> {
+            *self.created.lock().unwrap() = true;
+            Ok(())
+        }
+    }
+
+    #[tokio::test]
+    async fn creates_face_collection_when_missing() {
+        let client = StubFaceClient {
+            exists: false,
+            created: std::sync::Mutex::new(false),
+        };
+        ensure_face_embeddings_collection_exists(&client)
+            .await
+            .unwrap();
+        assert!(*client.created.lock().unwrap());
+    }
+
+    #[tokio::test]
+    async fn does_nothing_when_face_collection_exists() {
+        let client = StubFaceClient {
+            exists: true,
+            created: std::sync::Mutex::new(false),
+        };
+        ensure_face_embeddings_collection_exists(&client)
+            .await
+            .unwrap();
+        assert!(!*client.created.lock().unwrap());
     }
 }
