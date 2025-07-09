@@ -105,8 +105,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let (mouth, stream) = build_mouth(&args).await?;
     let vision = Arc::new(VisionSensor::default());
-    let canvas = Arc::new(CanvasStream::default());
-
     let store = Arc::new(NeoQdrantMemoryStore::new(
         &args.neo4j_url,
         &args.neo4j_user,
@@ -119,7 +117,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut server_handle = run_server(
         stream.clone(),
         vision.clone(),
-        canvas.clone(),
         memory_router,
         &args,
         shutdown_signal(),

@@ -67,6 +67,8 @@ cargo run -- \
   --tts-url http://localhost:5002
 ````
 
+The web interface is served over **HTTPS** on the chosen host and port.
+
 Available options (see `main.rs`):
 
 * `--quick-url`: Base URL for quick tasks (default: `http://localhost:11434`)
@@ -83,6 +85,8 @@ Available options (see `main.rs`):
 * `--tts-url`: Coqui TTS base URL (default: `http://localhost:5002`)
 * `--language-id`: Language identifier for TTS (optional)
 * `--speaker-id`: Speaker ID for TTS (default: `p234`)
+* `--tls-cert`: TLS certificate path (default: `cert.pem`, auto-generated if missing)
+* `--tls-key`: TLS private key path (default: `key.pem`, auto-generated if missing)
 
 `daringsby` feeds raw sensations directly into the Combobulator, which summarizes them into moments. Moments loop back through the Combobulator so higher level impressions continue to build over time.
 
