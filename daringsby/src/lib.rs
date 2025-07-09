@@ -3,6 +3,7 @@ pub mod battery_sensor;
 pub mod canvas_stream;
 pub mod development_status;
 pub mod ear;
+pub mod face_clustering_service;
 pub mod face_embedding_service;
 pub mod face_recognition_service;
 pub mod heard_self_sensor;
@@ -48,6 +49,7 @@ pub mod motors;
 pub mod sensors;
 pub mod streams;
 
+pub use face_clustering_service::FaceClusteringService;
 pub use face_embedding_service::{FaceData, FaceEmbedder, FaceEmbeddingService};
 pub use face_recognition_service::FaceRecognitionService;
 pub use identify_motor::IdentifyMotor;
