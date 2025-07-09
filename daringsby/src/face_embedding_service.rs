@@ -34,6 +34,9 @@ pub struct FaceEmbeddingService<E: FaceEmbedder> {
     qdrant_url: Url,
     face_dir: PathBuf,
     base_url: Url,
+    neo4j_url: Url,
+    neo_user: String,
+    neo_pass: String,
 }
 
 impl<E: FaceEmbedder + 'static> FaceEmbeddingService<E> {
@@ -46,6 +49,9 @@ impl<E: FaceEmbedder + 'static> FaceEmbeddingService<E> {
         qdrant_url: Url,
         face_dir: PathBuf,
         base_url: Url,
+        neo4j_url: Url,
+        neo_user: impl Into<String>,
+        neo_pass: impl Into<String>,
     ) -> Self {
         Self {
             rx,
@@ -55,6 +61,9 @@ impl<E: FaceEmbedder + 'static> FaceEmbeddingService<E> {
             qdrant_url,
             face_dir,
             base_url,
+            neo4j_url,
+            neo_user: neo_user.into(),
+            neo_pass: neo_pass.into(),
         }
     }
 
@@ -114,6 +123,20 @@ impl<E: FaceEmbedder + 'static> FaceEmbeddingService<E> {
             let text = resp.text().await.unwrap_or_default();
             warn!(%status, %text, "qdrant insert failed");
         }
+        let query = "MERGE (s:VisionSnapshot {uuid:$snap})\nMERGE (f:FaceEmbedding {uuid:$face})\nSET f.image_url=$url\nMERGE (f)-[:DERIVED_FROM]->(s)";
+        let params = json!({"snap": snapshot_uuid, "face": face_id, "url": url.as_str()});
+        let payload = json!({"statements":[{"statement":query,"parameters":params}]});
+        let url_neo = self.neo4j_url.join("db/neo4j/tx/commit")?;
+        let resp = self
+            .client
+            .post(url_neo)
+            .basic_auth(&self.neo_user, Some(&self.neo_pass))
+            .json(&payload)
+            .send()
+            .await?;
+        if !resp.status().is_success() {
+            warn!(status=%resp.status(), "neo4j face link failed");
+        }
         let sensation = Sensation {
             kind: "face.embedding".into(),
             when: Local::now(),
@@ -153,9 +176,14 @@ mod tests {
     async fn processes_snapshot() {
         let (tx, rx) = tokio::sync::broadcast::channel(1);
         let (sens_tx, mut sens_rx) = tokio::sync::mpsc::unbounded_channel();
-        let server = MockServer::start();
-        let mock = server.mock(|when, then| {
+        let qdrant = MockServer::start();
+        let q_mock = qdrant.mock(|when, then| {
             when.method(PUT);
+            then.status(200);
+        });
+        let neo = MockServer::start();
+        let neo_mock = neo.mock(|when, then| {
+            when.method(POST);
             then.status(200);
         });
         let tmp = tempdir().unwrap();
@@ -164,15 +192,19 @@ mod tests {
             sens_tx,
             Arc::new(StubEmbedder),
             Client::new(),
-            Url::parse(&server.url("/")).unwrap(),
+            Url::parse(&qdrant.url("/")).unwrap(),
             tmp.path().to_path_buf(),
             Url::parse("http://localhost/faces/").unwrap(),
+            Url::parse(&neo.url("/")).unwrap(),
+            "u",
+            "p",
         );
         let guard = service.spawn();
         tx.send(vec![0]).unwrap();
         let sens = sens_rx.recv().await.unwrap();
         assert_eq!(sens[0].kind, "face.embedding");
-        mock.assert();
+        q_mock.assert();
+        neo_mock.assert();
         drop(guard);
     }
 }

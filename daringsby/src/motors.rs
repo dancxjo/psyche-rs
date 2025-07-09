@@ -1,4 +1,5 @@
 pub use crate::battery_motor::BatteryMotor;
+pub use crate::identify_motor::IdentifyMotor;
 pub use crate::log_memory_motor::LogMemoryMotor;
 /// Motor implementations used by the Daringsby binary.
 ///

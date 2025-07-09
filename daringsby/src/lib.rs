@@ -8,6 +8,7 @@ pub mod face_recognition_service;
 pub mod heard_self_sensor;
 pub mod heard_user_sensor;
 pub mod heartbeat;
+pub mod identify_motor;
 pub mod log_file;
 pub mod log_memory_motor;
 pub mod log_sensation_layer;
@@ -49,6 +50,7 @@ pub mod streams;
 
 pub use face_embedding_service::{FaceData, FaceEmbedder, FaceEmbeddingService};
 pub use face_recognition_service::FaceRecognitionService;
+pub use identify_motor::IdentifyMotor;
 pub use memory_graph::MemoryGraph;
 pub use memory_projection::MemoryProjectionService;
 pub use motors::*;
