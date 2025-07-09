@@ -54,7 +54,9 @@ impl MemoryGraph {
     }
 
     async fn build_graph(&self) -> anyhow::Result<Vec<Node>> {
-        let nodes = self.store.fetch_recent_impressions(100).await?;
+        // load a larger set of recent impressions so more nodes are
+        // available inside the WebXR visualization
+        let nodes = self.store.fetch_recent_impressions(500).await?;
         let pos_map = load_positions().unwrap_or_default();
         let mut out = Vec::new();
         for imp in nodes {
