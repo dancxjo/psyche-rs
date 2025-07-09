@@ -15,17 +15,17 @@
 {
   "imports": {
     "three": "https://unpkg.com/three@0.178.0/build/three.module.js",
-    "three/examples/jsm/controls/OrbitControls": "https://unpkg.com/three@0.178.0/examples/jsm/controls/OrbitControls.js",
     "three/examples/jsm/webxr/VRButton": "https://unpkg.com/three@0.178.0/examples/jsm/webxr/VRButton.js",
-    "three/examples/jsm/webxr/XRControllerModelFactory": "https://unpkg.com/three@0.178.0/examples/jsm/webxr/XRControllerModelFactory.js"
+    "three/examples/jsm/webxr/XRControllerModelFactory": "https://unpkg.com/three@0.178.0/examples/jsm/webxr/XRControllerModelFactory.js",
+    "three/examples/jsm/webxr/XRHandModelFactory": "https://unpkg.com/three@0.178.0/examples/jsm/webxr/XRHandModelFactory.js"
   }
 }
 </script>
 <script type="module">
 import * as THREE from 'three';
-import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls';
 import { VRButton } from 'three/examples/jsm/webxr/VRButton';
 import { XRControllerModelFactory } from 'three/examples/jsm/webxr/XRControllerModelFactory';
+import { XRHandModelFactory } from 'three/examples/jsm/webxr/XRHandModelFactory';
 
 const renderer = new THREE.WebGLRenderer({ antialias: true });
 renderer.setSize(window.innerWidth, window.innerHeight);
@@ -39,7 +39,6 @@ scene.background = new THREE.Color(0x101015);
 const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.01, 1000);
 camera.position.set(0, 1.6, 3); // typical VR eye height
 
-const controls = new OrbitControls(camera, renderer.domElement);
 
 const ambient = new THREE.AmbientLight(0x888888);
 scene.add(ambient);
@@ -61,13 +60,19 @@ scene.add(axes);
 
 // VR hands
 const controllerModelFactory = new XRControllerModelFactory();
+const handFactory = new XRHandModelFactory();
 for (let i = 0; i < 2; i++) {
   const controller = renderer.xr.getController(i);
+  controller.addEventListener('selectstart', onSelect);
   scene.add(controller);
 
   const grip = renderer.xr.getControllerGrip(i);
   grip.add(controllerModelFactory.createControllerModel(grip));
   scene.add(grip);
+
+  const hand = renderer.xr.getHand(i);
+  hand.add(handFactory.createHandModel(hand));
+  scene.add(hand);
 }
 
 const Y_OFFSET = 1.6;
@@ -76,6 +81,7 @@ const SCALE = 20;
 const raycaster = new THREE.Raycaster();
 const pointer = new THREE.Vector2();
 const info = document.getElementById('info');
+const tempMatrix = new THREE.Matrix4();
 
 function onPointer(event) {
   pointer.x = (event.clientX / renderer.domElement.clientWidth) * 2 - 1;
@@ -89,6 +95,17 @@ function onPointer(event) {
 }
 window.addEventListener('pointerdown', onPointer);
 
+function onSelect(event) {
+  tempMatrix.identity().extractRotation(event.target.matrixWorld);
+  raycaster.ray.origin.setFromMatrixPosition(event.target.matrixWorld);
+  raycaster.ray.direction.set(0, 0, -1).applyMatrix4(tempMatrix);
+  const intersects = raycaster.intersectObjects(scene.children);
+  if (intersects.length) {
+    const node = intersects[0].object.userData.node;
+    if (node) info.textContent = node.how;
+  }
+}
+
 // Load graph data
 fetch('/memory_graph.json')
   .then(r => r.json())
@@ -96,11 +113,12 @@ fetch('/memory_graph.json')
     const colors = {};
     const spheres = {};
     data.forEach(n => {
-      if (!(n.cluster in colors)) {
-        colors[n.cluster] = new THREE.Color(Math.random(), Math.random(), Math.random());
+      const key = n.cluster === null ? 'none' : n.cluster;
+      if (!(key in colors)) {
+        colors[key] = new THREE.Color(Math.random(), Math.random(), Math.random());
       }
       const geom = new THREE.SphereGeometry(0.03);
-      const mat = new THREE.MeshStandardMaterial({ color: colors[n.cluster] });
+      const mat = new THREE.MeshStandardMaterial({ color: colors[key] });
       const mesh = new THREE.Mesh(geom, mat);
       mesh.position.set(
         n.pos[0] * SCALE,
@@ -129,7 +147,6 @@ fetch('/memory_graph.json')
 
 function animate() {
   renderer.setAnimationLoop(() => {
-    controls.update();
     renderer.render(scene, camera);
   });
 }

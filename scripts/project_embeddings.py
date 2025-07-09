@@ -19,13 +19,22 @@ def main():
     args = parser.parse_args()
 
     client = QdrantClient(url=args.qdrant)
-    points, _ = client.scroll(collection_name="impressions", with_payload=True, limit=args.limit, with_vectors=True)
-    if not points:
-        print("No embeddings found")
+    points, _ = client.scroll(
+        collection_name="impressions",
+        with_payload=True,
+        limit=args.limit,
+        with_vectors=True,
+    )
+
+    # Skip entries that do not have an embedding vector so PCA succeeds
+    valid = [p for p in points if getattr(p, "vector", None) is not None]
+    if not valid:
+        print("No embeddings with vectors found")
         return
-    print(f"Found {len(points)} embeddings {points[10]}")
-    ids = [p.id for p in points]
-    vecs = [p.vector for p in points]
+    print(f"Found {len(valid)} embeddings")
+
+    ids = [p.id for p in valid]
+    vecs = [p.vector for p in valid]
 
     reducer = PCA(n_components=3)
     coords = reducer.fit_transform(vecs)
