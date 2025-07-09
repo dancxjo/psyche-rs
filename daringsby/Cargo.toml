@@ -44,6 +44,7 @@ opencv = { version = "0.88", optional = true }
 ort = { version = "2.0.0-rc.10", optional = true }
 
 [features]
+default = ["face-embedder"]
 face-embedder = ["image", "opencv", "ort"]
 
 [dev-dependencies]
