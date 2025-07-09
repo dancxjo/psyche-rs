@@ -14,6 +14,7 @@ pub mod memory_cleanup_service;
 pub mod memory_consolidation_motor;
 pub mod memory_consolidation_sensor;
 pub mod memory_consolidation_service;
+pub mod memory_graph;
 pub mod memory_helpers;
 pub mod mouth;
 pub mod recall_motor;
@@ -42,6 +43,7 @@ pub mod motors;
 pub mod sensors;
 pub mod streams;
 
+pub use memory_graph::MemoryGraph;
 pub use motors::*;
 pub use sensors::*;
 pub use streams::*;

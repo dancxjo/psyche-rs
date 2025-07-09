@@ -38,6 +38,26 @@ impl NeoQdrantMemoryStore {
         }
     }
 
+    /// Access the underlying HTTP client.
+    pub fn client(&self) -> &Client {
+        &self.client
+    }
+
+    /// Base URL of the Neo4j server.
+    pub fn neo4j_url(&self) -> &str {
+        &self.neo4j_url
+    }
+
+    /// Neo4j username.
+    pub fn neo_user(&self) -> &str {
+        &self.neo_user
+    }
+
+    /// Neo4j password.
+    pub fn neo_pass(&self) -> &str {
+        &self.neo_pass
+    }
+
     /// Sanitize a string so it can be safely used as a Neo4j label.
     ///
     /// This replaces any character that is not alphanumeric with an underscore

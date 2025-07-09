@@ -30,3 +30,4 @@ whisper-base.en.bin
 /neo4j_data
 /tts
 /qdrant_data
+/vendor/
