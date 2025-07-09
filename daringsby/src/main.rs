@@ -101,9 +101,11 @@ async fn run_voice(
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let (log_tx, log_rx) = tokio::sync::mpsc::unbounded_channel();
     logger::try_init_with_sender(log_tx).expect("logger init");
-    // Install the default CryptoProvider for rustls before any TLS
-    // configuration to avoid runtime panics.
-    CryptoProvider::install_default(CryptoProvider::get_default());
+    let enarced = CryptoProvider::get_default()
+        .expect("No default CryptoProvider found")
+        .clone();
+    let exarced = enarced.as_ref().clone();
+    CryptoProvider::install_default(exarced).expect("Failed to install CryptoProvider");
     let args = Args::parse();
 
     let (quick_llm, combob_llm, will_llm, memory_llm) = build_ollama_clients(&args);
@@ -137,16 +139,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     .await;
     let qdrant_url = Url::parse(&args.qdrant_url)?;
     ensure_impressions_collection_exists(&Client::new(), &qdrant_url).await?;
-    let qdrant = Qdrant::from_url(&args.qdrant_url).build()?;
-    ensure_face_embeddings_collection_exists(&qdrant).await?;
-    let _projection_guard = MemoryProjectionService::new(
-        qdrant.clone(),
-        store.clone(),
-        std::time::Duration::from_secs(60),
-    )
-    .spawn();
+    let qdrant_client = Qdrant::from_url(&args.qdrant_url).build()?;
+    ensure_face_embeddings_collection_exists(&qdrant_client).await?;
+    let qdrant = Arc::new(qdrant_client);
     let _face_cluster_guard = FaceClusteringService::new(
-        Qdrant::from_url(&args.qdrant_url).build()?,
+        qdrant,
         Client::new(),
         Url::parse(&args.neo4j_url)?,
         args.neo4j_user.clone(),

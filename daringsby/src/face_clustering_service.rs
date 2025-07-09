@@ -1,3 +1,4 @@
+use std::sync::Arc;
 use std::{collections::HashSet, time::Duration};
 
 use anyhow::Result;
@@ -31,7 +32,7 @@ use psyche_rs::AbortGuard;
 /// let _guard = service.spawn();
 /// ```
 pub struct FaceClusteringService {
-    qdrant: Qdrant,
+    qdrant: Arc<Qdrant>,
     client: Client,
     neo4j_url: Url,
     neo_user: String,
@@ -42,7 +43,7 @@ pub struct FaceClusteringService {
 impl FaceClusteringService {
     /// Create a new service.
     pub fn new(
-        qdrant: Qdrant,
+        qdrant: Arc<Qdrant>,
         client: Client,
         neo4j_url: Url,
         neo_user: impl Into<String>,
