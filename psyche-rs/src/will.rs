@@ -14,7 +14,7 @@ use regex::Regex;
 use crate::MemoryStore;
 use crate::llm_client::LLMClient;
 use crate::timeline::build_timeline_from_slice;
-use crate::{AbortGuard, Intention, Motor, PlainDescribe, Sensation, Sensor, render_template};
+use crate::{Intention, Motor, PlainDescribe, Sensation, Sensor, render_template};
 use ollama_rs::generation::chat::ChatMessage;
 
 /// Placeholder prompt text for [`Will`].
@@ -360,7 +360,6 @@ impl<T> Will<T> {
             let streams: Vec<_> = sensors.into_iter().map(|mut s| s.stream()).collect();
             let mut sensor_stream = stream::select_all(streams);
             let mut pending: Vec<Sensation<T>> = Vec::new();
-            let mut llm_handle: Option<AbortGuard> = None;
             let mut last_hash: Option<Vec<u8>> = None;
             let mut last_time: Option<std::time::Instant> = None;
 
@@ -508,34 +507,23 @@ impl<T> Will<T> {
                         trace!("will invoking llm");
 
                         let msgs = vec![ChatMessage::user(prompt)];
-                        let llm_clone = llm.clone();
-                        let tx_clone = tx.clone();
-                        let window_clone = window.clone();
-                        let thoughts_tx_clone = thoughts_tx.clone();
-                        let name_clone = name.clone();
-                        if let Some(h) = llm_handle.take() { drop(h); }
-                        llm_handle = Some(AbortGuard::new(tokio::spawn(async move {
-                            debug!(agent = %name_clone, "LLM request START {:?}", std::time::Instant::now());
-                            match llm_clone.chat_stream(&msgs).await {
-                                Ok(stream) => {
-                                    crate::llm_parser::drive_llm_stream(
-                                        &name_clone,
-                                        stream,
-                                        window_clone,
-                                        tx_clone,
-                                        thoughts_tx_clone,
-                                    ).await;
-                                }
-                                Err(err) => {
-                                    error!(?err, "llm streaming failed");
-                                }
+                        match llm.chat_stream(&msgs).await {
+                            Ok(stream) => {
+                                crate::llm_parser::drive_llm_stream(
+                                    &name,
+                                    stream,
+                                    window.clone(),
+                                    tx.clone(),
+                                    thoughts_tx.clone(),
+                                )
+                                .await;
                             }
-                        })));
+                            Err(err) => {
+                                error!(?err, "llm streaming failed");
+                            }
+                        }
                     }
                 }
-            }
-            if let Some(h) = llm_handle.take() {
-                drop(h);
             }
             debug!(agent=%name, "Will thread exiting");
         })
@@ -679,7 +667,7 @@ mod tests {
         let sensor = TestSensor;
         let (tx, rx) = tokio::sync::oneshot::channel();
         let _stream = will.observe_with_abort(vec![sensor], Some(rx)).await;
-        tokio::time::sleep(std::time::Duration::from_millis(20)).await;
+        tokio::time::sleep(std::time::Duration::from_millis(100)).await;
         assert_eq!(calls.load(Ordering::SeqCst), 1);
         let _ = tx.send(());
     }
@@ -794,5 +782,82 @@ mod tests {
         let _ = tx.send(());
         let q = queries.lock().unwrap();
         assert_eq!(q.len(), 2);
+    }
+
+    #[tokio::test]
+    async fn waits_for_llm_stream_before_next_loop() {
+        use futures::stream::BoxStream;
+        use std::sync::atomic::{AtomicUsize, Ordering};
+
+        #[derive(Clone)]
+        struct RepeatSensor;
+
+        impl Sensor<Impression<String>> for RepeatSensor {
+            fn stream(&mut self) -> BoxStream<'static, Vec<Sensation<Impression<String>>>> {
+                use async_stream::stream;
+                let s = stream! {
+                    loop {
+                        yield vec![Sensation {
+                            kind: "impression".into(),
+                            when: chrono::Local::now(),
+                            what: Impression { how: "ping".into(), what: Vec::new() },
+                            source: None,
+                        }];
+                        tokio::time::sleep(std::time::Duration::from_millis(5)).await;
+                    }
+                };
+                Box::pin(s)
+            }
+        }
+
+        #[derive(Clone)]
+        struct HoldLLM {
+            calls: Arc<AtomicUsize>,
+            tx: Arc<Mutex<Option<tokio::sync::mpsc::UnboundedSender<Token>>>>,
+        }
+
+        #[async_trait::async_trait]
+        impl LLMClient for HoldLLM {
+            async fn chat_stream(
+                &self,
+                _msgs: &[ChatMessage],
+            ) -> Result<TokenStream, Box<dyn std::error::Error + Send + Sync>> {
+                self.calls.fetch_add(1, Ordering::SeqCst);
+                let (tx, rx) = tokio::sync::mpsc::unbounded_channel();
+                *self.tx.lock().unwrap() = Some(tx);
+                Ok(Box::pin(UnboundedReceiverStream::new(rx)))
+            }
+
+            async fn embed(
+                &self,
+                _text: &str,
+            ) -> Result<Vec<f32>, Box<dyn std::error::Error + Send + Sync>> {
+                Ok(vec![0.0])
+            }
+        }
+
+        let calls = Arc::new(AtomicUsize::new(0));
+        let llm = Arc::new(HoldLLM {
+            calls: calls.clone(),
+            tx: Arc::new(Mutex::new(None)),
+        });
+        let mut will = Will::new(llm.clone()).prompt("{template}").delay_ms(5);
+        let sensor = RepeatSensor;
+        let (stop_tx, stop_rx) = tokio::sync::oneshot::channel();
+        let _stream = will.observe_with_abort(vec![sensor], Some(stop_rx)).await;
+        tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+        assert_eq!(calls.load(Ordering::SeqCst), 1);
+        if let Some(tx) = llm.tx.lock().unwrap().take() {
+            let _ = tx.send(Token {
+                text: "done".into(),
+            });
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(10)).await;
+        if let Some(tx) = llm.tx.lock().unwrap().take() {
+            drop(tx);
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+        assert!(calls.load(Ordering::SeqCst) >= 2);
+        let _ = stop_tx.send(());
     }
 }
