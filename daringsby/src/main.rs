@@ -1,5 +1,6 @@
 use clap::Parser;
 use daringsby::args::Args;
+use qdrant_client::Qdrant;
 use std::sync::Arc;
 
 use daringsby::memory_consolidation_service::MemoryConsolidationService;
@@ -9,8 +10,8 @@ use daringsby::memory_helpers::{
 };
 use daringsby::{LookSensor, VisionSensor};
 use daringsby::{
-    face_gallery::FaceGallery,
     face_clustering_service::FaceClusteringService,
+    face_gallery::FaceGallery,
     llm_helpers::{build_ollama_clients, build_voice_llm},
     logger,
     memory_graph::MemoryGraph,
