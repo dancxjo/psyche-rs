@@ -3,7 +3,7 @@ use psyche_rs::AbortGuard;
 use std::net::SocketAddr;
 use std::sync::Arc;
 
-use crate::{CanvasStream, SpeechStream, VisionSensor, args::Args};
+use crate::{SpeechStream, VisionSensor, args::Args, canvas_stream::CanvasStream};
 use axum::Router;
 
 /// Run the HTTP server exposing speech, vision, canvas, and memory graph streams.

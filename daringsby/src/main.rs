@@ -6,6 +6,7 @@ use daringsby::memory_consolidation_service::MemoryConsolidationService;
 use daringsby::memory_helpers::{ensure_impressions_collection_exists, persist_impression};
 use daringsby::{LookSensor, VisionSensor};
 use daringsby::{
+    canvas_stream::CanvasStream,
     llm_helpers::{build_ollama_clients, build_voice_llm},
     logger,
     memory_graph::MemoryGraph,
