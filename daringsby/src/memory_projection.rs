@@ -1,8 +1,9 @@
 use std::{sync::Arc, time::Duration};
 
 use anyhow::Result;
-use qdrant_client::Qdrant;
-use qdrant_client::qdrant::{self, RetrievedPoint, ScrollPointsBuilder, point_id};
+use qdrant_client::qdrant::{
+    self, RetrievedPoint, ScrollPointsBuilder, point_id, points_client::PointsClient,
+};
 use serde::Serialize;
 use smartcore::{
     cluster::kmeans::{KMeans, KMeansParameters},
@@ -10,6 +11,7 @@ use smartcore::{
     linalg::basic::{arrays::Array, matrix::DenseMatrix},
 };
 use tokio::time::interval;
+use tonic::transport::Channel;
 use tracing::{info, warn};
 
 use psyche_rs::{AbortGuard, NeoQdrantMemoryStore};
@@ -26,14 +28,18 @@ struct NodeData {
 ///
 /// This replaces the previous Python implementation used by `project_embeddings.py`.
 pub struct MemoryProjectionService {
-    qdrant: Qdrant,
+    qdrant: PointsClient<Channel>,
     store: Arc<NeoQdrantMemoryStore>,
     interval: Duration,
 }
 
 impl MemoryProjectionService {
     /// Create a new service.
-    pub fn new(qdrant: Qdrant, store: Arc<NeoQdrantMemoryStore>, interval: Duration) -> Self {
+    pub fn new(
+        qdrant: PointsClient<Channel>,
+        store: Arc<NeoQdrantMemoryStore>,
+        interval: Duration,
+    ) -> Self {
         Self {
             qdrant,
             store,
@@ -122,7 +128,8 @@ impl MemoryProjectionService {
             if let Some(o) = offset.clone() {
                 builder = builder.offset(o);
             }
-            let res = self.qdrant.scroll(builder).await?;
+            let mut client = self.qdrant.clone();
+            let res = client.scroll(builder.build()).await?.into_inner();
             out.extend(res.result);
             if let Some(next) = res.next_page_offset {
                 offset = Some(next);

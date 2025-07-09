@@ -37,6 +37,7 @@ axum-server = { version = "0.7", features = ["tls-rustls"] }
 rcgen = "0.11"
 hyper = "1"
 qdrant-client = "1"
+tonic = "0.12"
 smartcore = "0.4"
 num-traits = "0.2"
 image = { version = "0.24", optional = true }
