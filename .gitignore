@@ -31,3 +31,5 @@ whisper-base.en.bin
 /tts
 /qdrant_data
 /vendor/
+cert.pem
+key.pem
