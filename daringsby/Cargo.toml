@@ -37,6 +37,12 @@ axum-server = { version = "0.7", features = ["tls-rustls"] }
 rcgen = "0.11"
 hyper = "1"
 qdrant-client = "1"
+image = { version = "0.24", optional = true }
+opencv = { version = "0.88", optional = true }
+ort = { version = "2.0.0-rc.10", optional = true }
+
+[features]
+face-embedder = ["image", "opencv", "ort"]
 
 [dev-dependencies]
 httpmock = "0.7"
