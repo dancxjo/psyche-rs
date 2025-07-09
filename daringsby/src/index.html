@@ -15,6 +15,22 @@
       margin-top: 1rem;
       margin-bottom: 1rem;
     }
+    #faces {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.5rem;
+      margin-bottom: 1rem;
+    }
+    #faces figure {
+      margin: 0;
+      text-align: center;
+    }
+    #faces img {
+      width: 64px;
+      height: 64px;
+      object-fit: cover;
+      border-radius: 4px;
+    }
     .chat-user {
       text-align: right;
       color: var(--primary);
@@ -28,6 +44,7 @@
 </head>
 <body class="container">
 <button id="start" class="secondary">Start</button>
+<section id="faces"></section>
 <section id="chat-history"></section>
 <form id="message-form" role="form">
   <label for="message-input">Message:</label>
@@ -232,6 +249,23 @@ function capture() {
 }
 
 /* canvas functions removed */
+
+fetch('/faces.json')
+  .then(r => r.json())
+  .then(list => {
+    const cont = document.getElementById('faces');
+    list.forEach(f => {
+      const fig = document.createElement('figure');
+      const img = document.createElement('img');
+      img.src = f.image_url;
+      const cap = document.createElement('figcaption');
+      cap.textContent = f.name;
+      fig.appendChild(img);
+      fig.appendChild(cap);
+      cont.appendChild(fig);
+    });
+  })
+  .catch(e => console.error('faces load failed', e));
 
 // Attach the start handler only once so we don't open duplicate WebSocket
 // connections if the user clicks multiple times.
