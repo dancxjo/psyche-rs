@@ -152,6 +152,26 @@ sup.start(None);
 
 ---
 
+## 🌌 WebXR Memory Visualization
+
+The `daringsby` server exposes a VR scene showing recent memories as nodes in 3D space.
+
+1. Run `project_embeddings.py` to project Qdrant embeddings and store their 3D coordinates:
+
+   ```bash
+   python scripts/project_embeddings.py \
+     --qdrant http://localhost:6333 \
+     --neo4j http://localhost:7474 \
+     --neo-user neo4j --neo-pass password
+   ```
+
+   This generates `embedding_positions.json` and updates Neo4j nodes with `embedding3d` data.
+
+2. Start `daringsby` and open `https://<host>:<port>/memory_viz.html` in a WebXR-capable browser.
+   Use a headset or mouse to explore the grid of memories.
+
+
+
 
 ## 📝 Contributing
 
