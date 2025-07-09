@@ -54,3 +54,5 @@
 - Link summary impressions to originals using a :SUMMARIZES relationship in Neo4j.
 - Forward `info`, `warn`, and `error` logs to the Combobulator as
   `log.system` sensations using `LogSensationLayer`.
+- Gate heavy dependencies like OpenCV behind optional Cargo features to keep
+  compile times manageable.
