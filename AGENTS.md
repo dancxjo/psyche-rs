@@ -57,3 +57,4 @@
 - Prefer `smartcore` over `linfa` for ML tasks to avoid heavy dependencies.
 - Gate heavy dependencies like OpenCV behind optional Cargo features to keep
   compile times manageable.
+- When OpenCV isn't available, run tests with `--no-default-features`.

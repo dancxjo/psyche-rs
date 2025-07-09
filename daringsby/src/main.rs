@@ -10,6 +10,7 @@ use daringsby::memory_helpers::{
 use daringsby::{LookSensor, VisionSensor};
 use daringsby::{
     face_gallery::FaceGallery,
+    face_clustering_service::FaceClusteringService,
     llm_helpers::{build_ollama_clients, build_voice_llm},
     logger,
     memory_graph::MemoryGraph,
@@ -136,6 +137,15 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let _projection_guard = MemoryProjectionService::new(
         qdrant_client,
         store.clone(),
+        std::time::Duration::from_secs(60),
+    )
+    .spawn();
+    let _face_cluster_guard = FaceClusteringService::new(
+        Qdrant::from_url(&args.qdrant_url).build()?,
+        Client::new(),
+        Url::parse(&args.neo4j_url)?,
+        args.neo4j_user.clone(),
+        args.neo4j_pass.clone(),
         std::time::Duration::from_secs(60),
     )
     .spawn();

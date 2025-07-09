@@ -27,26 +27,35 @@ use psyche_rs::{AbortGuard, Sensation};
 ///     Client::new(),
 ///     Url::parse("http://localhost:6333").unwrap(),
 ///     0.9,
+///     Url::parse("http://localhost:7474").unwrap(),
+///     "neo4j",
+///     "pass",
 /// );
 /// let _guard = service.spawn();
 /// # let _ = tx.send(vec![Sensation::<Value>{kind:"face.embedding".into(), when:Local::now(), what:json!({"face_id":"f1","embedding":vec![0.0_f32; 512]}), source:None}]);
 /// ```
 pub struct FaceRecognitionService {
     rx: Receiver<Vec<Sensation<Value>>>,
-    tx: UnboundedSender<Vec<Sensation<Value>>>,
+    tx: UnboundedSender<Vec<Sensation<String>>>,
     client: Client,
     qdrant_url: Url,
     threshold: f32,
+    neo4j_url: Url,
+    neo_user: String,
+    neo_pass: String,
 }
 
 impl FaceRecognitionService {
     /// Create a new service.
     pub fn new(
         rx: Receiver<Vec<Sensation<Value>>>,
-        tx: UnboundedSender<Vec<Sensation<Value>>>,
+        tx: UnboundedSender<Vec<Sensation<String>>>,
         client: Client,
         qdrant_url: Url,
         threshold: f32,
+        neo4j_url: Url,
+        neo_user: impl Into<String>,
+        neo_pass: impl Into<String>,
     ) -> Self {
         Self {
             rx,
@@ -54,6 +63,9 @@ impl FaceRecognitionService {
             client,
             qdrant_url,
             threshold,
+            neo4j_url,
+            neo_user: neo_user.into(),
+            neo_pass: neo_pass.into(),
         }
     }
 
@@ -115,20 +127,59 @@ impl FaceRecognitionService {
         let matched = result.result.into_iter().filter(|r| r.id != face_id).next();
         if let Some(item) = matched {
             if item.score >= self.threshold {
+                let name = self.fetch_name(&item.id).await.ok().flatten();
+                let text = name
+                    .as_deref()
+                    .map(|n| format!("I recognize {}'s face.", n))
+                    .unwrap_or_else(|| "I recognized a known face.".to_string());
                 let sensation = Sensation {
                     kind: "face.recognized".into(),
                     when: Local::now(),
-                    what: json!({
-                        "face_id": face_id,
-                        "matched_face_id": item.id,
-                        "similarity": item.score,
-                    }),
+                    what: text,
                     source: None,
                 };
                 let _ = self.tx.send(vec![sensation]);
             }
         }
         Ok(())
+    }
+
+    async fn fetch_name(&self, face_id: &str) -> anyhow::Result<Option<String>> {
+        let query =
+            "MATCH (f:FaceEmbedding {uuid:$id})-[:REPRESENTS]->(p:Person) RETURN p.name LIMIT 1";
+        let params = json!({"id": face_id});
+        let payload = json!({"statements":[{"statement":query,"parameters":params}]});
+        let url = self.neo4j_url.join("db/neo4j/tx/commit")?;
+        let resp = self
+            .client
+            .post(url)
+            .basic_auth(&self.neo_user, Some(&self.neo_pass))
+            .json(&payload)
+            .send()
+            .await?;
+        if !resp.status().is_success() {
+            warn!(status=%resp.status(), "neo4j name query failed");
+            return Ok(None);
+        }
+        #[derive(serde::Deserialize)]
+        struct Res {
+            results: Vec<R1>,
+        }
+        #[derive(serde::Deserialize)]
+        struct R1 {
+            data: Vec<R2>,
+        }
+        #[derive(serde::Deserialize)]
+        struct R2 {
+            row: (Option<String>,),
+        }
+        let res: Res = resp.json().await?;
+        Ok(res
+            .results
+            .into_iter()
+            .flat_map(|r| r.data)
+            .next()
+            .and_then(|r| r.row.0))
     }
 }
 
@@ -149,12 +200,22 @@ mod tests {
                 "result": [{"id": "known", "score": 0.95}]
             }));
         });
+        let neo = MockServer::start();
+        let neo_mock = neo.mock(|when, then| {
+            when.method(POST).path("/db/neo4j/tx/commit");
+            then.status(200).json_body(json!({
+                "results": [{"data": [{"row": ["Travis"]}]}]
+            }));
+        });
         let service = FaceRecognitionService::new(
             rx,
             out_tx,
             Client::new(),
             Url::parse(&server.url("/")).unwrap(),
             0.9,
+            Url::parse(&neo.url("/")).unwrap(),
+            "u",
+            "p",
         );
         let guard = service.spawn();
         let embedding = vec![0.0_f32; 512];
@@ -167,8 +228,9 @@ mod tests {
         tx.send(vec![sens]).unwrap();
         let out = out_rx.recv().await.unwrap();
         assert_eq!(out[0].kind, "face.recognized");
-        assert_eq!(out[0].what["matched_face_id"], "known");
+        assert_eq!(out[0].what, "I recognize Travis's face.");
         mock.assert();
+        neo_mock.assert();
         drop(guard);
     }
 }
