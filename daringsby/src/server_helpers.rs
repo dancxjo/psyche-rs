@@ -30,7 +30,7 @@ async fn ensure_tls_certs(cert: &str, key: &str, host: &str) -> std::io::Result<
     Ok(())
 }
 
-/// Run the HTTP server exposing speech, vision, canvas, and memory graph streams.
+/// Run the HTTP server exposing speech, vision, and memory graph streams.
 pub async fn run_server(
     stream: Arc<SpeechStream>,
     vision: Arc<VisionSensor>,
