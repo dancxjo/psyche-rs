@@ -59,7 +59,7 @@ sent to any `VisionSensor` subscribers."
             .await
             .map_err(|e| MotorError::Failed(e.to_string()))?;
         let b64 = B64.encode(&img);
-        let prompt = "This is what you are seeing. If this is your first person perspective, what do you see?".to_string();
+        let prompt = "This is what you are seeing. The image you are seeing is from your own, first-person perspective, so anyone you see is your interlocutor (unless you're looking in a mirror or something). What do you see?".to_string();
         debug!(?prompt, "vision prompt");
         let msg = ollama_rs::generation::chat::ChatMessage::user(prompt)
             .add_image(Image::from_base64(&b64));
