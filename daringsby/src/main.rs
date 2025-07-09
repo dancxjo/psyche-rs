@@ -106,7 +106,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let (mouth, stream) = build_mouth(&args).await?;
     let vision = Arc::new(VisionSensor::default());
-    let canvas = Arc::new(CanvasStream::default());
 
     let store = Arc::new(NeoQdrantMemoryStore::new(
         &args.neo4j_url,
@@ -117,16 +116,14 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     ));
     let memory_router = Arc::new(MemoryGraph::new(store.clone())).router();
 
-    let mut server_handle = run_server(
+    let mut server_guard = run_server(
         stream.clone(),
         vision.clone(),
-        canvas.clone(),
         memory_router,
         &args,
         shutdown_signal(),
     )
     .await;
-
     let qdrant_url = Url::parse(&args.qdrant_url)?;
     ensure_impressions_collection_exists(&Client::new(), &qdrant_url).await?;
     let (motors, _motor_map, consolidation_status, mut look_rx) =
@@ -236,7 +233,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         g.abort();
     }
     stream.abort_tasks();
-    server_handle.abort();
+    server_guard.abort();
     tracing::info!("Server aborted");
     Ok(())
 }

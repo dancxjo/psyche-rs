@@ -3,14 +3,13 @@ use psyche_rs::AbortGuard;
 use std::net::SocketAddr;
 use std::sync::Arc;
 
-use crate::{SpeechStream, VisionSensor, args::Args, canvas_stream::CanvasStream};
+use crate::{SpeechStream, VisionSensor, args::Args};
 use axum::Router;
 
-/// Run the HTTP server exposing speech, vision, canvas, and memory graph streams.
+/// Run the HTTP server exposing speech, vision, and memory graph streams.
 pub async fn run_server(
     stream: Arc<SpeechStream>,
     vision: Arc<VisionSensor>,
-    canvas: Arc<CanvasStream>,
     memory: Router,
     args: &Args,
     shutdown: impl Future<Output = ()> + Send + 'static,
@@ -19,7 +18,6 @@ pub async fn run_server(
         .clone()
         .router()
         .merge(vision.clone().router())
-        .merge(canvas.clone().router())
         .merge(memory);
 
     let addr: SocketAddr = format!("{}:{}", args.host, args.port)
