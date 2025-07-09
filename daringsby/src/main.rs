@@ -28,23 +28,10 @@ use psyche_rs::{
     Combobulator, Impression, ImpressionStreamSensor, Motor, MotorExecutor, NeoQdrantMemoryStore,
     SensationSensor, Sensor, Voice, Will, shutdown_signal,
 };
-use qdrant_client::qdrant::points_client::PointsClient;
 use reqwest::Client;
-use rustls::crypto::CryptoProvider;
 use std::time::Duration;
 use tokio::sync::mpsc::unbounded_channel;
-use tonic::transport::{Channel, Endpoint};
 use url::Url;
-
-async fn connect_qdrant(url: &str) -> anyhow::Result<Channel> {
-    let endpoint = Endpoint::from_shared(url.to_string())?
-        .keep_alive_timeout(Duration::from_secs(30))
-        .keep_alive_while_idle(true)
-        .initial_connection_window_size(Some(2 * 1024 * 1024))
-        .initial_stream_window_size(Some(2 * 1024 * 1024));
-    let channel = endpoint.connect().await?;
-    Ok(channel)
-}
 
 async fn run_sensor_loop<I>(
     mut stream: BoxStream<'static, Vec<I>>,
@@ -111,14 +98,6 @@ async fn run_voice(
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    // No need to import CryptoProvider directly
-    if rustls::crypto::CryptoProvider::get_default().is_none() {
-        if let Err(e) = rustls::crypto::CryptoProvider::install_default(
-            rustls::crypto::ring::default_provider(),
-        ) {
-            return Err(format!("Failed to install default CryptoProvider: {:?}", e).into());
-        }
-    }
     let (log_tx, log_rx) = tokio::sync::mpsc::unbounded_channel();
     logger::try_init_with_sender(log_tx).expect("logger init");
     let args = Args::parse();
@@ -154,10 +133,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     .await;
     let qdrant_url = Url::parse(&args.qdrant_url)?;
     ensure_impressions_collection_exists(&Client::new(), &qdrant_url).await?;
-    let channel = connect_qdrant(&args.qdrant_url).await?;
-    ensure_face_embeddings_collection_exists(&channel).await?;
+    let qdrant = Qdrant::from_url(&args.qdrant_url).build()?;
+    ensure_face_embeddings_collection_exists(&qdrant).await?;
     let _projection_guard = MemoryProjectionService::new(
-        PointsClient::new(channel.clone()),
+        qdrant.clone(),
         store.clone(),
         std::time::Duration::from_secs(60),
     )

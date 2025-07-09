@@ -2,13 +2,9 @@ use async_trait::async_trait;
 use chrono::Utc;
 use psyche_rs::{Impression, MemoryStore, StoredImpression, StoredSensation};
 use qdrant_client::Qdrant;
-use qdrant_client::qdrant::{
-    CollectionExistsRequest, CreateCollectionBuilder, Distance, VectorParamsBuilder,
-    collections_client::CollectionsClient,
-};
+use qdrant_client::qdrant::{CreateCollectionBuilder, Distance, VectorParamsBuilder};
 use reqwest::Client;
 use serde_json::json;
-use tonic::transport::Channel;
 use tracing::{debug, error, info};
 use url::Url;
 
@@ -130,27 +126,6 @@ impl FaceCollectionClient for Qdrant {
         .await
         .map(|_| ())
         .map_err(|e| anyhow::Error::new(e))
-    }
-}
-
-#[async_trait]
-impl FaceCollectionClient for Channel {
-    async fn collection_exists(&self) -> anyhow::Result<bool> {
-        let mut client = CollectionsClient::new(self.clone());
-        let req = CollectionExistsRequest {
-            collection_name: "face_embeddings".to_string(),
-        };
-        let res = client.collection_exists(req).await?;
-        Ok(res.into_inner().result.map(|r| r.exists).unwrap_or(false))
-    }
-
-    async fn create_collection(&self) -> anyhow::Result<()> {
-        let mut client = CollectionsClient::new(self.clone());
-        let req = CreateCollectionBuilder::new("face_embeddings")
-            .vectors_config(VectorParamsBuilder::new(512, Distance::Cosine))
-            .build();
-        client.create(req).await?;
-        Ok(())
     }
 }
 
