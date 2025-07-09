@@ -10,9 +10,7 @@ SITUATION:
 Latest instant: {latest_instant}
 Latest moment: {latest_moment}
 {situation}
-Relevant memories:
 {memories}
-What's relevant among this? 
 
 AVAILABLE MOTORS:
 {motors}

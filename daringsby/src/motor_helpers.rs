@@ -11,10 +11,6 @@ use psyche_rs::{ClusterAnalyzer, LLMClient, MemoryStore, Motor, Sensation};
 
 use crate::{VisionMotor, VisionSensor};
 
-use crate::{CanvasMotor, CanvasStream};
-
-use crate::SvgMotor;
-
 use crate::RecallMotor;
 
 use crate::LogMemoryMotor;
@@ -41,18 +37,15 @@ pub fn build_motors(
     llms: &LLMClients,
     mouth: Arc<Mouth>,
     vision: Arc<VisionSensor>,
-    canvas: Arc<CanvasStream>,
     store: Arc<dyn MemoryStore + Send + Sync>,
 ) -> (
     Vec<Arc<dyn Motor>>,
     Arc<HashMap<String, Arc<dyn Motor>>>,
     Option<Arc<Mutex<ConsolidationStatus>>>,
-    Option<UnboundedReceiver<String>>,
     Option<UnboundedReceiver<Vec<Sensation<String>>>>,
 ) {
     let mut motors: Vec<Arc<dyn Motor>> = Vec::new();
     let mut map: HashMap<String, Arc<dyn Motor>> = HashMap::new();
-    let svg_rx_opt: Option<UnboundedReceiver<String>>;
     let look_rx_opt: Option<UnboundedReceiver<Vec<Sensation<String>>>>;
 
     let status: Option<Arc<Mutex<ConsolidationStatus>>> =
@@ -73,21 +66,6 @@ pub fn build_motors(
     {
         motors.push(mouth.clone());
         map.insert("speak".into(), mouth);
-    }
-
-    {
-        let (canvas_tx, _) = unbounded_channel::<Vec<Sensation<String>>>();
-        let canvas_motor = Arc::new(CanvasMotor::new(canvas, llms.quick.clone(), canvas_tx));
-        motors.push(canvas_motor.clone());
-        map.insert("canvas".into(), canvas_motor);
-    }
-
-    {
-        let (svg_tx, svg_rx) = unbounded_channel::<String>();
-        let svg_motor = Arc::new(SvgMotor::new(svg_tx));
-        svg_rx_opt = Some(svg_rx);
-        motors.push(svg_motor.clone());
-        map.insert("draw".into(), svg_motor);
     }
 
     {
@@ -148,5 +126,5 @@ pub fn build_motors(
         map.insert("battery".into(), battery_motor);
     }
 
-    (motors, Arc::new(map), status, svg_rx_opt, look_rx_opt)
+    (motors, Arc::new(map), status, look_rx_opt)
 }

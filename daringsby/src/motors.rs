@@ -1,5 +1,4 @@
 pub use crate::battery_motor::BatteryMotor;
-pub use crate::canvas_motor::CanvasMotor;
 pub use crate::log_memory_motor::LogMemoryMotor;
 /// Motor implementations used by the Daringsby binary.
 ///
@@ -14,5 +13,4 @@ pub use crate::recall_motor::RecallMotor;
 pub use crate::source_read_motor::SourceReadMotor;
 pub use crate::source_search_motor::SourceSearchMotor;
 pub use crate::source_tree_motor::SourceTreeMotor;
-pub use crate::svg_motor::SvgMotor;
 pub use crate::vision_motor::VisionMotor;

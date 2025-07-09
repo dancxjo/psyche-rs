@@ -1,7 +1,7 @@
 use crate::BatteryMotor;
 use crate::{
-    CanvasMotor, LogMemoryMotor, LoggingMotor, Mouth, RecallMotor, SourceReadMotor,
-    SourceSearchMotor, SourceTreeMotor, SvgMotor, VisionMotor,
+    LogMemoryMotor, LoggingMotor, Mouth, RecallMotor, SourceReadMotor, SourceSearchMotor,
+    SourceTreeMotor, VisionMotor,
 };
 use futures::StreamExt;
 use psyche_rs::Sensation;
@@ -40,8 +40,6 @@ pub async fn drive_will_stream<M>(
     logger: Arc<LoggingMotor>,
     vision_motor: Arc<VisionMotor>,
     mouth: Arc<Mouth>,
-    canvas: Arc<CanvasMotor>,
-    drawer: Arc<SvgMotor>,
     recall: Arc<RecallMotor<M>>,
     log_memory: Arc<LogMemoryMotor>,
     source_read: Arc<SourceReadMotor>,
@@ -65,12 +63,6 @@ pub async fn drive_will_stream<M>(
                 }
                 "speak" => {
                     mouth.perform(intent).await.expect("mouth motor failed");
-                }
-                "canvas" => {
-                    canvas.perform(intent).await.expect("canvas motor failed");
-                }
-                "draw" => {
-                    drawer.perform(intent).await.expect("svg motor failed");
                 }
                 "recall" => {
                     recall.perform(intent).await.expect("recall motor failed");

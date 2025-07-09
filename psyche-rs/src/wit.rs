@@ -273,7 +273,15 @@ where
                             template: &'a str,
                             memories: &'a str,
                         }
-                        let ctx = Ctx { last_frame: &lf, template: &timeline, memories: &neighbor_text };
+                        let memory_section = if neighbor_text.is_empty() {
+                            String::new()
+                        } else {
+                            format!(
+                                "Relevant memories:\n{}\nWhat's relevant among these memories?",
+                                neighbor_text
+                            )
+                        };
+                        let ctx = Ctx { last_frame: &lf, template: &timeline, memories: &memory_section };
                         let prompt = render_template(&template, &ctx).unwrap_or_else(|e| {
                             trace!(error=?e, "template render failed");
                             template.clone()
