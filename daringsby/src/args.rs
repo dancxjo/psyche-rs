@@ -44,6 +44,12 @@ pub struct Args {
     pub host: String,
     #[arg(long, default_value_t = 3000)]
     pub port: u16,
+    /// Path to TLS certificate. A self-signed cert will be created if missing.
+    #[arg(long, default_value = "cert.pem")]
+    pub tls_cert: String,
+    /// Path to TLS private key. A self-signed cert will be created if missing.
+    #[arg(long, default_value = "key.pem")]
+    pub tls_key: String,
     #[arg(long, default_value = "http://localhost:5002")]
     pub tts_url: String,
     #[arg(long)]

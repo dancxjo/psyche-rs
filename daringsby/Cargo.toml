@@ -33,6 +33,8 @@ hound = "3"
 base64 = "0.21"
 anyhow = "1"
 battery = "0.7"
+axum-server = { version = "0.7", features = ["tls-rustls"] }
+rcgen = "0.11"
 hyper = "1"
 
 [dev-dependencies]

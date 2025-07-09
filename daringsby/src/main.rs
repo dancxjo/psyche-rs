@@ -106,7 +106,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let (mouth, stream) = build_mouth(&args).await?;
     let vision = Arc::new(VisionSensor::default());
-
     let store = Arc::new(NeoQdrantMemoryStore::new(
         &args.neo4j_url,
         &args.neo4j_user,
