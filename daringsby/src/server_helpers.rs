@@ -3,21 +3,16 @@ use psyche_rs::AbortGuard;
 use std::net::SocketAddr;
 use std::sync::Arc;
 
-use crate::{CanvasStream, SpeechStream, VisionSensor, args::Args};
+use crate::{SpeechStream, VisionSensor, args::Args};
 
 /// Run the HTTP server exposing speech and vision streams.
 pub async fn run_server(
     stream: Arc<SpeechStream>,
     vision: Arc<VisionSensor>,
-    canvas: Arc<CanvasStream>,
     args: &Args,
     shutdown: impl Future<Output = ()> + Send + 'static,
 ) -> AbortGuard {
-    let app = stream
-        .clone()
-        .router()
-        .merge(vision.clone().router())
-        .merge(canvas.clone().router());
+    let app = stream.clone().router().merge(vision.clone().router());
     let addr: SocketAddr = format!("{}:{}", args.host, args.port)
         .parse()
         .expect("invalid addr");

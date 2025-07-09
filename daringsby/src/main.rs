@@ -4,7 +4,7 @@ use std::sync::Arc;
 
 use daringsby::memory_consolidation_service::MemoryConsolidationService;
 use daringsby::memory_helpers::{ensure_impressions_collection_exists, persist_impression};
-use daringsby::{CanvasStream, LookSensor, VisionSensor};
+use daringsby::{LookSensor, VisionSensor};
 use daringsby::{
     llm_helpers::{build_ollama_clients, build_voice_llm},
     logger,
@@ -104,15 +104,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let (mouth, stream) = build_mouth(&args).await?;
     let vision = Arc::new(VisionSensor::default());
-    let canvas = Arc::new(CanvasStream::default());
-    let mut server_handle = run_server(
-        stream.clone(),
-        vision.clone(),
-        canvas.clone(),
-        &args,
-        shutdown_signal(),
-    )
-    .await;
+    let mut server_handle =
+        run_server(stream.clone(), vision.clone(), &args, shutdown_signal()).await;
 
     let store = Arc::new(NeoQdrantMemoryStore::new(
         &args.neo4j_url,
@@ -123,13 +116,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     ));
     let qdrant_url = Url::parse(&args.qdrant_url)?;
     ensure_impressions_collection_exists(&Client::new(), &qdrant_url).await?;
-    let (motors, _motor_map, consolidation_status, mut svg_rx, mut look_rx) = build_motors(
-        &llms,
-        mouth.clone(),
-        vision.clone(),
-        canvas.clone(),
-        store.clone(),
-    );
+    let (motors, _motor_map, consolidation_status, mut look_rx) =
+        build_motors(&llms, mouth.clone(), vision.clone(), store.clone());
     let motors_send: Vec<Arc<dyn Motor + Send + Sync>> = motors
         .iter()
         .cloned()
@@ -161,16 +149,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         let analyzer = Arc::new(ClusterAnalyzer::new(store.clone(), llms.memory.clone()));
         MemoryConsolidationService::new(analyzer, status, std::time::Duration::from_secs(60))
             .spawn()
-    });
-
-    let mut svg_guard = svg_rx.take().map(|mut rx| {
-        let stream = canvas.clone();
-        psyche_rs::AbortGuard::new(tokio::spawn(async move {
-            while let Some(svg) = rx.recv().await {
-                stream.broadcast_svg(svg);
-            }
-            tracing::info!("svg forwarder task exiting");
-        }))
     });
 
     let combob_task = {
@@ -241,9 +219,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
     }
 
-    if let Some(mut g) = svg_guard {
-        g.abort();
-    }
     if let Some(mut g) = consolidation_guard {
         g.abort();
     }
