@@ -3,7 +3,10 @@ use daringsby::args::Args;
 use std::sync::Arc;
 
 use daringsby::memory_consolidation_service::MemoryConsolidationService;
-use daringsby::memory_helpers::{ensure_impressions_collection_exists, persist_impression};
+use daringsby::memory_helpers::{
+    ensure_face_embeddings_collection_exists, ensure_impressions_collection_exists,
+    persist_impression,
+};
 use daringsby::{LookSensor, VisionSensor};
 use daringsby::{
     canvas_stream::CanvasStream,
@@ -22,6 +25,7 @@ use psyche_rs::{
     Combobulator, Impression, ImpressionStreamSensor, Motor, MotorExecutor, NeoQdrantMemoryStore,
     SensationSensor, Sensor, Voice, Will, shutdown_signal,
 };
+use qdrant_client::Qdrant;
 use reqwest::Client;
 use tokio::sync::mpsc::unbounded_channel;
 use url::Url;
@@ -125,6 +129,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     .await;
     let qdrant_url = Url::parse(&args.qdrant_url)?;
     ensure_impressions_collection_exists(&Client::new(), &qdrant_url).await?;
+    let qdrant_client = Qdrant::from_url(&args.qdrant_url).build()?;
+    ensure_face_embeddings_collection_exists(&qdrant_client).await?;
     let (motors, _motor_map, consolidation_status, mut look_rx) =
         build_motors(&llms, mouth.clone(), vision.clone(), store.clone());
     let motors_send: Vec<Arc<dyn Motor + Send + Sync>> = motors
