@@ -1,7 +1,6 @@
 use clap::Parser;
 use daringsby::args::Args;
 use qdrant_client::Qdrant;
-use rustls::crypto::CryptoProvider;
 use std::sync::Arc;
 
 use daringsby::memory_consolidation_service::MemoryConsolidationService;
@@ -101,11 +100,6 @@ async fn run_voice(
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let (log_tx, log_rx) = tokio::sync::mpsc::unbounded_channel();
     logger::try_init_with_sender(log_tx).expect("logger init");
-    let enarced = CryptoProvider::get_default()
-        .expect("No default CryptoProvider found")
-        .clone();
-    let exarced = enarced.as_ref().clone();
-    CryptoProvider::install_default(exarced).expect("Failed to install CryptoProvider");
     let args = Args::parse();
 
     let (quick_llm, combob_llm, will_llm, memory_llm) = build_ollama_clients(&args);
