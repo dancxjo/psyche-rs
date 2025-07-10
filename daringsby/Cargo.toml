@@ -42,7 +42,7 @@ num-traits = "0.2"
 image = { version = "0.24" }
 ort = { version = "2.0.0-rc.10" }
 opencv = "0.95.0"
-rustls = "0.23.28"
+rustls = { version = "0.23", features = ["ring"] }
 
 [dev-dependencies]
 httpmock = "0.7"
@@ -56,4 +56,5 @@ tempfile = "3"
 serial_test = "2"
 tracing-test = { version = "0.2", features = ["no-env-filter"] }
 
-
+[patch.crates-io]
+rustls = { version = "0.23.28", features = ["ring"] }
