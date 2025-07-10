@@ -2,7 +2,7 @@ use super::genius::Genius;
 use crate::genius_queue::{GeniusSender, bounded_channel};
 use crate::memory_store::MemoryStore;
 use async_trait::async_trait;
-use futures::{StreamExt, stream};
+use futures::StreamExt;
 use std::sync::{Arc, Mutex};
 use tokio::sync::mpsc::{Receiver, UnboundedSender};
 use tracing::{debug, trace};

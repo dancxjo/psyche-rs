@@ -6,7 +6,7 @@ use futures::{
 };
 use tokio::sync::mpsc::unbounded_channel;
 use tokio_stream::wrappers::UnboundedReceiverStream;
-use tracing::{debug, trace, warn};
+use tracing::{debug, trace};
 
 use rand::Rng;
 use segtok::segmenter::{SegmentConfig, split_single};
@@ -14,7 +14,7 @@ use segtok::segmenter::{SegmentConfig, split_single};
 use crate::{Impression, PlainDescribe, Sensation, Sensor, render_template};
 
 use crate::MemoryStore;
-use crate::llm::types::{Token, TokenStream};
+use crate::llm::types::Token;
 use crate::llm_client::LLMClient;
 use crate::neighbor::merge_neighbors;
 use ollama_rs::generation::chat::ChatMessage;

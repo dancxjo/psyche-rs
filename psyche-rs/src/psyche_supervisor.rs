@@ -6,7 +6,7 @@ use std::thread::JoinHandle;
 use tokio::sync::broadcast;
 use tracing::{debug, error, warn};
 
-use crate::{Genius, ThreadLocalContext, launch_genius};
+use crate::{Genius, launch_genius};
 
 /// Key wrapper allowing [`Arc`] pointers to be used in a [`HashMap`]
 /// by comparing the underlying pointer value.
