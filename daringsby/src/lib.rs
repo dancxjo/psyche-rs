@@ -1,7 +1,6 @@
 pub mod battery_motor;
 pub mod battery_sensor;
 pub mod canvas_stream;
-mod crypto;
 pub mod development_status;
 pub mod ear;
 pub mod face_clustering_service;
