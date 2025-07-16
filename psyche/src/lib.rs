@@ -1,6 +1,9 @@
 //! Core cognitive logic for Psyche.
 //!
-//! This crate will host memory stores, wits and distillers. It is OS neutral.
+//! This crate hosts memory models and simple distillers. It is OS neutral.
+
+pub mod distiller;
+pub mod models;
 
 /// Example helper that adds two numbers.
 ///
