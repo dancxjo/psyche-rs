@@ -7,6 +7,7 @@ use uuid::Uuid;
 
 #[tokio::test]
 async fn combobulator_config_distills_chat() {
+    let entry_id = Uuid::new_v4();
     let cfg = DistillerConfig {
         name: "combobulator".into(),
         input_kind: "sensation/chat".into(),
@@ -18,7 +19,6 @@ async fn combobulator_config_distills_chat() {
         config: cfg,
         llm: Box::new(MockChat::default()),
     };
-    let entry_id = Uuid::new_v4();
     let entry = MemoryEntry {
         id: entry_id,
         kind: "sensation/chat".into(),
@@ -34,6 +34,8 @@ async fn combobulator_config_distills_chat() {
 
 #[tokio::test]
 async fn memory_config_distills_instant() {
+    let id1 = Uuid::new_v4();
+    let id2 = Uuid::new_v4();
     let cfg = DistillerConfig {
         name: "memory".into(),
         input_kind: "instant".into(),
@@ -45,8 +47,6 @@ async fn memory_config_distills_instant() {
         config: cfg,
         llm: Box::new(MockChat::default()),
     };
-    let id1 = Uuid::new_v4();
-    let id2 = Uuid::new_v4();
     let entry1 = MemoryEntry {
         id: id1,
         kind: "instant".into(),
@@ -61,10 +61,7 @@ async fn memory_config_distills_instant() {
         what: json!("very tired"),
         how: String::from("very tired"),
     };
-    let out = d
-        .distill(vec![entry1.clone(), entry2.clone()])
-        .await
-        .unwrap();
+    let out = d.distill(vec![entry1, entry2]).await.unwrap();
     assert_eq!(out[0].kind, "situation");
     assert_eq!(out[0].how, "mock response");
     assert_eq!(out[0].what, json!([id1, id2]));

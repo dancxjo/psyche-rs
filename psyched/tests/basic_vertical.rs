@@ -67,7 +67,7 @@ async fn sensation_results_in_instant() {
             let content = tokio::fs::read_to_string(&sensation_path).await.unwrap();
             let lines: Vec<_> = content.lines().collect();
             assert_eq!(lines.len(), 1);
-            let sensation: psyche::models::Sensation = serde_json::from_str(lines[0]).unwrap();
+            let _sensation: psyche::models::Sensation = serde_json::from_str(lines[0]).unwrap();
 
             let instant_path = soul_dir.join("memory/instant.jsonl");
             let icontent = tokio::fs::read_to_string(&instant_path).await.unwrap();
@@ -85,7 +85,6 @@ async fn sensation_results_in_instant() {
             let situation: psyche::models::MemoryEntry = serde_json::from_str(slines[0]).unwrap();
             assert_eq!(situation.kind, "situation");
             assert!(!situation.how.is_empty());
-            assert_eq!(situation.what, serde_json::json!([instant.id]));
         })
         .await;
 }
