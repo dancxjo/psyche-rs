@@ -58,3 +58,5 @@
 - Gate heavy dependencies like OpenCV behind optional Cargo features to keep
   compile times manageable.
 - When OpenCV isn't available, run tests with `--no-default-features`.
+- Follow the psyche-os directory structure in README.
+- Run `cargo test --workspace` before committing.
