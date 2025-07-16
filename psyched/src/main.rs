@@ -1,5 +1,6 @@
 use clap::Parser;
 use std::path::PathBuf;
+use toml;
 
 /// `psyched` — the orchestrator for psycheOS
 #[derive(Parser)]
@@ -13,13 +14,17 @@ pub struct Cli {
     #[arg(long, default_value = "/run/quick.sock")]
     pub socket: PathBuf,
 
-    /// Path to the raw sensation log
-    #[arg(long, alias = "memory-path", default_value = "memory/sensation.jsonl")]
-    pub memory: PathBuf,
+    /// Directory containing Layka's soul
+    #[arg(long, alias = "memory-path", default_value = "soul")]
+    pub soul: PathBuf,
 
-    /// Path to TOML file describing distillation pipeline
-    #[arg(long, alias = "config-file", default_value = "psyche.toml")]
-    pub config: PathBuf,
+    /// Path to TOML file describing the distiller pipeline
+    #[arg(
+        long,
+        alias = "config-file",
+        default_value = "soul/config/pipeline.toml"
+    )]
+    pub pipeline: PathBuf,
 
     /// Beat interval (in milliseconds)
     #[arg(long, default_value_t = 50)]
@@ -30,6 +35,17 @@ pub struct Cli {
 async fn main() -> anyhow::Result<()> {
     tracing_subscriber::fmt::init();
     let cli = Cli::parse();
+    let soul = if cli.soul.exists() {
+        cli.soul.clone()
+    } else {
+        PathBuf::from("/etc/soul")
+    };
+    let pipeline =
+        if cli.pipeline == PathBuf::from("soul/config/pipeline.toml") && !cli.pipeline.exists() {
+            soul.join("config/pipeline.toml")
+        } else {
+            cli.pipeline.clone()
+        };
     let registry = std::sync::Arc::new(psyche::llm::LlmRegistry {
         chat: Box::new(psyche::llm::mock_chat::MockChat::default()),
         embed: Box::new(psyche::llm::mock_embed::MockEmbed::default()),
@@ -40,10 +56,17 @@ async fn main() -> anyhow::Result<()> {
         capabilities: vec![psyche::llm::LlmCapability::Chat],
     });
     let shutdown = shutdown_signal();
+    let identity_path = soul.join("identity.toml");
+    if let Ok(text) = tokio::fs::read_to_string(&identity_path).await {
+        if let Ok(id) = toml::from_str::<psyched::Identity>(&text) {
+            tracing::info!("\u{1F680}  Booting {}...", id.name);
+        }
+    }
+
     psyched::run(
         cli.socket,
-        cli.memory,
-        cli.config,
+        soul,
+        pipeline,
         std::time::Duration::from_millis(cli.beat_ms),
         registry,
         profile,

@@ -9,11 +9,18 @@ use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
 use tokio::net::{UnixListener, UnixStream};
-use tracing::info;
 use uuid::Uuid;
 
 mod file_memory;
 mod wit;
+
+/// Identity information loaded from `soul/identity.toml`.
+#[derive(Deserialize)]
+pub struct Identity {
+    pub name: String,
+    pub role: Option<String>,
+    pub purpose: Option<String>,
+}
 
 async fn handle_stream(stream: UnixStream, sensation_path: PathBuf) -> Result<()> {
     let mut reader = BufReader::new(stream);
@@ -71,6 +78,7 @@ async fn append_all<T: Serialize>(path: &PathBuf, values: &[T]) -> Result<()> {
 struct DistillerConfig {
     input_kinds: Vec<String>,
     output_kind: String,
+    #[allow(dead_code)]
     prompt_template: Option<String>,
     beat_mod: usize,
     #[serde(default)]
@@ -118,6 +126,7 @@ async fn load_config(path: &Path) -> Result<Config> {
 }
 
 struct LoadedDistiller {
+    #[allow(dead_code)]
     name: String,
     cfg: DistillerConfig,
     distiller: Box<dyn Distiller + Send>,
@@ -202,22 +211,21 @@ fn flatten_links(val: &serde_json::Value) -> serde_json::Value {
 /// Runs the psyched daemon until `shutdown` is triggered.
 pub async fn run(
     socket: PathBuf,
-    memory: PathBuf,
-    config: PathBuf,
+    soul: PathBuf,
+    pipeline: PathBuf,
     beat_duration: std::time::Duration,
     registry: std::sync::Arc<psyche::llm::LlmRegistry>,
     profile: std::sync::Arc<psyche::llm::LlmProfile>,
-    mut shutdown: impl std::future::Future<Output = ()>,
+    shutdown: impl std::future::Future<Output = ()>,
 ) -> Result<()> {
     let _ = std::fs::remove_file(&socket);
     let listener = UnixListener::bind(&socket)?;
 
-    let memory_dir = memory
-        .parent()
-        .map(|p| p.to_path_buf())
-        .unwrap_or_else(|| PathBuf::from("."));
+    let memory_dir = soul.join("memory");
+    tokio::fs::create_dir_all(&memory_dir).await?;
+    let sensation_path = memory_dir.join("sensation.jsonl");
 
-    let cfg_path = config;
+    let cfg_path = pipeline;
     let cfg = load_config(&cfg_path).await?;
 
     let mut distillers: Vec<LoadedDistiller> = cfg
@@ -242,7 +250,7 @@ pub async fn run(
         tokio::select! {
             _ = &mut shutdown => break,
             Ok((stream, _)) = listener.accept() => {
-                handle_stream(stream, memory.clone()).await?;
+                handle_stream(stream, sensation_path.clone()).await?;
             }
             _ = beat.tick() => {
                 beat_counter += 1;

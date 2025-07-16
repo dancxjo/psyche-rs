@@ -8,11 +8,17 @@ use tokio::task::LocalSet;
 async fn sensation_results_in_instant() {
     let dir = tempdir().unwrap();
     let socket = dir.path().join("quick.sock");
-    let memory_path = dir.path().join("sensation.jsonl");
-    let memory_dir = dir.path().to_path_buf();
+    let soul_dir = dir.path().to_path_buf();
+    let memory_path = soul_dir.join("memory/sensation.jsonl");
     let config_path =
         PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../tests/configs/sample.toml");
-    tokio::fs::copy(config_path, memory_dir.join("psyche.toml"))
+    tokio::fs::create_dir_all(soul_dir.join("config"))
+        .await
+        .unwrap();
+    tokio::fs::create_dir_all(soul_dir.join("memory"))
+        .await
+        .unwrap();
+    tokio::fs::copy(config_path, soul_dir.join("config/pipeline.toml"))
         .await
         .unwrap();
 
@@ -29,8 +35,8 @@ async fn sensation_results_in_instant() {
     });
     let server = local.spawn_local(psyched::run(
         socket.clone(),
-        memory_path.clone(),
-        memory_dir.join("psyche.toml"),
+        soul_dir.clone(),
+        soul_dir.join("config/pipeline.toml"),
         std::time::Duration::from_millis(50),
         registry.clone(),
         profile.clone(),
@@ -63,7 +69,7 @@ async fn sensation_results_in_instant() {
             assert_eq!(lines.len(), 1);
             let sensation: psyche::models::Sensation = serde_json::from_str(lines[0]).unwrap();
 
-            let instant_path = memory_dir.join("instant.jsonl");
+            let instant_path = soul_dir.join("memory/instant.jsonl");
             let icontent = tokio::fs::read_to_string(&instant_path).await.unwrap();
             let ilines: Vec<_> = icontent.lines().collect();
             assert_eq!(ilines.len(), 1);
@@ -71,7 +77,7 @@ async fn sensation_results_in_instant() {
             assert_eq!(instant.what, serde_json::json!([sensation.id]));
             assert_eq!(instant.how, "The interlocutor feels lonely");
 
-            let situation_path = memory_dir.join("situation.jsonl");
+            let situation_path = soul_dir.join("memory/situation.jsonl");
             let scontent = tokio::fs::read_to_string(&situation_path).await.unwrap();
             let slines: Vec<_> = scontent.lines().collect();
             assert_eq!(slines.len(), 1);
@@ -93,9 +99,9 @@ async fn cli_flags_work() {
         .unwrap();
     assert!(status.success());
     let status = tokio::process::Command::new(exe)
-        .arg("--memory-path")
+        .arg("--soul")
         .arg("/tmp/foo")
-        .arg("--config-file")
+        .arg("--pipeline")
         .arg("/tmp/bar")
         .arg("--help")
         .status()

@@ -13,7 +13,7 @@ impl PromptHelper {
     /// ```
     /// use psyche::llm::prompt::PromptHelper;
     /// use std::path::Path;
-    /// let helper = PromptHelper::from_config(Path::new("soul/config.toml"));
+    /// let helper = PromptHelper::from_config(Path::new("soul/config/pipeline.toml"));
     /// assert_eq!(helper.system(), "");
     /// ```
     pub fn from_config(config_path: &Path) -> Self {

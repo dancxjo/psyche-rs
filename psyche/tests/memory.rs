@@ -84,9 +84,9 @@ impl psyche::llm::CanChat for SpyChat {
 #[tokio::test]
 async fn prefixes_prompt_with_self_header() {
     let dir = tempfile::tempdir().unwrap();
-    std::fs::write(dir.path().join("config.toml"), "[dummy]\n").unwrap();
+    std::fs::write(dir.path().join("pipeline.toml"), "[dummy]\n").unwrap();
     std::fs::write(dir.path().join("self.txt"), "You are Layka").unwrap();
-    let prompter = PromptHelper::from_config(&dir.path().join("config.toml"));
+    let prompter = PromptHelper::from_config(&dir.path().join("pipeline.toml"));
 
     let profile = LlmProfile {
         provider: "mock".into(),
