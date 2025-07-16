@@ -88,3 +88,14 @@ impl Distiller for Combobulator {
         Ok(output)
     }
 }
+
+/// Passes memory entries through unchanged. Useful for chaining distillers in
+/// tests.
+pub struct Passthrough;
+
+#[async_trait(?Send)]
+impl Distiller for Passthrough {
+    async fn distill(&mut self, input: Vec<MemoryEntry>) -> anyhow::Result<Vec<MemoryEntry>> {
+        Ok(input)
+    }
+}

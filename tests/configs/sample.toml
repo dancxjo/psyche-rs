@@ -1,0 +1,12 @@
+[distiller.combobulator]
+input_kinds = ["sensation/chat"]
+output_kind = "instant"
+prompt_template = "prompts/combobulator.txt"
+beat_mod = 1
+
+[distiller.memory]
+input_kinds = ["instant"]
+output_kind = "situation"
+prompt_template = "prompts/memory.txt"
+beat_mod = 1
+postprocess = "flatten_links"
