@@ -9,6 +9,7 @@ use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
 use tokio::net::{UnixListener, UnixStream};
+use tracing::info;
 use uuid::Uuid;
 
 mod file_memory;
@@ -81,6 +82,39 @@ struct Config {
     distiller: HashMap<String, DistillerConfig>,
     #[serde(default)]
     wit: HashMap<String, wit::WitConfig>,
+}
+
+async fn load_config(path: &Path) -> Result<Config> {
+    if path.exists() {
+        let text = tokio::fs::read_to_string(path).await?;
+        Ok(toml::from_str(&text)?)
+    } else {
+        let mut map = HashMap::new();
+        map.insert(
+            "combobulator".into(),
+            DistillerConfig {
+                input_kinds: vec!["sensation/chat".into()],
+                output_kind: "instant".into(),
+                prompt_template: None,
+                beat_mod: 1,
+                postprocess: None,
+            },
+        );
+        map.insert(
+            "memory".into(),
+            DistillerConfig {
+                input_kinds: vec!["instant".into()],
+                output_kind: "situation".into(),
+                prompt_template: None,
+                beat_mod: 4,
+                postprocess: Some("flatten_links".into()),
+            },
+        );
+        Ok(Config {
+            distiller: map,
+            wit: HashMap::new(),
+        })
+    }
 }
 
 struct LoadedDistiller {
@@ -184,37 +218,7 @@ pub async fn run(
         .unwrap_or_else(|| PathBuf::from("."));
 
     let cfg_path = config;
-    // TODO: parse `config` TOML file to load Wits dynamically
-    let cfg: Config = if cfg_path.exists() {
-        let text = tokio::fs::read_to_string(&cfg_path).await?;
-        toml::from_str(&text)?
-    } else {
-        let mut map = HashMap::new();
-        map.insert(
-            "combobulator".into(),
-            DistillerConfig {
-                input_kinds: vec!["sensation/chat".into()],
-                output_kind: "instant".into(),
-                prompt_template: None,
-                beat_mod: 1,
-                postprocess: None,
-            },
-        );
-        map.insert(
-            "memory".into(),
-            DistillerConfig {
-                input_kinds: vec!["instant".into()],
-                output_kind: "situation".into(),
-                prompt_template: None,
-                beat_mod: 4,
-                postprocess: Some("flatten_links".into()),
-            },
-        );
-        Config {
-            distiller: map,
-            wit: HashMap::new(),
-        }
-    };
+    let cfg = load_config(&cfg_path).await?;
 
     let mut distillers: Vec<LoadedDistiller> = cfg
         .distiller
@@ -279,7 +283,7 @@ pub async fn run(
                         memory_store
                             .store(&w.cfg.output, &response)
                             .await?;
-                        println!("Wit '{}' stored '{}'", w.name, w.cfg.output);
+                        tracing::info!(wit = %w.name, output = %w.cfg.output, "wit stored output");
                     }
                 }
             }
