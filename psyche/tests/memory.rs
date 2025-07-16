@@ -1,3 +1,4 @@
+use psyche::llm::prompt::PromptHelper;
 use psyche::llm::{
     mock_chat::MockChat, mock_embed::MockEmbed, LlmCapability, LlmProfile, LlmRegistry,
 };
@@ -20,6 +21,7 @@ async fn uses_provided_summary() {
         embed: &*registry.embed,
         profile: &profile,
         backend: &backend,
+        prompter: PromptHelper::default(),
     };
     let stored = memorizer
         .memorize("full text", Some("short"), false, vec![])
@@ -46,10 +48,68 @@ async fn generates_summary_with_llm() {
         embed: &*registry.embed,
         profile: &profile,
         backend: &backend,
+        prompter: PromptHelper::default(),
     };
     let stored = memorizer
         .memorize("full text", None, true, vec![])
         .await
         .unwrap();
     assert_eq!(stored.experience.how, "mock response");
+}
+
+use async_trait::async_trait;
+use std::sync::Mutex;
+use tokio_stream::{iter, Stream};
+
+#[derive(Default)]
+struct SpyChat {
+    system: Mutex<Option<String>>,
+    user: Mutex<Option<String>>,
+}
+
+#[async_trait(?Send)]
+impl psyche::llm::CanChat for SpyChat {
+    async fn chat_stream(
+        &self,
+        _profile: &psyche::llm::LlmProfile,
+        system: &str,
+        user: &str,
+    ) -> anyhow::Result<Box<dyn Stream<Item = String> + Unpin>> {
+        *self.system.lock().unwrap() = Some(system.to_string());
+        *self.user.lock().unwrap() = Some(user.to_string());
+        Ok(Box::new(iter(["ok".to_string()])))
+    }
+}
+
+#[tokio::test]
+async fn prefixes_prompt_with_self_header() {
+    let dir = tempfile::tempdir().unwrap();
+    std::fs::write(dir.path().join("config.toml"), "[dummy]\n").unwrap();
+    std::fs::write(dir.path().join("self.txt"), "You are Layka").unwrap();
+    let prompter = PromptHelper::from_config(&dir.path().join("config.toml"));
+
+    let profile = LlmProfile {
+        provider: "mock".into(),
+        model: "mock".into(),
+        capabilities: vec![LlmCapability::Chat],
+    };
+    let chat = SpyChat::default();
+    let backend = InMemoryBackend::default();
+    let memorizer = Memorizer {
+        chat: Some(&chat),
+        embed: &MockEmbed::default(),
+        profile: &profile,
+        backend: &backend,
+        prompter,
+    };
+
+    memorizer
+        .memorize("body", None, true, vec![])
+        .await
+        .unwrap();
+
+    assert_eq!(
+        chat.system.lock().unwrap().as_deref(),
+        Some("You are Layka")
+    );
 }

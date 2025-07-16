@@ -1,4 +1,4 @@
-use crate::llm::{CanChat, CanEmbed, LlmProfile};
+use crate::llm::{prompt::PromptHelper, CanChat, CanEmbed, LlmProfile};
 use async_trait::async_trait;
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
@@ -45,6 +45,7 @@ pub trait MemoryBackend {
 /// ```
 /// use psyche::llm::{mock_chat::MockChat, mock_embed::MockEmbed, LlmCapability, LlmProfile, LlmRegistry};
 /// use psyche::memory::{InMemoryBackend, Memorizer};
+/// use psyche::llm::prompt::PromptHelper;
 /// # tokio_test::block_on(async {
 /// let profile = LlmProfile {
 ///     provider: "mock".into(),
@@ -58,6 +59,7 @@ pub trait MemoryBackend {
 ///     embed: &*registry.embed,
 ///     profile: &profile,
 ///     backend: &backend,
+///     prompter: PromptHelper::default(),
 /// };
 /// let exp = memorizer.memorize("the body", None, true, vec![]).await.unwrap();
 /// assert_eq!(exp.experience.how, "mock response");
@@ -72,6 +74,8 @@ pub struct Memorizer<'a, B> {
     pub profile: &'a LlmProfile,
     /// Backend that receives stored experiences.
     pub backend: B,
+    /// Helper for augmenting prompts with the self header.
+    pub prompter: PromptHelper,
 }
 
 impl<'a, B> Memorizer<'a, B>
@@ -97,7 +101,8 @@ where
                 "Summarize this as one emotionally descriptive sentence.\n\n{}",
                 what
             );
-            let mut stream = chat.chat_stream(self.profile, "", &prompt).await?;
+            let system = self.prompter.system();
+            let mut stream = chat.chat_stream(self.profile, system, &prompt).await?;
             let mut out = String::new();
             while let Some(token) = stream.next().await {
                 out.push_str(&token);

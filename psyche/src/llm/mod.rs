@@ -2,6 +2,7 @@ pub mod chat;
 pub mod embed;
 pub mod mock_chat;
 pub mod mock_embed;
+pub mod prompt;
 
 use async_trait::async_trait;
 use tokio_stream::Stream;
