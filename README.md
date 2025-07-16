@@ -35,8 +35,8 @@ psycheOS is not a conventional OS. It’s a cognitive architecture built on top 
 
 ```bash
 # Clone repository
-git clone https://github.com/your-org/psycheOS.git
-cd psycheOS
+git clone https://github.com/dancxjo/psyche-rs.git
+cd psyche-rs
 
 # Build
 cargo build
@@ -91,9 +91,8 @@ Each *Wit* is a modular distiller defined declaratively and run by `psyched`.
 
 ## Related Projects
 
-* [`psyche`](./crates/psyche): Core abstractions for sensations, memory, and cognition.
-* [`daringsby`](./bin/daringsby): Legacy experiments from Pete Daringsby.
-* [`layka`](./tests/layka): A test persona simulating long-term solo operation in space.
+* [`psyche`](./psyche): Core abstractions for sensations, memory, and cognition.
+* [`layka`](./soul): The default soul for a long-term autonomous persona.
 
 ## License
 
