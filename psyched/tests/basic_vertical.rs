@@ -18,11 +18,22 @@ async fn sensation_results_in_instant() {
 
     let (tx, rx) = tokio::sync::oneshot::channel();
     let local = LocalSet::new();
+    let registry = std::sync::Arc::new(psyche::llm::LlmRegistry {
+        chat: Box::new(psyche::llm::mock_chat::MockChat::default()),
+        embed: Box::new(psyche::llm::mock_embed::MockEmbed::default()),
+    });
+    let profile = std::sync::Arc::new(psyche::llm::LlmProfile {
+        provider: "mock".into(),
+        model: "mock".into(),
+        capabilities: vec![psyche::llm::LlmCapability::Chat],
+    });
     let server = local.spawn_local(psyched::run(
         socket.clone(),
         memory_path.clone(),
         memory_dir.join("psyche.toml"),
         std::time::Duration::from_millis(50),
+        registry.clone(),
+        profile.clone(),
         async move {
             let _ = rx.await;
         },
