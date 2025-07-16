@@ -42,7 +42,7 @@ async fn sensation_results_in_instant() {
             let msg = b"/chat\nI feel lonely\n---\n";
             stream.write_all(msg).await.unwrap();
 
-            tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+            tokio::time::sleep(std::time::Duration::from_millis(300)).await;
             tx.send(()).unwrap();
             server.await.unwrap().unwrap();
 
@@ -66,6 +66,8 @@ async fn sensation_results_in_instant() {
             assert_eq!(slines.len(), 1);
             let situation: psyche::models::MemoryEntry = serde_json::from_str(slines[0]).unwrap();
             assert_eq!(situation.kind, "situation");
+            assert!(!situation.how.is_empty());
+            assert_eq!(situation.what, serde_json::json!([instant.id]));
         })
         .await;
 }

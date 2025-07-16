@@ -1,6 +1,6 @@
 use anyhow::Result;
 use chrono::Utc;
-use psyche::distiller::{Combobulator, Distiller, Passthrough};
+use psyche::distiller::{Combobulator, Distiller, Memory, Passthrough};
 use psyche::models::{MemoryEntry, Sensation};
 use serde::Deserialize;
 use serde::Serialize;
@@ -88,8 +88,9 @@ struct LoadedDistiller {
 impl LoadedDistiller {
     fn new(name: String, cfg: DistillerConfig) -> Self {
         let distiller: Box<dyn Distiller + Send> = match name.as_str() {
-            "memory" => Box::new(Passthrough),
-            _ => Box::new(Combobulator),
+            "memory" => Box::new(Memory),
+            "combobulator" => Box::new(Combobulator),
+            _ => Box::new(Passthrough),
         };
         Self {
             name,
@@ -178,6 +179,16 @@ pub async fn run(
                 prompt_template: None,
                 beat_mod: 1,
                 postprocess: None,
+            },
+        );
+        map.insert(
+            "memory".into(),
+            DistillerConfig {
+                input_kinds: vec!["instant".into()],
+                output_kind: "situation".into(),
+                prompt_template: None,
+                beat_mod: 4,
+                postprocess: Some("flatten_links".into()),
             },
         );
         Config { distiller: map }

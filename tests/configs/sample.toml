@@ -8,5 +8,5 @@ beat_mod = 1
 input_kinds = ["instant"]
 output_kind = "situation"
 prompt_template = "prompts/memory.txt"
-beat_mod = 1
+beat_mod = 4
 postprocess = "flatten_links"

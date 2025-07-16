@@ -99,3 +99,35 @@ impl Distiller for Passthrough {
         Ok(input)
     }
 }
+
+/// Aggregates multiple instants into a single situation entry.
+///
+/// This naive implementation simply concatenates the `how` field of each
+/// provided instant. Links to the original instants are stored in `what`.
+pub struct Memory;
+
+#[async_trait(?Send)]
+impl Distiller for Memory {
+    async fn distill(&mut self, input: Vec<MemoryEntry>) -> anyhow::Result<Vec<MemoryEntry>> {
+        if input.is_empty() {
+            return Ok(Vec::new());
+        }
+
+        let summary = input
+            .iter()
+            .map(|e| e.how.as_str())
+            .filter(|s| !s.is_empty())
+            .collect::<Vec<_>>()
+            .join(" and ");
+
+        let links: Vec<Uuid> = input.iter().map(|e| e.id).collect();
+
+        Ok(vec![MemoryEntry {
+            id: Uuid::new_v4(),
+            kind: "situation".to_string(),
+            when: Utc::now(),
+            what: json!(links),
+            how: summary,
+        }])
+    }
+}
