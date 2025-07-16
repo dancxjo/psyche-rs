@@ -30,12 +30,23 @@ pub struct Cli {
 async fn main() -> anyhow::Result<()> {
     tracing_subscriber::fmt::init();
     let cli = Cli::parse();
+    let registry = std::sync::Arc::new(psyche::llm::LlmRegistry {
+        chat: Box::new(psyche::llm::mock_chat::MockChat::default()),
+        embed: Box::new(psyche::llm::mock_embed::MockEmbed::default()),
+    });
+    let profile = std::sync::Arc::new(psyche::llm::LlmProfile {
+        provider: "ollama".into(),
+        model: "llama3".into(),
+        capabilities: vec![psyche::llm::LlmCapability::Chat],
+    });
     let shutdown = shutdown_signal();
     psyched::run(
         cli.socket,
         cli.memory,
         cli.config,
         std::time::Duration::from_millis(cli.beat_ms),
+        registry,
+        profile,
         shutdown,
     )
     .await

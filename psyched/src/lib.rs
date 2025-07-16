@@ -11,6 +11,9 @@ use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
 use tokio::net::{UnixListener, UnixStream};
 use uuid::Uuid;
 
+mod file_memory;
+mod wit;
+
 async fn handle_stream(stream: UnixStream, sensation_path: PathBuf) -> Result<()> {
     let mut reader = BufReader::new(stream);
     let mut path = String::new();
@@ -76,6 +79,8 @@ struct DistillerConfig {
 #[derive(Deserialize)]
 struct Config {
     distiller: HashMap<String, DistillerConfig>,
+    #[serde(default)]
+    wit: HashMap<String, wit::WitConfig>,
 }
 
 struct LoadedDistiller {
@@ -83,6 +88,18 @@ struct LoadedDistiller {
     cfg: DistillerConfig,
     distiller: Box<dyn Distiller + Send>,
     offsets: HashMap<String, usize>,
+}
+
+struct LoadedWit {
+    name: String,
+    cfg: wit::WitConfig,
+    beat: usize,
+}
+
+impl LoadedWit {
+    fn new(name: String, cfg: wit::WitConfig) -> Self {
+        Self { name, cfg, beat: 0 }
+    }
 }
 
 impl LoadedDistiller {
@@ -154,6 +171,8 @@ pub async fn run(
     memory: PathBuf,
     config: PathBuf,
     beat_duration: std::time::Duration,
+    registry: std::sync::Arc<psyche::llm::LlmRegistry>,
+    profile: std::sync::Arc<psyche::llm::LlmProfile>,
     mut shutdown: impl std::future::Future<Output = ()>,
 ) -> Result<()> {
     let _ = std::fs::remove_file(&socket);
@@ -191,13 +210,23 @@ pub async fn run(
                 postprocess: Some("flatten_links".into()),
             },
         );
-        Config { distiller: map }
+        Config {
+            distiller: map,
+            wit: HashMap::new(),
+        }
     };
 
     let mut distillers: Vec<LoadedDistiller> = cfg
         .distiller
         .into_iter()
         .map(|(n, c)| LoadedDistiller::new(n, c))
+        .collect();
+
+    let memory_store = file_memory::FileMemory::new(memory_dir.clone());
+    let mut wits: Vec<LoadedWit> = cfg
+        .wit
+        .into_iter()
+        .map(|(n, c)| LoadedWit::new(n, c))
         .collect();
 
     let mut beat = tokio::time::interval(beat_duration);
@@ -228,6 +257,29 @@ pub async fn run(
                         }
                         let path = memory_dir.join(format!("{}.jsonl", d.cfg.output_kind));
                         append_all(&path, &output).await?;
+                    }
+                }
+                for w in &mut wits {
+                    w.beat += 1;
+                    if w.beat % w.cfg.every == 0 {
+                        let items = memory_store.query_latest(&w.cfg.input).await;
+                        if items.is_empty() { continue; }
+                        let user_prompt = items.join("\n");
+                        let system_prompt = w.cfg.prompt.clone();
+                        let mut stream = registry
+                            .chat
+                            .chat_stream(&profile, &system_prompt, &user_prompt)
+                            .await
+                            .expect("Failed to get chat stream");
+                        use tokio_stream::StreamExt;
+                        let mut response = String::new();
+                        while let Some(token) = stream.next().await {
+                            response.push_str(&token);
+                        }
+                        memory_store
+                            .store(&w.cfg.output, &response)
+                            .await?;
+                        println!("Wit '{}' stored '{}'", w.name, w.cfg.output);
                     }
                 }
             }
