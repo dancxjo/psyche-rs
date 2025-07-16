@@ -14,11 +14,11 @@ pub struct Cli {
     pub socket: PathBuf,
 
     /// Path to the raw sensation log
-    #[arg(long, default_value = "memory/sensation.jsonl")]
+    #[arg(long, alias = "memory-path", default_value = "memory/sensation.jsonl")]
     pub memory: PathBuf,
 
     /// Path to TOML file describing distillation pipeline
-    #[arg(long, default_value = "psyche.toml")]
+    #[arg(long, alias = "config-file", default_value = "psyche.toml")]
     pub config: PathBuf,
 
     /// Beat interval (in milliseconds)

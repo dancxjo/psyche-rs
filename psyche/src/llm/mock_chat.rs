@@ -1,6 +1,7 @@
 use super::{CanChat, LlmProfile};
 use async_trait::async_trait;
 use tokio_stream::{iter, Stream};
+use tracing::{debug, trace};
 
 /// Mock chat client returning a fixed response.
 #[derive(Default)]
@@ -14,6 +15,9 @@ impl CanChat for MockChat {
         _system: &str,
         _user: &str,
     ) -> anyhow::Result<Box<dyn Stream<Item = String> + Unpin>> {
-        Ok(Box::new(iter(["mock response".to_string()])))
+        trace!(target: "llm", "MockChat prompt: system='{}' user='{}'", _system, _user);
+        let resp = "mock response".to_string();
+        debug!(target: "llm", response = %resp, "MockChat full response");
+        Ok(Box::new(iter([resp])))
     }
 }
