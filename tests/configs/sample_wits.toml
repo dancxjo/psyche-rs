@@ -1,0 +1,14 @@
+[distiller]
+
+[wit.quick]
+input = "sensation/chat"
+output = "instant"
+prompt = "Summarize feeling"
+every = 1
+
+[wit.combobulator]
+input = "instant"
+output = "situation"
+prompt = "Summarize instant"
+every = 2
+
