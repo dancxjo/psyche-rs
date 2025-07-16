@@ -151,13 +151,21 @@ impl LoadedDistiller {
             .prompt_template
             .clone()
             .unwrap_or_else(|| "{input}".to_string());
+        let pp: Option<
+            fn(&[psyche::models::MemoryEntry], &str) -> anyhow::Result<serde_json::Value>,
+        > = match name.as_str() {
+            "combobulator" | "memory" => Some(
+                psyche::distiller::link_sources as fn(&[psyche::models::MemoryEntry], &str) -> _,
+            ),
+            _ => None,
+        };
         let distiller = Distiller {
             config: DistillerConfig {
                 name: name.clone(),
                 input_kind: cfg.input_kinds.first().cloned().unwrap_or_default(),
                 output_kind: cfg.output_kind.clone(),
                 prompt_template,
-                post_process: None,
+                post_process: pp,
             },
             llm: Box::new(psyche::llm::mock_chat::MockChat::default()),
         };
