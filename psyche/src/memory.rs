@@ -21,6 +21,56 @@ pub struct Experience {
     pub tags: Vec<String>,
 }
 
+#[cfg(feature = "neo4j")]
+/// Fetch a compact contextual subgraph around a given [`Experience`] node.
+///
+/// This retrieves the experience itself, its immediate chronological
+/// neighbors and simple causal and topical links. The query is optimized to
+/// return at most seven related experiences.
+///
+/// # Example
+///
+/// ```
+/// use async_trait::async_trait;
+/// use psyche::memory::{context_subgraph, Experience, MemoryBackend};
+///
+/// struct Dummy;
+///
+/// #[async_trait(?Send)]
+/// impl MemoryBackend for Dummy {
+///     async fn store(&self, _: &Experience, _: &[f32]) -> anyhow::Result<()> { Ok(()) }
+///     async fn search(&self, _: &[f32], _: usize) -> anyhow::Result<Vec<Experience>> { Ok(vec![]) }
+///     async fn get(&self, _: &str) -> anyhow::Result<Option<Experience>> { Ok(None) }
+///     async fn cypher_query(&self, _: &str) -> anyhow::Result<Vec<Experience>> { Ok(vec![]) }
+/// }
+/// # tokio_test::block_on(async {
+/// let backend = Dummy;
+/// let _ = context_subgraph(&backend, "123").await;
+/// # });
+/// ```
+pub async fn context_subgraph<B: MemoryBackend + Sync>(
+    backend: &B,
+    id: &str,
+) -> anyhow::Result<Vec<Experience>> {
+    let query = format!(
+        concat!(
+            "MATCH (e:Experience {{id: \"{id}\"}})",
+            "\nOPTIONAL MATCH (prev:Experience)-[:NEXT]->(e)",
+            "\nOPTIONAL MATCH (e)-[:NEXT]->(next:Experience)",
+            "\nOPTIONAL MATCH (e)-[:CAUSES]->(caused:Experience)",
+            "\nOPTIONAL MATCH (causer:Experience)-[:CAUSES]->(e)",
+            "\nOPTIONAL MATCH (e)-[:REFERS_TO]->(topic)<-[:REFERS_TO]-(related:Experience)",
+            "\nWITH e, prev, next, caused, causer, collect(related)[0..2] AS topical",
+            "\nUNWIND [e, prev, next, caused, causer] + topical AS node",
+            "\nWITH DISTINCT node WHERE node IS NOT NULL",
+            "\nRETURN node.how AS how, node.what AS what, node.when AS when, node.tags AS tags",
+            "\nLIMIT 7"
+        ),
+        id = id
+    );
+    backend.cypher_query(&query).await
+}
+
 /// Result of persisting an experience.
 #[derive(Debug)]
 pub struct StoredExperience {
