@@ -1,0 +1,4 @@
+[neo4j]
+url = "http://localhost:7474"
+[qdrant]
+url = "http://localhost:6333"
