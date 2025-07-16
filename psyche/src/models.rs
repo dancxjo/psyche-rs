@@ -21,3 +21,19 @@ pub struct Instant {
     /// References to related sensations by id.
     pub what: Vec<String>,
 }
+
+/// Generalized memory entry passed between distillers.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct MemoryEntry {
+    /// Unique identifier for this entry.
+    pub id: uuid::Uuid,
+    /// Kind of entry such as `"sensation/speech"` or `"instant"`.
+    pub kind: String,
+    /// When the entry was recorded.
+    #[serde(with = "chrono::serde::ts_seconds")]
+    pub when: chrono::DateTime<chrono::Utc>,
+    /// Rich payload from the previous layer.
+    pub what: serde_json::Value,
+    /// One sentence summary.
+    pub how: String,
+}
