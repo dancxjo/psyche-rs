@@ -3,6 +3,7 @@
 //! This crate hosts memory models and simple distillers. It is OS neutral.
 
 pub mod distiller;
+pub mod llm;
 pub mod models;
 
 /// Example helper that adds two numbers.
