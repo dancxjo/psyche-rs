@@ -4,6 +4,7 @@
 
 pub mod distiller;
 pub mod llm;
+pub mod memory;
 pub mod models;
 
 /// Example helper that adds two numbers.
