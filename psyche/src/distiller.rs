@@ -1,7 +1,9 @@
+use crate::llm::{CanChat, LlmCapability, LlmProfile};
 use crate::models::{Instant, MemoryEntry, Sensation};
-use async_trait::async_trait;
 use chrono::Utc;
-use serde_json::json;
+use serde_json::Value;
+use tokio_stream::StreamExt;
+use tracing::{debug, trace};
 use uuid::Uuid;
 
 /// Distills a raw `Sensation` into an `Instant` when possible.
@@ -35,99 +37,125 @@ pub fn distill(sensation: &Sensation) -> Option<Instant> {
     }
 }
 
-/// Asynchronously transforms memory entries from one kind to another.
-#[async_trait(?Send)]
-pub trait Distiller {
-    /// Distill the provided memory entries.
+/// Configuration for a [`Distiller`].
+#[derive(Clone, Debug)]
+pub struct DistillerConfig {
+    /// Human readable name for this distiller.
+    pub name: String,
+    /// Input memory kind this distiller consumes.
+    pub input_kind: String,
+    /// Kind of memory entry produced.
+    pub output_kind: String,
+    /// Prompt template used when chatting with the LLM. The literal "{input}" is
+    /// replaced with the incoming text.
+    pub prompt_template: String,
+    /// Optional post-processing hook applied to the LLM response. The slice of
+    /// input entries consumed by this distillation is provided to allow linking
+    /// to the originals.
+    pub post_process: Option<fn(&[MemoryEntry], &str) -> anyhow::Result<Value>>,
+}
+
+/// General-purpose distiller powered by a language model.
+pub struct Distiller {
+    /// Configuration for this distiller.
+    pub config: DistillerConfig,
+    /// LLM used to generate summaries.
+    pub llm: Box<dyn CanChat>,
+}
+
+impl Distiller {
+    /// Distill the provided entries into the configured output kind.
     ///
     /// ```
-    /// use psyche::distiller::{Combobulator, Distiller};
+    /// use psyche::distiller::{Distiller, DistillerConfig};
+    /// use psyche::llm::mock_chat::MockChat;
     /// use psyche::models::MemoryEntry;
     /// use chrono::Utc;
     /// use serde_json::json;
     /// use uuid::Uuid;
     ///
     /// # tokio_test::block_on(async {
-    /// let mut d = Combobulator;
+    /// let cfg = DistillerConfig {
+    ///     name: "echo".into(),
+    ///     input_kind: "sensation/chat".into(),
+    ///     output_kind: "instant".into(),
+    ///     prompt_template: "{input}".into(),
+    ///     post_process: None,
+    /// };
+    /// let mut d = Distiller { config: cfg, llm: Box::new(MockChat::default()) };
     /// let input = vec![MemoryEntry {
     ///     id: Uuid::new_v4(),
     ///     kind: "sensation/chat".into(),
     ///     when: Utc::now(),
-    ///     what: json!("I feel lonely"),
+    ///     what: json!("hello"),
     ///     how: String::new(),
     /// }];
     /// let out = d.distill(input).await.unwrap();
-    /// assert_eq!(out[0].how, "The interlocutor feels lonely");
+    /// assert_eq!(out[0].how, "mock response");
     /// # });
     /// ```
-    async fn distill(&mut self, input: Vec<MemoryEntry>) -> anyhow::Result<Vec<MemoryEntry>>;
-}
+    pub async fn distill(&mut self, input: Vec<MemoryEntry>) -> anyhow::Result<Vec<MemoryEntry>> {
+        let entries: Vec<_> = input
+            .into_iter()
+            .filter(|e| e.kind == self.config.input_kind)
+            .collect();
 
-/// Simple implementation that summarizes basic chat feelings.
-pub struct Combobulator;
-
-#[async_trait(?Send)]
-impl Distiller for Combobulator {
-    async fn distill(&mut self, input: Vec<MemoryEntry>) -> anyhow::Result<Vec<MemoryEntry>> {
-        let mut output = Vec::new();
-        for entry in input {
-            if entry.kind == "sensation/chat" {
-                if let Some(text) = entry.what.as_str() {
-                    if let Some(feeling) = text.strip_prefix("I feel ") {
-                        output.push(MemoryEntry {
-                            id: Uuid::new_v4(),
-                            kind: "instant".to_string(),
-                            when: Utc::now(),
-                            what: json!([entry.id]),
-                            how: format!("The interlocutor feels {}", feeling),
-                        });
-                    }
-                }
-            }
-        }
-        Ok(output)
-    }
-}
-
-/// Passes memory entries through unchanged. Useful for chaining distillers in
-/// tests.
-pub struct Passthrough;
-
-#[async_trait(?Send)]
-impl Distiller for Passthrough {
-    async fn distill(&mut self, input: Vec<MemoryEntry>) -> anyhow::Result<Vec<MemoryEntry>> {
-        Ok(input)
-    }
-}
-
-/// Aggregates multiple instants into a single situation entry.
-///
-/// This naive implementation simply concatenates the `how` field of each
-/// provided instant. Links to the original instants are stored in `what`.
-pub struct Memory;
-
-#[async_trait(?Send)]
-impl Distiller for Memory {
-    async fn distill(&mut self, input: Vec<MemoryEntry>) -> anyhow::Result<Vec<MemoryEntry>> {
-        if input.is_empty() {
+        if entries.is_empty() {
             return Ok(Vec::new());
         }
 
-        let summary = input
+        let joined = entries
             .iter()
-            .map(|e| e.how.as_str())
-            .filter(|s| !s.is_empty())
+            .map(|e| {
+                if !e.how.is_empty() {
+                    e.how.clone()
+                } else {
+                    e.what
+                        .as_str()
+                        .map(|s| s.to_string())
+                        .unwrap_or_else(|| e.what.to_string())
+                }
+            })
             .collect::<Vec<_>>()
-            .join(" and ");
+            .join("\n");
 
-        let links: Vec<Uuid> = input.iter().map(|e| e.id).collect();
+        let prompt = self.config.prompt_template.replace("{input}", &joined);
+        let profile = LlmProfile {
+            provider: "local".into(),
+            model: "mock".into(),
+            capabilities: vec![LlmCapability::Chat],
+        };
 
-        Ok(vec![MemoryEntry {
+        trace!(target = "llm", prompt = %prompt, "distiller prompt");
+        let mut stream = self.llm.chat_stream(&profile, "", &prompt).await?;
+        let mut resp = String::new();
+        while let Some(token) = stream.next().await {
+            resp.push_str(&token);
+        }
+        debug!(target = "llm", response = %resp, "distiller response");
+
+        let value = if let Some(pp) = self.config.post_process {
+            pp(&entries, &resp)?
+        } else {
+            Value::String(resp.clone())
+        };
+
+        let out = MemoryEntry {
             id: Uuid::new_v4(),
-            kind: "situation".to_string(),
+            kind: self.config.output_kind.clone(),
             when: Utc::now(),
-            what: json!(links),
-            how: summary,
-        }])
+            what: value,
+            how: resp,
+        };
+
+        Ok(vec![out])
     }
+}
+
+/// Simple post processor that stores the source entry ids as a JSON array.
+pub fn link_sources(entries: &[MemoryEntry], _resp: &str) -> anyhow::Result<Value> {
+    Ok(serde_json::json!(entries
+        .iter()
+        .map(|e| e.id)
+        .collect::<Vec<_>>()))
 }

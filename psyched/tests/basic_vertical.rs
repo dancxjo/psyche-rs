@@ -74,8 +74,9 @@ async fn sensation_results_in_instant() {
             let ilines: Vec<_> = icontent.lines().collect();
             assert_eq!(ilines.len(), 1);
             let instant: psyche::models::MemoryEntry = serde_json::from_str(ilines[0]).unwrap();
+            assert_eq!(instant.kind, "instant");
+            assert_eq!(instant.how, "mock response");
             assert_eq!(instant.what, serde_json::json!([sensation.id]));
-            assert_eq!(instant.how, "The interlocutor feels lonely");
 
             let situation_path = soul_dir.join("memory/situation.jsonl");
             let scontent = tokio::fs::read_to_string(&situation_path).await.unwrap();

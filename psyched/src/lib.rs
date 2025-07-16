@@ -1,6 +1,6 @@
 use anyhow::Result;
 use chrono::Utc;
-use psyche::distiller::{Combobulator, Distiller, Memory, Passthrough};
+use psyche::distiller::{Distiller, DistillerConfig};
 use psyche::models::{MemoryEntry, Sensation};
 use serde::Deserialize;
 use serde::Serialize;
@@ -75,7 +75,7 @@ async fn append_all<T: Serialize>(path: &PathBuf, values: &[T]) -> Result<()> {
 }
 
 #[derive(Deserialize, Clone)]
-struct DistillerConfig {
+struct PipelineDistillerConfig {
     input_kinds: Vec<String>,
     output_kind: String,
     #[allow(dead_code)]
@@ -87,7 +87,7 @@ struct DistillerConfig {
 
 #[derive(Deserialize)]
 struct Config {
-    distiller: HashMap<String, DistillerConfig>,
+    distiller: HashMap<String, PipelineDistillerConfig>,
     #[serde(default)]
     wit: HashMap<String, wit::WitConfig>,
 }
@@ -100,7 +100,7 @@ async fn load_config(path: &Path) -> Result<Config> {
         let mut map = HashMap::new();
         map.insert(
             "combobulator".into(),
-            DistillerConfig {
+            PipelineDistillerConfig {
                 input_kinds: vec!["sensation/chat".into()],
                 output_kind: "instant".into(),
                 prompt_template: None,
@@ -110,7 +110,7 @@ async fn load_config(path: &Path) -> Result<Config> {
         );
         map.insert(
             "memory".into(),
-            DistillerConfig {
+            PipelineDistillerConfig {
                 input_kinds: vec!["instant".into()],
                 output_kind: "situation".into(),
                 prompt_template: None,
@@ -128,8 +128,8 @@ async fn load_config(path: &Path) -> Result<Config> {
 struct LoadedDistiller {
     #[allow(dead_code)]
     name: String,
-    cfg: DistillerConfig,
-    distiller: Box<dyn Distiller + Send>,
+    cfg: PipelineDistillerConfig,
+    distiller: Distiller,
     offsets: HashMap<String, usize>,
 }
 
@@ -146,11 +146,28 @@ impl LoadedWit {
 }
 
 impl LoadedDistiller {
-    fn new(name: String, cfg: DistillerConfig) -> Self {
-        let distiller: Box<dyn Distiller + Send> = match name.as_str() {
-            "memory" => Box::new(Memory),
-            "combobulator" => Box::new(Combobulator),
-            _ => Box::new(Passthrough),
+    fn new(name: String, cfg: PipelineDistillerConfig) -> Self {
+        let prompt_template = cfg
+            .prompt_template
+            .clone()
+            .unwrap_or_else(|| "{input}".to_string());
+        let pp: Option<
+            fn(&[psyche::models::MemoryEntry], &str) -> anyhow::Result<serde_json::Value>,
+        > = match name.as_str() {
+            "combobulator" | "memory" => Some(
+                psyche::distiller::link_sources as fn(&[psyche::models::MemoryEntry], &str) -> _,
+            ),
+            _ => None,
+        };
+        let distiller = Distiller {
+            config: DistillerConfig {
+                name: name.clone(),
+                input_kind: cfg.input_kinds.first().cloned().unwrap_or_default(),
+                output_kind: cfg.output_kind.clone(),
+                prompt_template,
+                post_process: pp,
+            },
+            llm: Box::new(psyche::llm::mock_chat::MockChat::default()),
         };
         Self {
             name,
