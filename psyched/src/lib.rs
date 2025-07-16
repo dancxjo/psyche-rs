@@ -9,10 +9,9 @@ use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
 use tokio::net::{UnixListener, UnixStream};
-use tokio::sync::oneshot;
 use uuid::Uuid;
 
-async fn handle_stream(stream: UnixStream, dir: PathBuf) -> Result<()> {
+async fn handle_stream(stream: UnixStream, sensation_path: PathBuf) -> Result<()> {
     let mut reader = BufReader::new(stream);
     let mut path = String::new();
     reader.read_line(&mut path).await?;
@@ -31,8 +30,7 @@ async fn handle_stream(stream: UnixStream, dir: PathBuf) -> Result<()> {
         path: path.trim().to_string(),
         text,
     };
-    let path = dir.join("sensation.jsonl");
-    append(&path, &sensation).await?;
+    append(&sensation_path, &sensation).await?;
     Ok(())
 }
 
@@ -152,13 +150,21 @@ fn flatten_links(val: &serde_json::Value) -> serde_json::Value {
 /// Runs the psyched daemon until `shutdown` is triggered.
 pub async fn run(
     socket: PathBuf,
-    memory_dir: PathBuf,
-    mut shutdown: oneshot::Receiver<()>,
+    memory: PathBuf,
+    config: PathBuf,
+    beat_duration: std::time::Duration,
+    mut shutdown: impl std::future::Future<Output = ()>,
 ) -> Result<()> {
     let _ = std::fs::remove_file(&socket);
     let listener = UnixListener::bind(&socket)?;
 
-    let cfg_path = memory_dir.join("psyche.toml");
+    let memory_dir = memory
+        .parent()
+        .map(|p| p.to_path_buf())
+        .unwrap_or_else(|| PathBuf::from("."));
+
+    let cfg_path = config;
+    // TODO: parse `config` TOML file to load Wits dynamically
     let cfg: Config = if cfg_path.exists() {
         let text = tokio::fs::read_to_string(&cfg_path).await?;
         toml::from_str(&text)?
@@ -183,14 +189,16 @@ pub async fn run(
         .map(|(n, c)| LoadedDistiller::new(n, c))
         .collect();
 
-    let mut beat = tokio::time::interval(std::time::Duration::from_millis(50));
+    let mut beat = tokio::time::interval(beat_duration);
     let mut beat_counter = 0usize;
+
+    tokio::pin!(shutdown);
 
     loop {
         tokio::select! {
             _ = &mut shutdown => break,
             Ok((stream, _)) = listener.accept() => {
-                handle_stream(stream, memory_dir.clone()).await?;
+                handle_stream(stream, memory.clone()).await?;
             }
             _ = beat.tick() => {
                 beat_counter += 1;

@@ -2,13 +2,13 @@ use std::path::PathBuf;
 use tempfile::tempdir;
 use tokio::io::AsyncWriteExt;
 use tokio::net::UnixStream;
-use tokio::sync::oneshot;
 use tokio::task::LocalSet;
 
 #[tokio::test(flavor = "current_thread")]
 async fn sensation_results_in_instant() {
     let dir = tempdir().unwrap();
     let socket = dir.path().join("quick.sock");
+    let memory_path = dir.path().join("sensation.jsonl");
     let memory_dir = dir.path().to_path_buf();
     let config_path =
         PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../tests/configs/sample.toml");
@@ -16,9 +16,17 @@ async fn sensation_results_in_instant() {
         .await
         .unwrap();
 
-    let (tx, rx) = oneshot::channel();
+    let (tx, rx) = tokio::sync::oneshot::channel();
     let local = LocalSet::new();
-    let server = local.spawn_local(psyched::run(socket.clone(), memory_dir.clone(), rx));
+    let server = local.spawn_local(psyched::run(
+        socket.clone(),
+        memory_path.clone(),
+        memory_dir.join("psyche.toml"),
+        std::time::Duration::from_millis(50),
+        async move {
+            let _ = rx.await;
+        },
+    ));
 
     local
         .run_until(async {
@@ -38,7 +46,7 @@ async fn sensation_results_in_instant() {
             tx.send(()).unwrap();
             server.await.unwrap().unwrap();
 
-            let sensation_path = memory_dir.join("sensation.jsonl");
+            let sensation_path = memory_path.clone();
             let content = tokio::fs::read_to_string(&sensation_path).await.unwrap();
             let lines: Vec<_> = content.lines().collect();
             assert_eq!(lines.len(), 1);
@@ -60,4 +68,21 @@ async fn sensation_results_in_instant() {
             assert_eq!(situation.kind, "situation");
         })
         .await;
+}
+
+#[tokio::test]
+async fn cli_flags_work() {
+    let exe = env!("CARGO_BIN_EXE_psyched");
+    let status = tokio::process::Command::new(exe)
+        .arg("--version")
+        .status()
+        .await
+        .unwrap();
+    assert!(status.success());
+    let status = tokio::process::Command::new(exe)
+        .arg("--help")
+        .status()
+        .await
+        .unwrap();
+    assert!(status.success());
 }
