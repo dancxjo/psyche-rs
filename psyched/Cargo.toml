@@ -4,7 +4,7 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
-psyche = { path = "../psyche" }
+psyche = { path = "../psyche", features = ["qdrant", "neo4j"] }
 tokio = { version = "1", features = ["full"] }
 tokio-stream = "0.1"
 serde = { version = "1", features = ["derive"] }

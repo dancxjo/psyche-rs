@@ -284,9 +284,13 @@ mod qdrant_store {
     impl MemoryBackend for QdrantNeo4j {
         async fn store(&self, exp: &Experience, vector: &[f32]) -> anyhow::Result<()> {
             let id = Uuid::new_v4().to_string();
-            let points = vec![PointStruct::new(id.clone(), vector.to_vec())];
+            let points = vec![PointStruct::new(
+                id.clone(),
+                vector.to_vec(),
+                std::collections::HashMap::<String, qdrant_client::qdrant::Value>::new(),
+            )];
             self.qdrant
-                .upload_points_blocking("memory", None, points, None)
+                .upsert_points_blocking("memory", None, points, None)
                 .await?;
 
             #[cfg(feature = "neo4j")]
@@ -298,10 +302,10 @@ mod qdrant_store {
                             "CREATE (:Experience {id: $id, how: $how, what: $what, when: $when, tags: $tags})",
                         )
                         .param("id", id)
-                        .param("how", &exp.how)
-                        .param("what", &exp.what)
+                        .param("how", exp.how.clone())
+                        .param("what", exp.what.to_string())
                         .param("when", exp.when.to_rfc3339())
-                        .param("tags", &exp.tags),
+                        .param("tags", exp.tags.clone()),
                     )
                     .await?;
             }
@@ -352,7 +356,7 @@ mod qdrant_store {
                 let mut out = Vec::new();
                 while let Ok(Some(row)) = rows.next().await {
                     let how: String = row.get("how")?;
-                    let what: Value = row.get("what")?;
+                    let what: serde_json::Value = row.get("what")?;
                     let when: String = row.get("when")?;
                     let tags: Vec<String> = row.get("tags")?;
                     let when = DateTime::parse_from_rfc3339(&when)?.with_timezone(&Utc);
@@ -381,7 +385,7 @@ mod qdrant_store {
                     .await?;
                 if let Ok(Some(row)) = rows.next().await {
                     let how: String = row.get("how")?;
-                    let what: Value = row.get("what")?;
+                    let what: serde_json::Value = row.get("what")?;
                     let when: String = row.get("when")?;
                     let tags: Vec<String> = row.get("tags")?;
                     let when = DateTime::parse_from_rfc3339(&when)?.with_timezone(&Utc);
@@ -403,7 +407,7 @@ mod qdrant_store {
             let mut out = Vec::new();
             while let Ok(Some(row)) = rows.next().await {
                 let how: String = row.get("how")?;
-                let what: Value = row.get("what")?;
+                let what: serde_json::Value = row.get("what")?;
                 let when: String = row.get("when")?;
                 let tags: Vec<String> = row.get("tags")?;
                 let when = DateTime::parse_from_rfc3339(&when)?.with_timezone(&Utc);
