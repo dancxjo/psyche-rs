@@ -3,6 +3,7 @@
 - Keep commit messages concise.
 - Provide clear, insightful inline documentation with examples and doctests when possible.
 - Prefer BDD/TDD style tests.
+- When creating files via shell heredocs, use quotes to avoid stray temp files.
 - Update `constraints.cypher` whenever Memory types change.
 - GitHub Actions workflow runs `cargo test` using `actions-rs/toolchain@v1` with caching.
 - When adding async traits that don't need `Send`, annotate with `#[async_trait(?Send)]`.
