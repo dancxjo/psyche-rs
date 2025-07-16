@@ -1,15 +1,19 @@
 use tempfile::tempdir;
-use tokio::io::AsyncWriteExt;
-use tokio::net::UnixStream;
 use tokio::task::LocalSet;
 
 #[tokio::test(flavor = "current_thread")]
 async fn wit_produces_output() {
     let dir = tempdir().unwrap();
     let socket = dir.path().join("quick.sock");
-    let memory_path = dir.path().join("sensation.jsonl");
-    let memory_dir = dir.path().to_path_buf();
-    let config_path = memory_dir.join("psyche.toml");
+    let soul_dir = dir.path().to_path_buf();
+    let memory_path = soul_dir.join("memory/sensation.jsonl");
+    tokio::fs::create_dir_all(soul_dir.join("config"))
+        .await
+        .unwrap();
+    tokio::fs::create_dir_all(soul_dir.join("memory"))
+        .await
+        .unwrap();
+    let config_path = soul_dir.join("config/pipeline.toml");
     tokio::fs::write(
         &config_path,
         "[distiller]\n\n[wit.echo]\ninput = \"sensation/chat\"\noutput = \"reply\"\nprompt = \"Respond\"\nevery = 1\n",
@@ -31,7 +35,7 @@ async fn wit_produces_output() {
     let local = LocalSet::new();
     let server = local.spawn_local(psyched::run(
         socket.clone(),
-        memory_path.clone(),
+        soul_dir.clone(),
         config_path,
         std::time::Duration::from_millis(50),
         registry.clone(),
@@ -57,7 +61,7 @@ async fn wit_produces_output() {
             tx.send(()).unwrap();
             server.await.unwrap().unwrap();
 
-            let path = memory_dir.join("reply.jsonl");
+            let path = soul_dir.join("memory/reply.jsonl");
             let content = tokio::fs::read_to_string(&path).await.unwrap();
             let lines: Vec<_> = content.lines().collect();
             assert_eq!(lines.len(), 1);

@@ -1,6 +1,6 @@
 #!/bin/sh
 # Inject sensations from JSONL into the quick socket.
-# Usage: cat sensation.jsonl | inject-sensation.sh /run/quick.sock
+# Usage: cat soul/memory/sensation.jsonl | inject-sensation.sh /run/quick.sock
 
 set -e
 
