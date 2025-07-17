@@ -256,21 +256,38 @@ pub async fn run(
     let mut beat = tokio::time::interval(beat_duration);
     let mut beat_counter = 0usize;
 
+    let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel::<Sensation>();
+
+    let server = {
+        let tx = tx.clone();
+        tokio::task::spawn_local(async move {
+            loop {
+                match listener.accept().await {
+                    Ok((stream, _)) => match read_sensation(stream).await {
+                        Ok(s) => {
+                            if tx.send(s).is_err() {
+                                break;
+                            }
+                        }
+                        Err(e) => tracing::error!(error = %e, "failed to read sensation"),
+                    },
+                    Err(e) => {
+                        tracing::error!(error = %e, "accept failed");
+                        break;
+                    }
+                }
+            }
+        })
+    };
+
     tokio::pin!(shutdown);
     let mut pending: VecDeque<Sensation> = VecDeque::new();
 
     loop {
         tokio::select! {
             _ = &mut shutdown => break,
-            Ok((stream, _)) = listener.accept() => {
-                match read_sensation(stream).await {
-                    Ok(sensation) => {
-                        pending.push_back(sensation);
-                    }
-                    Err(e) => {
-                        tracing::error!(error = %e, "failed to read sensation");
-                    }
-                }
+            Some(sensation) = rx.recv() => {
+                pending.push_back(sensation);
             }
             _ = beat.tick() => {
                 beat_counter += 1;
@@ -321,5 +338,7 @@ pub async fn run(
             }
         }
     }
+    server.abort();
+    let _ = server.await;
     Ok(())
 }
