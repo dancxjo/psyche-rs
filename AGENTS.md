@@ -63,3 +63,4 @@
 - When OpenCV isn't available, run tests with `--no-default-features`.
 - Follow the psyche-os directory structure in README.
 - Run `cargo test --workspace` before committing.
+- Set `NASA_API_KEY` when using rover data scripts to avoid API rate limits.
