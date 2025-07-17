@@ -11,4 +11,7 @@ pub struct WitConfig {
     pub prompt: String,
     /// Number of beats between each execution.
     pub every: usize,
+    /// Optional name of another Wit to receive this Wit’s output as input.
+    #[serde(default)]
+    pub feedback: Option<String>,
 }
