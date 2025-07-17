@@ -23,6 +23,10 @@ pub struct Cli {
     #[arg(long, default_value = "pipeline.toml")]
     pub pipeline: PathBuf,
 
+    /// Path to LLM config. If relative, resolved against soul/config/.
+    #[arg(long, default_value = "llm.toml")]
+    pub llm: PathBuf,
+
     /// Beat interval (in milliseconds)
     #[arg(long, default_value_t = 50)]
     pub beat_ms: u64,
@@ -47,6 +51,13 @@ async fn main() -> anyhow::Result<()> {
         cli.pipeline.clone()
     };
 
+    // Resolve llm config path
+    let llm_cfg = if cli.llm.is_relative() {
+        soul.join("config").join(&cli.llm)
+    } else {
+        cli.llm.clone()
+    };
+
     // Load identity if present
     let identity_path = soul.join("identity.toml");
     if let Ok(text) = fs::read_to_string(&identity_path).await {
@@ -55,20 +66,10 @@ async fn main() -> anyhow::Result<()> {
         }
     }
 
-    // Construct LLM registry
-    let registry = std::sync::Arc::new(psyche::llm::LlmRegistry {
-        chat: Box::new(psyche::llm::ollama::OllamaChat {
-            base_url: "http://localhost:11434".into(),
-            model: "gemma3:27b".into(),
-        }),
-        embed: Box::new(psyche::llm::mock_embed::MockEmbed::default()),
-    });
-
-    let profile = std::sync::Arc::new(psyche::llm::LlmProfile {
-        provider: "ollama".into(),
-        model: "gemma3:27b".into(),
-        capabilities: vec![psyche::llm::LlmCapability::Chat],
-    });
+    // Construct LLM registry from configuration
+    let (registry, profile) = psyched::llm_config::load_first_llm(&llm_cfg).await?;
+    let registry = std::sync::Arc::new(registry);
+    let profile = std::sync::Arc::new(profile);
 
     // Kick off orchestrator
     let local = tokio::task::LocalSet::new();

@@ -13,6 +13,7 @@ use uuid::Uuid;
 
 mod db_memory;
 mod file_memory;
+pub mod llm_config;
 mod wit;
 
 /// Identity information loaded from `soul/identity.toml`.
