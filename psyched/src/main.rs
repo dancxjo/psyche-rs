@@ -1,4 +1,4 @@
-use clap::Parser;
+use clap::{Parser, ValueEnum};
 use std::path::PathBuf;
 use tokio::fs;
 use toml;
@@ -30,12 +30,39 @@ pub struct Cli {
     /// Beat interval (in milliseconds)
     #[arg(long, default_value_t = 50)]
     pub beat_ms: u64,
+
+    /// Logging verbosity level
+    #[arg(long, default_value = "info")]
+    pub log_level: LogLevel,
+}
+
+#[derive(Copy, Clone, Debug, ValueEnum)]
+pub enum LogLevel {
+    Error,
+    Warn,
+    Info,
+    Debug,
+    Trace,
+}
+
+impl From<LogLevel> for tracing_subscriber::filter::LevelFilter {
+    fn from(level: LogLevel) -> Self {
+        match level {
+            LogLevel::Error => tracing_subscriber::filter::LevelFilter::ERROR,
+            LogLevel::Warn => tracing_subscriber::filter::LevelFilter::WARN,
+            LogLevel::Info => tracing_subscriber::filter::LevelFilter::INFO,
+            LogLevel::Debug => tracing_subscriber::filter::LevelFilter::DEBUG,
+            LogLevel::Trace => tracing_subscriber::filter::LevelFilter::TRACE,
+        }
+    }
 }
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
-    tracing_subscriber::fmt::init();
     let cli = Cli::parse();
+    tracing_subscriber::fmt()
+        .with_max_level(tracing_subscriber::filter::LevelFilter::from(cli.log_level))
+        .init();
 
     // Canonicalize soul path
     let soul = if cli.soul.exists() {
