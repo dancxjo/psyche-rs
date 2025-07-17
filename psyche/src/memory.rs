@@ -4,6 +4,7 @@ use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use tokio_stream::StreamExt;
+use tracing::{debug, info, trace};
 #[cfg(feature = "qdrant")]
 use uuid::Uuid;
 
@@ -52,6 +53,7 @@ pub async fn context_subgraph<B: MemoryBackend + Sync>(
     backend: &B,
     id: &str,
 ) -> anyhow::Result<Vec<Experience>> {
+    debug!(id, "context_subgraph query");
     let query = format!(
         concat!(
             "MATCH (e:Experience {{id: \"{id}\"}})",
@@ -68,6 +70,7 @@ pub async fn context_subgraph<B: MemoryBackend + Sync>(
         ),
         id = id
     );
+    trace!(%query, "context_subgraph cypher");
     backend.cypher_query(&query).await
 }
 
@@ -151,6 +154,7 @@ where
         generate_summary: bool,
         tags: Vec<String>,
     ) -> anyhow::Result<StoredExperience> {
+        debug!(generate_summary, has_how = how.is_some(), tags = ?tags, "memorize called");
         let summary = if let Some(h) = how {
             h.to_string()
         } else if generate_summary {
@@ -162,11 +166,13 @@ where
                 what
             );
             let system = self.prompter.system();
+            trace!(target = "llm", system = %system, user = %prompt, "summary prompt");
             let mut stream = chat.chat_stream(self.profile, system, &prompt).await?;
             let mut out = String::new();
             while let Some(token) = stream.next().await {
                 out.push_str(&token);
             }
+            debug!(target = "llm", response = %out, "summary response");
             out
         } else {
             String::new()
@@ -179,6 +185,7 @@ where
             when: Utc::now(),
             tags,
         };
+        info!(tags = ?exp.tags, "storing experience");
         self.backend.store(&exp, &vector).await?;
         Ok(StoredExperience {
             experience: exp,
@@ -202,6 +209,7 @@ fn cosine_similarity(a: &[f32], b: &[f32]) -> f32 {
 
 impl Default for InMemoryBackend {
     fn default() -> Self {
+        debug!("creating InMemoryBackend");
         Self {
             data: std::sync::Mutex::new(Vec::new()),
         }
@@ -211,6 +219,7 @@ impl Default for InMemoryBackend {
 #[async_trait(?Send)]
 impl MemoryBackend for InMemoryBackend {
     async fn store(&self, exp: &Experience, vector: &[f32]) -> anyhow::Result<()> {
+        debug!(how = %exp.how, tags = ?exp.tags, "in-memory store");
         self.data
             .lock()
             .unwrap()
@@ -219,6 +228,7 @@ impl MemoryBackend for InMemoryBackend {
     }
 
     async fn search(&self, vector: &[f32], top_k: usize) -> anyhow::Result<Vec<Experience>> {
+        debug!(top_k, "in-memory search");
         let data = self.data.lock().unwrap();
         let mut scored: Vec<(f32, Experience)> = data
             .iter()
@@ -229,6 +239,7 @@ impl MemoryBackend for InMemoryBackend {
     }
 
     async fn get(&self, id: &str) -> anyhow::Result<Option<Experience>> {
+        debug!(id, "in-memory get");
         if let Ok(index) = id.parse::<usize>() {
             let data = self.data.lock().unwrap();
             if let Some((exp, _)) = data.get(index) {
@@ -247,6 +258,7 @@ impl MemoryBackend for InMemoryBackend {
 #[async_trait(?Send)]
 impl MemoryBackend for &InMemoryBackend {
     async fn store(&self, exp: &Experience, vector: &[f32]) -> anyhow::Result<()> {
+        debug!(how = %exp.how, "in-memory store ref");
         self.data
             .lock()
             .unwrap()
@@ -255,10 +267,12 @@ impl MemoryBackend for &InMemoryBackend {
     }
 
     async fn search(&self, vector: &[f32], top_k: usize) -> anyhow::Result<Vec<Experience>> {
+        debug!(top_k, "in-memory search ref");
         (**self).search(vector, top_k).await
     }
 
     async fn get(&self, id: &str) -> anyhow::Result<Option<Experience>> {
+        debug!(id, "in-memory get ref");
         (**self).get(id).await
     }
 
