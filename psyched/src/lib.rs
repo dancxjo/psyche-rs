@@ -112,11 +112,47 @@ struct LoadedWit {
     name: String,
     cfg: wit::WitConfig,
     beat: usize,
+    interval: usize,
+}
+
+fn priority_to_interval(priority: usize) -> usize {
+    if priority == 0 {
+        return 1;
+    }
+    fn is_prime(n: usize) -> bool {
+        if n < 2 {
+            return false;
+        }
+        for i in 2..=((n as f64).sqrt() as usize) {
+            if n % i == 0 {
+                return false;
+            }
+        }
+        true
+    }
+
+    let mut count = 0;
+    let mut num = 2;
+    loop {
+        if is_prime(num) {
+            count += 1;
+            if count == priority {
+                return num;
+            }
+        }
+        num += 1;
+    }
 }
 
 impl LoadedWit {
     fn new(name: String, cfg: wit::WitConfig) -> Self {
-        Self { name, cfg, beat: 0 }
+        let interval = priority_to_interval(cfg.priority);
+        Self {
+            name,
+            cfg,
+            beat: 0,
+            interval,
+        }
     }
 }
 
@@ -324,7 +360,7 @@ pub async fn run(
                 }
                 for w in &mut wits {
                     w.beat += 1;
-                    if w.beat % w.cfg.every == 0 {
+                    if w.beat % w.interval == 0 {
                         let items = memory_store.query_latest(&w.cfg.input).await;
                         if items.is_empty() { continue; }
                         let user_prompt = items.join("\n");

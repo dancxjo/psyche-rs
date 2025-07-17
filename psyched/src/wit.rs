@@ -9,8 +9,8 @@ pub struct WitConfig {
     pub output: String,
     /// System prompt passed to the language model.
     pub prompt: String,
-    /// Number of beats between each execution.
-    pub every: usize,
+    /// Execution priority. Lower values run more often.
+    pub priority: usize,
     /// Optional name of another Wit to receive this Wit’s output as input.
     #[serde(default)]
     pub feedback: Option<String>,
