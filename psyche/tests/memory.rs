@@ -3,6 +3,7 @@ use psyche::llm::{
     mock_chat::MockChat, mock_embed::MockEmbed, LlmCapability, LlmProfile, LlmRegistry,
 };
 use psyche::memory::{InMemoryBackend, Memorizer, MemoryBackend};
+use tracing_test::traced_test;
 
 #[tokio::test]
 async fn uses_provided_summary() {
@@ -140,4 +141,32 @@ async fn search_returns_neighbors() {
         .unwrap();
     let neighbors = backend.search(&stored.vector, 1).await.unwrap();
     assert_eq!(neighbors[0], stored.experience);
+}
+
+#[traced_test]
+#[tokio::test]
+async fn memorize_emits_logs() {
+    let profile = LlmProfile {
+        provider: "mock".into(),
+        model: "mock".into(),
+        capabilities: vec![LlmCapability::Chat, LlmCapability::Embedding],
+    };
+    let registry = LlmRegistry {
+        chat: Box::new(MockChat::default()),
+        embed: Box::new(MockEmbed::default()),
+    };
+    let backend = InMemoryBackend::default();
+    let memorizer = Memorizer {
+        chat: Some(&*registry.chat),
+        embed: &*registry.embed,
+        profile: &profile,
+        backend: &backend,
+        prompter: PromptHelper::default(),
+    };
+    memorizer
+        .memorize("body", None, true, vec!["test".into()])
+        .await
+        .unwrap();
+    assert!(logs_contain("memorize called"));
+    assert!(logs_contain("storing experience"));
 }
