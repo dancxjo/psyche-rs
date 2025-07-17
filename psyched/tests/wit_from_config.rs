@@ -16,7 +16,7 @@ async fn wit_from_config_runs() {
     let config_path = soul_dir.join("config/pipeline.toml");
     tokio::fs::write(
         &config_path,
-        "[distiller]\n\n[wit.echo]\ninput = \"sensation/chat\"\noutput = \"reply\"\nprompt = \"Respond\"\nevery = 2\nfeedback = \"\"\n",
+        "[distiller]\n\n[wit.echo]\ninput = \"sensation/chat\"\noutput = \"reply\"\nprompt = \"Respond\"\npriority = 1\nfeedback = \"\"\n",
     )
     .await
     .unwrap();

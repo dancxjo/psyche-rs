@@ -16,7 +16,7 @@ async fn wit_produces_output() {
     let config_path = soul_dir.join("config/pipeline.toml");
     tokio::fs::write(
         &config_path,
-        "[distiller]\n\n[wit.echo]\ninput = \"sensation/chat\"\noutput = \"reply\"\nprompt = \"Respond\"\nevery = 1\nfeedback = \"\"\n",
+        "[distiller]\n\n[wit.echo]\ninput = \"sensation/chat\"\noutput = \"reply\"\nprompt = \"Respond\"\npriority = 0\nfeedback = \"\"\n",
     )
     .await
     .unwrap();
@@ -85,7 +85,7 @@ async fn feedback_forwards_output() {
         .unwrap();
     let config_path = soul_dir.join("config/pipeline.toml");
     let config = "\
-[distiller]\n\n[wit.first]\ninput = \"sensation/chat\"\noutput = \"reply1\"\nprompt = \"Respond\"\nevery = 1\nfeedback = \"second\"\n\n[wit.second]\ninput = \"reply1\"\noutput = \"reply2\"\nprompt = \"Respond2\"\nevery = 1\n";
+[distiller]\n\n[wit.first]\ninput = \"sensation/chat\"\noutput = \"reply1\"\nprompt = \"Respond\"\npriority = 0\nfeedback = \"second\"\n\n[wit.second]\ninput = \"reply1\"\noutput = \"reply2\"\nprompt = \"Respond2\"\npriority = 0\n";
     tokio::fs::write(&config_path, config).await.unwrap();
 
     let registry = std::sync::Arc::new(psyche::llm::LlmRegistry {
