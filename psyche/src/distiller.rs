@@ -110,7 +110,8 @@ impl Distiller {
 
 /// Simple post processor that stores the source entry ids as a JSON array.
 pub fn link_sources(entries: &[MemoryEntry], _resp: &str) -> anyhow::Result<Value> {
-    Ok(serde_json::json!(
-        entries.iter().map(|e| e.id).collect::<Vec<_>>()
-    ))
+    Ok(serde_json::json!(entries
+        .iter()
+        .map(|e| e.id)
+        .collect::<Vec<_>>()))
 }

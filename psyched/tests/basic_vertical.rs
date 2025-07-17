@@ -18,6 +18,7 @@ async fn sensation_results_in_instant() {
     tokio::fs::create_dir_all(soul_dir.join("memory"))
         .await
         .unwrap();
+    std::env::set_var("USE_MOCK_LLM", "1");
     tokio::fs::copy(config_path, soul_dir.join("config/pipeline.toml"))
         .await
         .unwrap();
@@ -60,14 +61,14 @@ async fn sensation_results_in_instant() {
             stream.write_all(msg).await.unwrap();
 
             tokio::time::sleep(std::time::Duration::from_millis(300)).await;
-            tx.send(()).unwrap();
+            let _ = tx.send(());
             server.await.unwrap().unwrap();
 
             let sensation_path = memory_path.clone();
             let content = tokio::fs::read_to_string(&sensation_path).await.unwrap();
             let lines: Vec<_> = content.lines().collect();
             assert_eq!(lines.len(), 1);
-            let _sensation: psyche::models::Sensation = serde_json::from_str(lines[0]).unwrap();
+            let sensation: psyche::models::Sensation = serde_json::from_str(lines[0]).unwrap();
 
             let instant_path = soul_dir.join("memory/instant.jsonl");
             let icontent = tokio::fs::read_to_string(&instant_path).await.unwrap();
