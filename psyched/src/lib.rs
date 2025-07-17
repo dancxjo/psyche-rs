@@ -275,7 +275,12 @@ pub async fn run(
         tokio::select! {
             _ = &mut shutdown => break,
             Ok((stream, _)) = listener.accept() => {
-                handle_stream(stream, sensation_path.clone()).await?;
+                let path = sensation_path.clone();
+                tokio::spawn(async move {
+                    if let Err(e) = handle_stream(stream, path).await {
+                        tracing::error!(error = %e, "failed to handle stream");
+                    }
+                });
             }
             _ = beat.tick() => {
                 beat_counter += 1;
