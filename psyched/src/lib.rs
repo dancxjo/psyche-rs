@@ -6,6 +6,7 @@ use qdrant_client::prelude::*;
 use serde::Deserialize;
 use serde_json::json;
 use std::collections::HashMap;
+use std::collections::VecDeque;
 use std::path::{Path, PathBuf};
 use tokio::io::{AsyncBufReadExt, BufReader};
 use tokio::net::{UnixListener, UnixStream};
@@ -23,7 +24,8 @@ pub struct Identity {
     pub purpose: Option<String>,
 }
 
-async fn handle_stream(stream: UnixStream, memory: &db_memory::DbMemory<'_>) -> Result<()> {
+/// Read a sensation from a Unix stream until a line containing `---` is found.
+async fn read_sensation(stream: UnixStream) -> Result<Sensation> {
     let mut reader = BufReader::new(stream);
     let mut path = String::new();
     reader.read_line(&mut path).await?;
@@ -37,13 +39,11 @@ async fn handle_stream(stream: UnixStream, memory: &db_memory::DbMemory<'_>) -> 
         text.push_str(&line);
     }
     let text = text.trim_end_matches('\n').to_string();
-    let sensation = Sensation {
+    Ok(Sensation {
         id: Uuid::new_v4().to_string(),
         path: path.trim().to_string(),
         text,
-    };
-    memory.store_sensation(&sensation).await?;
-    Ok(())
+    })
 }
 
 #[derive(Deserialize, Clone)]
@@ -257,14 +257,19 @@ pub async fn run(
     let mut beat_counter = 0usize;
 
     tokio::pin!(shutdown);
+    let mut pending: VecDeque<Sensation> = VecDeque::new();
 
     loop {
         tokio::select! {
             _ = &mut shutdown => break,
             Ok((stream, _)) = listener.accept() => {
-                let memory = memory_store.clone();
-                if let Err(e) = handle_stream(stream, &memory).await {
-                    tracing::error!(error = %e, "failed to handle stream");
+                match read_sensation(stream).await {
+                    Ok(sensation) => {
+                        pending.push_back(sensation);
+                    }
+                    Err(e) => {
+                        tracing::error!(error = %e, "failed to read sensation");
+                    }
                 }
             }
             _ = beat.tick() => {
@@ -308,6 +313,11 @@ pub async fn run(
                         tracing::info!(wit = %w.name, output = %w.cfg.output, "wit stored output");
                     }
                 }
+            }
+        }
+        while let Some(s) = pending.pop_front() {
+            if let Err(e) = memory_store.store_sensation(&s).await {
+                tracing::error!(error = %e, "failed to store sensation");
             }
         }
     }
