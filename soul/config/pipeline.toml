@@ -3,12 +3,11 @@
 [wit.quick]
 input = "sensation/chat"
 output = "instant"
-prompt = "Summarize feeling"
-every = 1
+prompt = "From these chat messages, infer what is happening. Generate a brief summary, emphasizing what is important and omitting what isn't."
+every = 2
 
 [wit.combobulator]
 input = "instant"
 output = "situation"
-prompt = "Summarize instant"
-every = 2
-
+prompt = "Combine recent instants into a coherent summary of the current situation, as if explaining to someone what is happening now."
+every = 3

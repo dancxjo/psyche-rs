@@ -59,14 +59,14 @@ async fn main() -> anyhow::Result<()> {
     let registry = std::sync::Arc::new(psyche::llm::LlmRegistry {
         chat: Box::new(psyche::llm::ollama::OllamaChat {
             base_url: "http://localhost:11434".into(),
-            model: "gemma3n".into(),
+            model: "gemma3:27b".into(),
         }),
         embed: Box::new(psyche::llm::mock_embed::MockEmbed::default()),
     });
 
     let profile = std::sync::Arc::new(psyche::llm::LlmProfile {
         provider: "ollama".into(),
-        model: "gemma3n".into(),
+        model: "gemma3:27b".into(),
         capabilities: vec![psyche::llm::LlmCapability::Chat],
     });
 
