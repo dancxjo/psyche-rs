@@ -422,3 +422,6 @@ mod qdrant_store {
         }
     }
 }
+
+#[cfg(feature = "qdrant")]
+pub use qdrant_store::QdrantNeo4j;
