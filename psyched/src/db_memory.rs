@@ -8,6 +8,7 @@ use serde_json::Value;
 use std::path::PathBuf;
 use std::sync::Arc;
 use tokio::io::AsyncWriteExt;
+use tracing::{debug, trace};
 use uuid::Uuid;
 
 pub struct DbMemory<'a> {
@@ -37,6 +38,7 @@ impl<'a> DbMemory<'a> {
         embed: &'a dyn CanEmbed,
         profile: &'a LlmProfile,
     ) -> Self {
+        debug!(dir = %dir.display(), "initializing DbMemory");
         Self {
             dir: dir.clone(),
             inner: FileMemory::new(dir),
@@ -51,10 +53,12 @@ impl<'a> DbMemory<'a> {
     }
 
     pub async fn query_latest(&self, kind: &str) -> Vec<String> {
+        trace!(kind, "DbMemory query_latest");
         self.inner.query_latest(kind).await
     }
 
     pub async fn store(&self, kind: &str, text: &str) -> Result<()> {
+        debug!(kind, "DbMemory store");
         let entry = MemoryEntry {
             id: Uuid::new_v4(),
             kind: kind.to_string(),
@@ -69,6 +73,7 @@ impl<'a> DbMemory<'a> {
         if entries.is_empty() {
             return Ok(());
         }
+        debug!(count = entries.len(), "appending entries");
         let path = self.dir.join(format!(
             "{}.jsonl",
             entries[0].kind.split('/').next().unwrap()
@@ -97,6 +102,7 @@ impl<'a> DbMemory<'a> {
         let line = serde_json::to_string(sens)?;
         file.write_all(line.as_bytes()).await?;
         file.write_all(b"\n").await?;
+        trace!("stored sensation to file");
         if let Some(backend) = &self.backend {
             let vector = self.embed.embed(self.profile, &sens.text).await?;
             let exp = Experience {
@@ -121,6 +127,7 @@ impl<'a> DbMemory<'a> {
             };
             backend.store(&exp, &vector).await?;
         }
+        trace!(id = %entry.id, "persisted entry");
         Ok(())
     }
 }

@@ -5,6 +5,7 @@ use tokio::sync::Mutex;
 use chrono::Utc;
 use psyche::models::{MemoryEntry, Sensation};
 use serde_json::Value;
+use tracing::{debug, trace};
 use uuid::Uuid;
 
 /// Simple JSONL-backed memory store for Wit scheduling.
@@ -19,6 +20,7 @@ use std::sync::Arc;
 impl FileMemory {
     /// Create a new memory store rooted at `dir`.
     pub fn new(dir: PathBuf) -> Self {
+        debug!(dir = %dir.display(), "creating FileMemory");
         Self {
             dir,
             offsets: Arc::new(Mutex::new(HashMap::new())),
@@ -27,6 +29,7 @@ impl FileMemory {
 
     /// Return newly appended items for `kind` since the last call.
     pub async fn query_latest(&self, kind: &str) -> Vec<String> {
+        trace!(kind, "query_latest called");
         let path = self
             .dir
             .join(format!("{}.jsonl", kind.split('/').next().unwrap_or(kind)));
@@ -60,6 +63,7 @@ impl FileMemory {
 
     /// Append a new text value under the given `kind`.
     pub async fn store(&self, kind: &str, text: &str) -> anyhow::Result<()> {
+        debug!(kind, "storing entry");
         let entry = MemoryEntry {
             id: Uuid::new_v4(),
             kind: kind.to_string(),
@@ -81,6 +85,7 @@ impl FileMemory {
         use tokio::io::AsyncWriteExt;
         file.write_all(line.as_bytes()).await?;
         file.write_all(b"\n").await?;
+        trace!(kind, "appended entry");
         Ok(())
     }
 }

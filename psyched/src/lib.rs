@@ -9,6 +9,7 @@ use std::collections::VecDeque;
 use std::path::{Path, PathBuf};
 use tokio::io::{AsyncBufReadExt, BufReader};
 use tokio::net::{UnixListener, UnixStream};
+use tracing::{debug, info, trace};
 use uuid::Uuid;
 
 mod db_memory;
@@ -29,6 +30,7 @@ async fn read_sensation(stream: UnixStream) -> Result<Sensation> {
     let mut reader = BufReader::new(stream);
     let mut path = String::new();
     reader.read_line(&mut path).await?;
+    trace!(path = %path.trim(), "reading sensation path");
     let mut text = String::new();
     loop {
         let mut line = String::new();
@@ -39,6 +41,7 @@ async fn read_sensation(stream: UnixStream) -> Result<Sensation> {
         text.push_str(&line);
     }
     let text = text.trim_end_matches('\n').to_string();
+    debug!(len = text.len(), "sensation text received");
     Ok(Sensation {
         id: Uuid::new_v4().to_string(),
         path: path.trim().to_string(),
@@ -158,6 +161,7 @@ impl LoadedDistiller {
     }
 
     async fn collect(&mut self, dir: &Path) -> Result<Vec<MemoryEntry>> {
+        trace!(distiller = %self.name, "collecting inputs");
         let mut out = Vec::new();
         for kind in &self.cfg.input_kinds {
             let path = dir.join(format!("{}.jsonl", kind.split('/').next().unwrap()));
@@ -184,6 +188,7 @@ impl LoadedDistiller {
                 *offset = lines.len();
             }
         }
+        debug!(distiller = %self.name, count = out.len(), "input entries collected");
         Ok(out)
     }
 }
@@ -217,6 +222,7 @@ pub async fn run(
 ) -> Result<()> {
     let _ = std::fs::remove_file(&socket);
     let listener = UnixListener::bind(&socket)?;
+    info!(socket = %socket.display(), "psyched listening");
 
     let memory_dir = soul.join("memory");
     tokio::fs::create_dir_all(&memory_dir).await?;
@@ -291,10 +297,12 @@ pub async fn run(
         tokio::select! {
             _ = &mut shutdown => break,
             Some(sensation) = rx.recv() => {
+                debug!(path = %sensation.path, "received sensation");
                 pending.push_back(sensation);
             }
             _ = beat.tick() => {
                 beat_counter += 1;
+                trace!(beat = beat_counter, "beat tick");
                 for d in &mut distillers {
                     if beat_counter % d.cfg.beat_mod == 0 {
                         let input = d.collect(&memory_dir).await?;
@@ -344,6 +352,8 @@ pub async fn run(
         while let Some(s) = pending.pop_front() {
             if let Err(e) = memory_store.store_sensation(&s).await {
                 tracing::error!(error = %e, "failed to store sensation");
+            } else {
+                debug!(id = %s.id, "sensation stored");
             }
         }
     }

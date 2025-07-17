@@ -104,6 +104,8 @@ async fn cli_flags_work() {
         .arg("/tmp/foo")
         .arg("--pipeline")
         .arg("/tmp/bar")
+        .arg("--log-level")
+        .arg("debug")
         .arg("--help")
         .status()
         .await

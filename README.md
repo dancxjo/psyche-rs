@@ -42,7 +42,7 @@ cd psyche-rs
 cargo build
 
 # Run the core orchestrator daemon
-sudo ./target/debug/psyched
+sudo ./target/debug/psyched --log-level info
 ````
 
 Optionally start services:

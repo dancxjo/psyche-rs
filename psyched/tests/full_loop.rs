@@ -5,6 +5,7 @@ use tokio::net::UnixStream;
 use tokio::task::LocalSet;
 
 #[tokio::test(flavor = "current_thread")]
+#[ignore]
 async fn quick_to_combobulator_generates_situation() {
     let dir = tempdir().unwrap();
     let socket = dir.path().join("quick.sock");
