@@ -262,7 +262,17 @@ pub async fn run(
         tokio::select! {
             _ = &mut shutdown => break,
             Ok((stream, _)) = listener.accept() => {
-                handle_stream(stream, &memory_store).await?;
+              tokio::select! {
+                  _ = &mut shutdown => break,
+
+                  Ok((stream, _)) = listener.accept() => {
+                      let memory = memory_store.clone(); // Assuming Arc or Copy if needed
+                      tokio::spawn(async move {
+                          if let Err(e) = handle_stream(stream, &memory).await {
+                              tracing::error!(error = %e, "failed to handle stream");
+                          }
+                      });
+                  }
             }
             _ = beat.tick() => {
                 beat_counter += 1;
