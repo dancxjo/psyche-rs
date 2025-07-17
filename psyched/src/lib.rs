@@ -273,6 +273,7 @@ pub async fn run(
                           }
                       });
                   }
+              };
             }
             _ = beat.tick() => {
                 beat_counter += 1;
