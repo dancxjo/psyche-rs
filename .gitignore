@@ -1,2 +1,6 @@
 target
 **/*.rs.bk
+whisper-base.en.bin
+/soul/graph/*
+/soul/vectors/*
+
