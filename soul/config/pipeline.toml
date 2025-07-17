@@ -5,9 +5,11 @@ input = "sensation/chat"
 output = "instant"
 prompt = "From these chat messages, infer what is happening. Generate a brief summary, emphasizing what is important and omitting what isn't. Use the first person perspective from the complete system's point of view."
 every = 2
+feedback = ""
 
 [wit.combobulator]
 input = "instant"
 output = "situation"
 prompt = "Combine recent instants into a coherent summary of the current situation, as if explaining to someone what is happening now. Generate a brief summary, emphasizing what is important and omitting what isn't. Use the first person perspective from the complete system's point of view."
 every = 3
+feedback = ""

@@ -80,6 +80,9 @@ echo -e "/vision\nI see a red light blinking in the distance.\n.\n" | socat - UN
 ```
 
 Each *Wit* is a modular distiller defined declaratively and run by `psyched`.
+Pipeline sections can include a `feedback` field naming another Wit. When set,
+the originating Wit’s output is stored under the target Wit’s input kind so it
+can immediately act on that text.
 
 ## Philosophy
 

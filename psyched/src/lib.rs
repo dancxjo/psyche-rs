@@ -251,6 +251,10 @@ pub async fn run(
         .into_iter()
         .map(|(n, c)| LoadedWit::new(n, c))
         .collect();
+    let wit_inputs: std::collections::HashMap<String, String> = wits
+        .iter()
+        .map(|w| (w.name.clone(), w.cfg.input.clone()))
+        .collect();
 
     let mut beat = tokio::time::interval(beat_duration);
     let mut beat_counter = 0usize;
@@ -323,9 +327,14 @@ pub async fn run(
                         while let Some(token) = stream.next().await {
                             response.push_str(&token);
                         }
-                        memory_store
-                            .store(&w.cfg.output, &response)
-                            .await?;
+                        memory_store.store(&w.cfg.output, &response).await?;
+                        if let Some(target) = &w.cfg.feedback {
+                            if let Some(kind) = wit_inputs.get(target) {
+                                memory_store.store(kind, &response).await?;
+                            } else {
+                                tracing::warn!(source = %w.name, target = %target, "feedback target missing");
+                            }
+                        }
                         tracing::info!(wit = %w.name, output = %w.cfg.output, "wit stored output");
                     }
                 }
