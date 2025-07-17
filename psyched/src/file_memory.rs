@@ -46,8 +46,15 @@ impl FileMemory {
         slice
             .iter()
             .filter_map(|l| {
-                if kind.starts_with("sensation/") {
-                    serde_json::from_str::<Sensation>(l).ok().map(|s| s.text)
+                if kind.starts_with("sensation") {
+                    serde_json::from_str::<Sensation>(l).ok().and_then(|s| {
+                        let entry_kind = format!("sensation{}", s.path);
+                        if entry_kind.starts_with(kind) {
+                            Some(s.text)
+                        } else {
+                            None
+                        }
+                    })
                 } else {
                     serde_json::from_str::<MemoryEntry>(l).ok().map(|e| {
                         if !e.how.is_empty() {

@@ -170,15 +170,18 @@ impl LoadedDistiller {
             let lines: Vec<_> = content.lines().collect();
             if *offset < lines.len() {
                 for line in &lines[*offset..] {
-                    if kind.starts_with("sensation/") {
+                    if kind.starts_with("sensation") {
                         let s: Sensation = serde_json::from_str(line)?;
-                        out.push(MemoryEntry {
-                            id: Uuid::parse_str(&s.id)?,
-                            kind: kind.clone(),
-                            when: Utc::now(),
-                            what: json!(s.text),
-                            how: String::new(),
-                        });
+                        let entry_kind = format!("sensation{}", s.path);
+                        if entry_kind.starts_with(kind) {
+                            out.push(MemoryEntry {
+                                id: Uuid::parse_str(&s.id)?,
+                                kind: entry_kind,
+                                when: Utc::now(),
+                                what: json!(s.text),
+                                how: String::new(),
+                            });
+                        }
                     } else {
                         let mut e: MemoryEntry = serde_json::from_str(line)?;
                         e.kind = kind.clone();
