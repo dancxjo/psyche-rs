@@ -2,15 +2,16 @@ use anyhow::Result;
 use chrono::Utc;
 use psyche::distiller::{Distiller, DistillerConfig};
 use psyche::models::{MemoryEntry, Sensation};
+use qdrant_client::prelude::*;
 use serde::Deserialize;
-use serde::Serialize;
 use serde_json::json;
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
-use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
+use tokio::io::{AsyncBufReadExt, BufReader};
 use tokio::net::{UnixListener, UnixStream};
 use uuid::Uuid;
 
+mod db_memory;
 mod file_memory;
 mod wit;
 
@@ -22,7 +23,7 @@ pub struct Identity {
     pub purpose: Option<String>,
 }
 
-async fn handle_stream(stream: UnixStream, sensation_path: PathBuf) -> Result<()> {
+async fn handle_stream(stream: UnixStream, memory: &db_memory::DbMemory<'_>) -> Result<()> {
     let mut reader = BufReader::new(stream);
     let mut path = String::new();
     reader.read_line(&mut path).await?;
@@ -41,36 +42,7 @@ async fn handle_stream(stream: UnixStream, sensation_path: PathBuf) -> Result<()
         path: path.trim().to_string(),
         text,
     };
-    append(&sensation_path, &sensation).await?;
-    Ok(())
-}
-
-async fn append<T: Serialize>(path: &PathBuf, value: &T) -> Result<()> {
-    let mut file = tokio::fs::OpenOptions::new()
-        .append(true)
-        .create(true)
-        .open(path)
-        .await?;
-    let line = serde_json::to_string(value)?;
-    file.write_all(line.as_bytes()).await?;
-    file.write_all(b"\n").await?;
-    Ok(())
-}
-
-async fn append_all<T: Serialize>(path: &PathBuf, values: &[T]) -> Result<()> {
-    if values.is_empty() {
-        return Ok(());
-    }
-    let mut file = tokio::fs::OpenOptions::new()
-        .append(true)
-        .create(true)
-        .open(path)
-        .await?;
-    for v in values {
-        let line = serde_json::to_string(v)?;
-        file.write_all(line.as_bytes()).await?;
-        file.write_all(b"\n").await?;
-    }
+    memory.store_sensation(&sensation).await?;
     Ok(())
 }
 
@@ -248,7 +220,6 @@ pub async fn run(
 
     let memory_dir = soul.join("memory");
     tokio::fs::create_dir_all(&memory_dir).await?;
-    let sensation_path = memory_dir.join("sensation.jsonl");
 
     let cfg_path = pipeline;
     let cfg = load_config(&cfg_path).await?;
@@ -259,7 +230,23 @@ pub async fn run(
         .map(|(n, c)| LoadedDistiller::new(n, c))
         .collect();
 
-    let memory_store = file_memory::FileMemory::new(memory_dir.clone());
+    let backend =
+        if let (Ok(qurl), Ok(nurl)) = (std::env::var("QDRANT_URL"), std::env::var("NEO4J_URL")) {
+            let qdrant = qdrant_client::prelude::QdrantClient::from_url(&qurl).build();
+            let qdrant = qdrant.expect("qdrant");
+            let user = std::env::var("NEO4J_USER").unwrap_or_else(|_| "neo4j".into());
+            let pass = std::env::var("NEO4J_PASS").unwrap_or_else(|_| "password".into());
+            let graph = neo4rs::Graph::new(&nurl, user, pass)?;
+            Some(std::sync::Arc::new(psyche::memory::QdrantNeo4j {
+                qdrant,
+                graph,
+            }))
+        } else {
+            None
+        };
+
+    let memory_store =
+        db_memory::DbMemory::new(memory_dir.clone(), backend, &*registry.embed, &*profile);
     let mut wits: Vec<LoadedWit> = cfg
         .wit
         .into_iter()
@@ -275,12 +262,17 @@ pub async fn run(
         tokio::select! {
             _ = &mut shutdown => break,
             Ok((stream, _)) = listener.accept() => {
-                let path = sensation_path.clone();
-                tokio::spawn(async move {
-                    if let Err(e) = handle_stream(stream, path).await {
-                        tracing::error!(error = %e, "failed to handle stream");
-                    }
-                });
+              tokio::select! {
+                  _ = &mut shutdown => break,
+
+                  Ok((stream, _)) = listener.accept() => {
+                      let memory = memory_store.clone(); // Assuming Arc or Copy if needed
+                      tokio::spawn(async move {
+                          if let Err(e) = handle_stream(stream, &memory).await {
+                              tracing::error!(error = %e, "failed to handle stream");
+                          }
+                      });
+                  }
             }
             _ = beat.tick() => {
                 beat_counter += 1;
@@ -297,8 +289,7 @@ pub async fn run(
                                 }
                             }
                         }
-                        let path = memory_dir.join(format!("{}.jsonl", d.cfg.output_kind));
-                        append_all(&path, &output).await?;
+                        memory_store.append_entries(&output).await?;
                     }
                 }
                 for w in &mut wits {

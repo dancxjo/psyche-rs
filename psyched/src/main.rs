@@ -1,9 +1,10 @@
 use clap::Parser;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
+use tokio::fs;
 use toml;
 
 /// `psyched` — the orchestrator for psycheOS
-#[derive(Parser)]
+#[derive(Parser, Debug)]
 #[command(
     name = "psyched",
     version,
@@ -14,16 +15,12 @@ pub struct Cli {
     #[arg(long, default_value = "/run/quick.sock")]
     pub socket: PathBuf,
 
-    /// Directory containing Layka's soul
-    #[arg(long, alias = "memory-path", default_value = "soul")]
+    /// Directory containing Layka's soul (memory, identity, config)
+    #[arg(long, default_value = "soul")]
     pub soul: PathBuf,
 
-    /// Path to TOML file describing the distiller pipeline
-    #[arg(
-        long,
-        alias = "config-file",
-        default_value = "soul/config/pipeline.toml"
-    )]
+    /// Path to TOML pipeline config. If relative, resolved against soul/config/.
+    #[arg(long, default_value = "pipeline.toml")]
     pub pipeline: PathBuf,
 
     /// Beat interval (in milliseconds)
@@ -35,34 +32,45 @@ pub struct Cli {
 async fn main() -> anyhow::Result<()> {
     tracing_subscriber::fmt::init();
     let cli = Cli::parse();
+
+    // Canonicalize soul path
     let soul = if cli.soul.exists() {
         cli.soul.clone()
     } else {
         PathBuf::from("/etc/soul")
     };
-    let pipeline =
-        if cli.pipeline == PathBuf::from("soul/config/pipeline.toml") && !cli.pipeline.exists() {
-            soul.join("config/pipeline.toml")
-        } else {
-            cli.pipeline.clone()
-        };
-    let registry = std::sync::Arc::new(psyche::llm::LlmRegistry {
-        chat: Box::new(psyche::llm::mock_chat::MockChat::default()),
-        embed: Box::new(psyche::llm::mock_embed::MockEmbed::default()),
-    });
-    let profile = std::sync::Arc::new(psyche::llm::LlmProfile {
-        provider: "ollama".into(),
-        model: "llama3".into(),
-        capabilities: vec![psyche::llm::LlmCapability::Chat],
-    });
-    let shutdown = shutdown_signal();
+
+    // Resolve pipeline path
+    let pipeline = if cli.pipeline.is_relative() {
+        soul.join("config").join(&cli.pipeline)
+    } else {
+        cli.pipeline.clone()
+    };
+
+    // Load identity if present
     let identity_path = soul.join("identity.toml");
-    if let Ok(text) = tokio::fs::read_to_string(&identity_path).await {
+    if let Ok(text) = fs::read_to_string(&identity_path).await {
         if let Ok(id) = toml::from_str::<psyched::Identity>(&text) {
             tracing::info!("\u{1F680}  Booting {}...", id.name);
         }
     }
 
+    // Construct LLM registry
+    let registry = std::sync::Arc::new(psyche::llm::LlmRegistry {
+        chat: Box::new(psyche::llm::ollama::OllamaChat {
+            base_url: "http://localhost:11434".into(),
+            model: "gemma3n".into(),
+        }),
+        embed: Box::new(psyche::llm::mock_embed::MockEmbed::default()),
+    });
+
+    let profile = std::sync::Arc::new(psyche::llm::LlmProfile {
+        provider: "ollama".into(),
+        model: "gemma3n".into(),
+        capabilities: vec![psyche::llm::LlmCapability::Chat],
+    });
+
+    // Kick off orchestrator
     psyched::run(
         cli.socket,
         soul,
@@ -70,7 +78,7 @@ async fn main() -> anyhow::Result<()> {
         std::time::Duration::from_millis(cli.beat_ms),
         registry,
         profile,
-        shutdown,
+        shutdown_signal(),
     )
     .await
 }
