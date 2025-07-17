@@ -71,16 +71,18 @@ async fn main() -> anyhow::Result<()> {
     });
 
     // Kick off orchestrator
-    psyched::run(
-        cli.socket,
-        soul,
-        pipeline,
-        std::time::Duration::from_millis(cli.beat_ms),
-        registry,
-        profile,
-        shutdown_signal(),
-    )
-    .await
+    let local = tokio::task::LocalSet::new();
+    local
+        .run_until(psyched::run(
+            cli.socket,
+            soul,
+            pipeline,
+            std::time::Duration::from_millis(cli.beat_ms),
+            registry,
+            profile,
+            shutdown_signal(),
+        ))
+        .await
 }
 
 fn shutdown_signal() -> impl std::future::Future<Output = ()> {
