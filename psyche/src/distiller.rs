@@ -53,7 +53,10 @@ impl Distiller {
         // Filter by input kind
         let entries: Vec<_> = input
             .into_iter()
-            .filter(|e| e.kind == self.config.input_kind)
+            .filter(|e| {
+                e.kind == self.config.input_kind
+                    || e.kind.starts_with(&format!("{}/", self.config.input_kind))
+            })
             .collect();
 
         if entries.is_empty() {

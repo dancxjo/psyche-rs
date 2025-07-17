@@ -33,6 +33,32 @@ async fn combobulator_config_distills_chat() {
 }
 
 #[tokio::test]
+async fn prefix_filter_matches_subkind() {
+    let entry_id = Uuid::new_v4();
+    let cfg = DistillerConfig {
+        name: "combobulator".into(),
+        input_kind: "sensation".into(),
+        output_kind: "instant".into(),
+        prompt_template: "{input}".into(),
+        post_process: Some(link_sources),
+    };
+    let mut d = Distiller {
+        config: cfg,
+        llm: Box::new(MockChat::default()),
+    };
+    let entry = MemoryEntry {
+        id: entry_id,
+        kind: "sensation/chat".into(),
+        when: Utc::now(),
+        what: json!("I feel tired"),
+        how: String::new(),
+    };
+    let out = d.distill(vec![entry]).await.unwrap();
+    assert_eq!(out[0].kind, "instant");
+    assert_eq!(out[0].what, json!([entry_id]));
+}
+
+#[tokio::test]
 async fn memory_config_distills_instant() {
     let id1 = Uuid::new_v4();
     let id2 = Uuid::new_v4();
