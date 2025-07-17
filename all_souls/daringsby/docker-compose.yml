@@ -27,7 +27,7 @@ services:
       - "6333:6333"
       - "6334:6334"
     volumes:
-      - ./soul/vectors:/qdrant/storage
+      - ./vectors:/qdrant/storage
 
   neo4j:
     image: neo4j:5
@@ -37,10 +37,10 @@ services:
     environment:
       - NEO4J_AUTH=neo4j/password
     volumes:
-      - ./soul/graph:/data
+      - ./graph:/data
   ollama:
     image: ollama/ollama:latest
     ports:
       - "11434:11434"
     volumes:
-      - ./soul/ollama:/root/.ollama
+      - ./ollama:/root/.ollama
