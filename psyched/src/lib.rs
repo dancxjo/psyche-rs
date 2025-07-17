@@ -159,6 +159,14 @@ impl LoadedDistiller {
             ),
             _ => None,
         };
+        let default_llm: Box<dyn psyche::llm::CanChat> = if std::env::var("USE_MOCK_LLM").is_ok() {
+            Box::new(psyche::llm::mock_chat::MockChat::default())
+        } else {
+            Box::new(psyche::llm::ollama::OllamaChat {
+                base_url: "http://localhost:11434".into(),
+                model: "mistral".into(),
+            })
+        };
         let distiller = Distiller {
             config: DistillerConfig {
                 name: name.clone(),
@@ -167,7 +175,7 @@ impl LoadedDistiller {
                 prompt_template,
                 post_process: pp,
             },
-            llm: Box::new(psyche::llm::mock_chat::MockChat::default()),
+            llm: default_llm,
         };
         Self {
             name,
