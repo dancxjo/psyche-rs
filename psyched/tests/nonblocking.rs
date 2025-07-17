@@ -9,6 +9,7 @@ async fn injection_returns_immediately() {
     let dir = tempdir().unwrap();
     let socket = dir.path().join("quick.sock");
     let soul_dir = dir.path().to_path_buf();
+    std::env::set_var("USE_MOCK_LLM", "1");
     let config_path =
         PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../tests/configs/sample.toml");
     tokio::fs::create_dir_all(soul_dir.join("config"))
