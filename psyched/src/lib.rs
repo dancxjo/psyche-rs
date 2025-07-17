@@ -2,7 +2,6 @@ use anyhow::Result;
 use chrono::Utc;
 use psyche::distiller::{Distiller, DistillerConfig};
 use psyche::models::{MemoryEntry, Sensation};
-use qdrant_client::prelude::*;
 use serde::Deserialize;
 use serde_json::json;
 use std::collections::HashMap;
