@@ -17,4 +17,7 @@ pub struct WitConfig {
     /// Optional name of the LLM profile this Wit should use.
     #[serde(default)]
     pub llm: Option<String>,
+    /// Optional postprocessing behavior.
+    #[serde(default)]
+    pub postprocess: Option<String>,
 }

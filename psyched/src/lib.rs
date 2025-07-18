@@ -8,7 +8,7 @@ use serde_json::json;
 use std::collections::HashMap;
 use std::collections::VecDeque;
 use std::path::{Path, PathBuf};
-use tokio::io::{AsyncBufReadExt, BufReader};
+use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
 use tokio::net::{UnixListener, UnixStream};
 use tracing::{debug, info, trace};
 use uuid::Uuid;
@@ -258,6 +258,21 @@ fn flatten_links(val: &serde_json::Value) -> serde_json::Value {
     }
 }
 
+async fn fire_and_forget_recall(socket: &Path, query: &str) -> std::io::Result<()> {
+    if !socket.exists() {
+        return Err(std::io::Error::new(
+            std::io::ErrorKind::NotFound,
+            "socket missing",
+        ));
+    }
+    let mut stream = UnixStream::connect(socket).await?;
+    use tokio::io::AsyncWriteExt;
+    stream.write_all(b"/recall\n").await?;
+    stream.write_all(query.as_bytes()).await?;
+    stream.write_all(b"\n\n").await?;
+    Ok(())
+}
+
 /// Runs the psyched daemon until `shutdown` is triggered.
 pub async fn run(
     socket: PathBuf,
@@ -267,6 +282,7 @@ pub async fn run(
     registry: std::sync::Arc<psyche::llm::LlmRegistry>,
     profile: std::sync::Arc<psyche::llm::LlmProfile>,
     llms: Vec<std::sync::Arc<psyche::llm::LlmInstance>>,
+    memory_sock: PathBuf,
     shutdown: impl std::future::Future<Output = ()>,
 ) -> Result<()> {
     let _ = std::fs::remove_file(&socket);
@@ -409,7 +425,13 @@ pub async fn run(
                             response.push_str(&token);
                         }
                         drop(permit);
+                        let how = psyche::utils::first_sentence(&response);
                         let out_id = memory_store.store(&w.cfg.output, &response).await?;
+                        if w.cfg.postprocess.as_deref() == Some("recall") {
+                            if let Err(e) = fire_and_forget_recall(&memory_sock, &how).await {
+                                tracing::trace!(error = %e, "recall send failed");
+                            }
+                        }
                         if let Some(target) = &w.cfg.feedback {
                             if let Some(kind) = wit_inputs.get(target) {
                                 let fb_id = memory_store.store(kind, &response).await?;

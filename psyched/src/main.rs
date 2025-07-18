@@ -16,6 +16,10 @@ pub struct Cli {
     #[arg(long, default_value = "/run/quick.sock")]
     pub socket: PathBuf,
 
+    /// Path to memory recall socket
+    #[arg(long, default_value = "/run/memory.sock")]
+    pub memory_sock: PathBuf,
+
     /// Directory containing Layka's soul (memory, identity, config)
     #[arg(long, default_value = "soul")]
     pub soul: PathBuf,
@@ -100,6 +104,7 @@ async fn main() -> anyhow::Result<()> {
             registry,
             profile,
             llms,
+            cli.memory_sock,
             shutdown_signal(),
         ))
         .await
