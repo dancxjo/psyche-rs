@@ -42,7 +42,11 @@ cd psyche-rs
 cargo build
 
 # Run the core orchestrator daemon
-sudo ./target/debug/psyched --log-level info
+sudo ./target/debug/psyched \
+  --log-level info \
+  --qdrant-url http://localhost:6333 \
+  --neo4j-url http://localhost:7474 \
+  --neo4j-user neo4j --neo4j-pass password
 ````
 
 Optionally start services:
