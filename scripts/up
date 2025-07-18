@@ -1,0 +1,11 @@
+#!/bin/sh
+
+if [ -z "$1" ]; then
+    set -- "layka"
+fi
+
+./scripts/psyched "$1" &
+./scripts/heard "$1" &
+./scripts/rememberd "$1" &
+
+wait
