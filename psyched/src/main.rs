@@ -39,6 +39,22 @@ pub struct Cli {
     /// Logging verbosity level
     #[arg(long, default_value = "info")]
     pub log_level: LogLevel,
+
+    /// Qdrant service URL
+    #[arg(long, env = "QDRANT_URL", default_value = "http://localhost:6333")]
+    pub qdrant_url: String,
+
+    /// Neo4j service URL
+    #[arg(long, env = "NEO4J_URL", default_value = "http://localhost:7474")]
+    pub neo4j_url: String,
+
+    /// Neo4j username
+    #[arg(long, env = "NEO4J_USER", default_value = "neo4j")]
+    pub neo4j_user: String,
+
+    /// Neo4j password
+    #[arg(long, env = "NEO4J_PASS", default_value = "password")]
+    pub neo4j_pass: String,
 }
 
 #[tokio::main]
@@ -92,6 +108,11 @@ async fn main() -> anyhow::Result<()> {
     });
     let profile = first.profile.clone();
     let llms: Vec<_> = llms.into_iter().map(std::sync::Arc::new).collect();
+
+    std::env::set_var("QDRANT_URL", &cli.qdrant_url);
+    std::env::set_var("NEO4J_URL", &cli.neo4j_url);
+    std::env::set_var("NEO4J_USER", &cli.neo4j_user);
+    std::env::set_var("NEO4J_PASS", &cli.neo4j_pass);
 
     // Kick off orchestrator
     let local = tokio::task::LocalSet::new();
