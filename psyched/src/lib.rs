@@ -409,10 +409,11 @@ pub async fn run(
                             response.push_str(&token);
                         }
                         drop(permit);
-                        memory_store.store(&w.cfg.output, &response).await?;
+                        let out_id = memory_store.store(&w.cfg.output, &response).await?;
                         if let Some(target) = &w.cfg.feedback {
                             if let Some(kind) = wit_inputs.get(target) {
-                                memory_store.store(kind, &response).await?;
+                                let fb_id = memory_store.store(kind, &response).await?;
+                                memory_store.link_summary(&fb_id, &out_id).await?;
                             } else {
                                 tracing::warn!(source = %w.name, target = %target, "feedback target missing");
                             }
