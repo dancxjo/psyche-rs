@@ -58,6 +58,32 @@ async fn generates_summary_with_llm() {
     assert_eq!(stored.experience.how, "mock response");
 }
 
+#[tokio::test]
+async fn provided_summary_truncated() {
+    let profile = LlmProfile {
+        provider: "mock".into(),
+        model: "mock".into(),
+        capabilities: vec![LlmCapability::Chat, LlmCapability::Embedding],
+    };
+    let registry = LlmRegistry {
+        chat: Box::new(MockChat::default()),
+        embed: Box::new(MockEmbed::default()),
+    };
+    let backend = InMemoryBackend::default();
+    let memorizer = Memorizer {
+        chat: Some(&*registry.chat),
+        embed: &*registry.embed,
+        profile: &profile,
+        backend: &backend,
+        prompter: PromptHelper::default(),
+    };
+    let stored = memorizer
+        .memorize("full text", Some("Short. Extra."), false, vec![])
+        .await
+        .unwrap();
+    assert_eq!(stored.experience.how, "Short.");
+}
+
 use async_trait::async_trait;
 use std::sync::Mutex;
 use tokio_stream::{iter, Stream};

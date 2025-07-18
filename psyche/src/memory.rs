@@ -1,4 +1,5 @@
 use crate::llm::{prompt::PromptHelper, CanChat, CanEmbed, LlmProfile};
+use crate::utils::{first_sentence, parse_json_or_string};
 use async_trait::async_trait;
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
@@ -156,7 +157,7 @@ where
     ) -> anyhow::Result<StoredExperience> {
         debug!(generate_summary, has_how = how.is_some(), tags = ?tags, "memorize called");
         let summary = if let Some(h) = how {
-            h.to_string()
+            first_sentence(h)
         } else if generate_summary {
             let chat = self
                 .chat
@@ -173,7 +174,7 @@ where
                 out.push_str(&token);
             }
             debug!(target = "llm", response = %out, "summary response");
-            out
+            first_sentence(&out)
         } else {
             String::new()
         };
@@ -181,7 +182,7 @@ where
         let vector = self.embed.embed(self.profile, &summary).await?;
         let exp = Experience {
             how: summary,
-            what: Value::String(what.to_string()),
+            what: parse_json_or_string(what),
             when: Utc::now(),
             tags,
         };

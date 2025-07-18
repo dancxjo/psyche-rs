@@ -4,6 +4,7 @@ use chrono::Utc;
 use psyche::llm::{CanEmbed, LlmProfile};
 use psyche::memory::{Experience, MemoryBackend, QdrantNeo4j};
 use psyche::models::{MemoryEntry, Sensation};
+use psyche::utils::{first_sentence, parse_json_or_string};
 use serde_json::Value;
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -63,8 +64,8 @@ impl<'a> DbMemory<'a> {
             id: Uuid::new_v4(),
             kind: kind.to_string(),
             when: Utc::now(),
-            what: Value::String(text.to_string()),
-            how: text.to_string(),
+            what: parse_json_or_string(text),
+            how: first_sentence(text),
         };
         self.append_entries(&[entry]).await
     }
@@ -106,8 +107,8 @@ impl<'a> DbMemory<'a> {
         if let Some(backend) = &self.backend {
             let vector = self.embed.embed(self.profile, &sens.text).await?;
             let exp = Experience {
-                how: sens.text.clone(),
-                what: Value::String(sens.text.clone()),
+                how: first_sentence(&sens.text),
+                what: parse_json_or_string(&sens.text),
                 when: Utc::now(),
                 tags: vec![sens.path.clone()],
             };
