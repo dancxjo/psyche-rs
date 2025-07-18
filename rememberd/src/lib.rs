@@ -35,11 +35,14 @@ async fn handle_connection<B: MemoryBackend + Sync>(
     }
     let query = query.trim().to_string();
     info!(%kind, %query, "recall query");
+    let id = Uuid::new_v4().to_string();
+    emit_query(&out, &id, &kind, &query).await?;
+
     let vector = embed.embed(profile, &query).await?;
     let mut results = backend.search(&vector, 5).await?;
     results.retain(passes_filter);
     for exp in results {
-        send_sensation(&out, &exp).await?;
+        send_sensation(&out, &id, &exp).await?;
     }
     Ok(())
 }
@@ -48,9 +51,23 @@ fn passes_filter(_e: &Experience) -> bool {
     true
 }
 
-async fn send_sensation(socket: &PathBuf, exp: &Experience) -> anyhow::Result<()> {
+async fn emit_query(socket: &PathBuf, id: &str, kind: &str, query: &str) -> anyhow::Result<()> {
     let sens = Sensation {
-        id: Uuid::new_v4().to_string(),
+        id: id.to_string(),
+        path: kind.trim().to_string(),
+        text: query.to_string(),
+    };
+    let mut stream = UnixStream::connect(socket).await?;
+    stream
+        .write_all(format!("{}\n{}\n---\n", sens.path, sens.text).as_bytes())
+        .await?;
+    debug!(?sens.path, "sent recall query");
+    Ok(())
+}
+
+async fn send_sensation(socket: &PathBuf, id: &str, exp: &Experience) -> anyhow::Result<()> {
+    let sens = Sensation {
+        id: id.to_string(),
         path: "/memory/recalled".into(),
         text: exp.how.clone(),
     };

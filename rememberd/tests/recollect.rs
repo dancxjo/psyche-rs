@@ -35,9 +35,11 @@ async fn recalls_memory_and_emits() {
     // listener for output
     let listener = UnixListener::bind(&out_sock).unwrap();
     let server = tokio::spawn(async move {
-        let (mut stream, _) = listener.accept().await.unwrap();
         let mut buf = String::new();
-        stream.read_to_string(&mut buf).await.unwrap();
+        for _ in 0..2 {
+            let (mut stream, _) = listener.accept().await.unwrap();
+            stream.read_to_string(&mut buf).await.unwrap();
+        }
         buf
     });
 
@@ -56,6 +58,7 @@ async fn recalls_memory_and_emits() {
         c.write_all(b"/recall\nlonely?\n\n").await.unwrap();
         drop(c);
         let data = server.await.unwrap();
+        assert!(data.contains("/recall"));
         assert!(data.contains("/memory/recalled"));
     })
     .await;
