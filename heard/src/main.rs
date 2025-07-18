@@ -10,6 +10,12 @@ enum LogLevel {
     Trace,
 }
 
+impl Default for LogLevel {
+    fn default() -> Self {
+        LogLevel::Info
+    }
+}
+
 impl From<LogLevel> for tracing_subscriber::filter::LevelFilter {
     fn from(level: LogLevel) -> Self {
         match level {
@@ -42,6 +48,7 @@ struct Cli {
 async fn main() -> anyhow::Result<()> {
     let cli = Cli::parse();
     tracing_subscriber::fmt()
+        .with_env_filter(tracing_subscriber::EnvFilter::from_default_env())
         .with_max_level(tracing_subscriber::filter::LevelFilter::from(cli.log_level))
         .init();
     heard::run(cli.socket, cli.listen).await
@@ -52,7 +59,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn default_log_level_is_info() {
+    fn cli_defaults_to_info_log_level() {
         let cli = Cli::try_parse_from(["heard", "--listen", "in.sock"]).unwrap();
         assert!(matches!(cli.log_level, LogLevel::Info));
     }

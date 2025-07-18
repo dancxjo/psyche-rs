@@ -6,7 +6,11 @@ use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::{UnixListener, UnixStream};
 use tokio::sync::{Mutex, mpsc};
 use tracing::{debug, error, info, trace};
-use webrtc_vad::{SampleRate, Vad, VadMode};
+mod audio_segmenter;
+use audio_segmenter::AudioSegmenter;
+
+#[cfg(test)]
+pub mod test_helpers;
 
 /// Result of a transcription.
 #[derive(Debug, Serialize, Clone, PartialEq)]
@@ -73,18 +77,36 @@ impl Stt for WhisperStt {
         let segs = words.lock().await.clone();
         let mut text = String::new();
         let mut out_words = Vec::new();
-        for seg in segs {
+        for seg in &segs {
             text.push_str(&seg.text);
             out_words.push(Word {
-                word: seg.text,
+                word: seg.text.clone(),
                 start: seg.start_timestamp as f32 / 100.0,
                 end: seg.end_timestamp as f32 / 100.0,
             });
         }
+        let include_raw = std::env::var("WHISPER_INCLUDE_RAW")
+            .map(|v| v == "1" || v.eq_ignore_ascii_case("true"))
+            .unwrap_or(false);
+        let raw = if include_raw {
+            let raw_segments: Vec<_> = segs
+                .iter()
+                .map(|s| {
+                    serde_json::json!({
+                        "text": s.text,
+                        "start": s.start_timestamp,
+                        "end": s.end_timestamp,
+                    })
+                })
+                .collect();
+            Some(serde_json::json!({ "segments": raw_segments }))
+        } else {
+            None
+        };
         Ok(Transcription {
             text: text.trim().to_string(),
             words: out_words,
-            raw: None,
+            raw,
         })
     }
 }
@@ -98,8 +120,6 @@ pub async fn run(socket: PathBuf, listen: PathBuf) -> anyhow::Result<()> {
     let listener = UnixListener::bind(&listen)?;
     info!(?listen, "listening for PCM input");
 
-    let mut vad = Vad::new_with_rate(SampleRate::Rate16kHz);
-    vad.set_mode(VadMode::Quality);
     let stt = WhisperStt::new()?;
 
     let (tx, mut rx) = mpsc::channel::<Vec<i16>>(8);
@@ -142,41 +162,40 @@ pub async fn run(socket: PathBuf, listen: PathBuf) -> anyhow::Result<()> {
         }
     });
 
-    let mut buffer: Vec<i16> = Vec::new();
-    let mut silence = 0usize;
-    let mut idx = 0usize;
+    let mut segmenter = AudioSegmenter::new();
+    let mut last_discard = 0usize;
     while let Some(chunk) = rx.recv().await {
-        buffer.extend_from_slice(&chunk);
-        while idx + 480 <= buffer.len() {
-            let frame = &buffer[idx..idx + 480];
-            idx += 480;
-            if vad.is_voice_segment(frame).unwrap_or(false) {
-                silence = 0;
-            } else {
-                silence += 480;
+        if let Some(spoken) = segmenter.push_frames(&chunk) {
+            debug!(samples = spoken.len(), "transcribing audio");
+            if let Ok(trans) = stt.transcribe(&spoken).await {
+                debug!(text = %trans.text, "transcription done");
+                send_transcription(&socket, &trans).await.ok();
             }
-            if silence >= 16000 {
-                // 1s of silence reached
-                let segment = buffer.split_off(idx - silence);
-                let spoken = buffer.clone();
-                buffer = segment;
-                idx = 0;
-                silence = 0;
-                if !spoken.is_empty() {
-                    debug!(samples = spoken.len(), "transcribing audio");
-                    if let Ok(trans) = stt.transcribe(&spoken).await {
-                        debug!(text = %trans.text, "transcription done");
-                        send_transcription(&socket, &trans).await.ok();
-                    }
-                }
-            }
+        }
+        if segmenter.discarded() != last_discard {
+            debug!(
+                discarded = segmenter.discarded() - last_discard,
+                "discarded short audio"
+            );
+            last_discard = segmenter.discarded();
+        }
+    }
+
+    if let Some(spoken) = segmenter.finish() {
+        debug!(samples = spoken.len(), "transcribing audio");
+        if let Ok(trans) = stt.transcribe(&spoken).await {
+            debug!(text = %trans.text, "transcription done");
+            send_transcription(&socket, &trans).await.ok();
         }
     }
 
     Ok(())
 }
 
-async fn send_transcription(socket: &PathBuf, result: &Transcription) -> anyhow::Result<()> {
+pub(crate) async fn send_transcription(
+    socket: &PathBuf,
+    result: &Transcription,
+) -> anyhow::Result<()> {
     let mut stream = UnixStream::connect(socket).await?;
     let text = serde_json::to_string(result)?;
     stream
@@ -189,6 +208,7 @@ async fn send_transcription(socket: &PathBuf, result: &Transcription) -> anyhow:
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::test_helpers::run_with_stt;
     use tempfile::tempdir;
     use tokio::io::{AsyncReadExt, AsyncWriteExt};
     use tokio::net::UnixStream;
@@ -253,67 +273,5 @@ mod tests {
             })
             .await;
         handle.abort();
-    }
-
-    async fn run_with_stt<S: Stt + 'static>(
-        socket: PathBuf,
-        listen: PathBuf,
-        stt: S,
-    ) -> anyhow::Result<()> {
-        if listen.exists() {
-            tokio::fs::remove_file(&listen).await.ok();
-        }
-        let listener = UnixListener::bind(&listen)?;
-        let mut vad = Vad::new_with_rate(SampleRate::Rate16kHz);
-        vad.set_mode(VadMode::Quality);
-        let (tx, mut rx) = mpsc::channel::<Vec<i16>>(8);
-        tokio::spawn(async move {
-            loop {
-                let (mut stream, _) = listener.accept().await.unwrap();
-                let tx = tx.clone();
-                tokio::spawn(async move {
-                    let mut buf = [0u8; 4096];
-                    loop {
-                        let n = stream.read(&mut buf).await.unwrap();
-                        if n == 0 {
-                            break;
-                        }
-                        let mut frames = Vec::with_capacity(n / 2);
-                        for chunk in buf[..n].chunks_exact(2) {
-                            frames.push(i16::from_le_bytes([chunk[0], chunk[1]]));
-                        }
-                        tx.send(frames).await.unwrap();
-                    }
-                });
-            }
-        });
-        let mut buffer: Vec<i16> = Vec::new();
-        let mut silence = 0usize;
-        let mut idx = 0usize;
-        while let Some(chunk) = rx.recv().await {
-            buffer.extend_from_slice(&chunk);
-            while idx + 480 <= buffer.len() {
-                let frame = &buffer[idx..idx + 480];
-                idx += 480;
-                if vad.is_voice_segment(frame).unwrap_or(false) {
-                    silence = 0;
-                } else {
-                    silence += 480;
-                }
-                if silence >= 16000 {
-                    let segment = buffer.split_off(idx - silence);
-                    let spoken = buffer.clone();
-                    buffer = segment;
-                    idx = 0;
-                    silence = 0;
-                    if !spoken.is_empty() {
-                        if let Ok(trans) = stt.transcribe(&spoken).await {
-                            send_transcription(&socket, &trans).await.unwrap();
-                        }
-                    }
-                }
-            }
-        }
-        Ok(())
     }
 }

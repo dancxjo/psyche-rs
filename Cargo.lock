@@ -1295,6 +1295,7 @@ dependencies = [
  "tokio",
  "tracing",
  "tracing-subscriber",
+ "tracing-test",
  "webrtc-vad",
  "whisper-rs",
 ]
