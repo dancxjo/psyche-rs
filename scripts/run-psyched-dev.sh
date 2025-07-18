@@ -5,4 +5,4 @@ if [ -z "$1" ]; then
 fi
 
 # Run the psyche daemon in development mode
-cargo run -p psyched -- --soul all_souls/$1 --socket ./$1.sock --log-level debug
+cargo run -p psyched -- --soul all_souls/$1 --socket ./quick.sock --log-level debug
