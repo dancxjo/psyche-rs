@@ -95,6 +95,11 @@ pub trait MemoryBackend {
         Ok(())
     }
 
+    /// Link a recalled memory to the query that triggered it.
+    async fn link_called_to_mind(&self, _from: &str, _to: &str) -> anyhow::Result<()> {
+        Ok(())
+    }
+
     /// Find similar experiences using cosine similarity or a vector database.
     async fn search(&self, vector: &[f32], top_k: usize) -> anyhow::Result<Vec<Experience>>;
 
@@ -456,6 +461,21 @@ mod qdrant_store {
                         query("MATCH (s:Experience {id: $sid}), (o:Experience {id: $oid}) MERGE (s)-[:SUMMARIZES]->(o)")
                             .param("sid", summary_id)
                             .param("oid", original_id),
+                    )
+                    .await?;
+            }
+            Ok(())
+        }
+
+        async fn link_called_to_mind(&self, from: &str, to: &str) -> anyhow::Result<()> {
+            #[cfg(feature = "neo4j")]
+            {
+                use neo4rs::query;
+                self.graph
+                    .run(
+                        query("MATCH (q:Experience {id: $from}), (r:Experience {id: $to}) MERGE (q)-[:CALLED_TO_MIND]->(r)")
+                            .param("from", from)
+                            .param("to", to),
                     )
                     .await?;
             }

@@ -64,3 +64,5 @@
 - Follow the psyche-os directory structure in README.
 - Run `cargo test --workspace` before committing.
 - Set `NASA_API_KEY` when using rover data scripts to avoid API rate limits.
+- When adding new daemons, list them in `Cargo.toml` and provide matching
+  executable scripts in `scripts/` without the `.sh` extension.

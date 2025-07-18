@@ -1,0 +1,4 @@
+#!/bin/sh
+
+# Run the memory recall daemon
+cargo run -p rememberd -- --socket ./memory.sock --output ./quick.sock --log-level debug
