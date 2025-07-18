@@ -1,6 +1,17 @@
+//! Memory recall daemon backed by Neo4j + Qdrant
+//!
+//! ```bash
+//! rememberd --qdrant-url http://localhost:6333 \
+//!           --neo4j-url http://localhost:7474 \
+//!           --neo4j-user neo4j --neo4j-pass password
+//! ```
 use clap::Parser;
 use daemon_common::LogLevel;
 use std::path::PathBuf;
+
+use neo4rs::Graph;
+#[allow(deprecated)]
+use qdrant_client::prelude::QdrantClient;
 
 #[derive(Parser, Debug)]
 #[command(name = "rememberd", about = "Memory recall daemon")]
@@ -24,6 +35,22 @@ struct Cli {
     /// Logging verbosity
     #[arg(long, default_value = "info")]
     log_level: LogLevel,
+
+    /// Qdrant service URL
+    #[arg(long, env = "QDRANT_URL", default_value = "http://localhost:6333")]
+    qdrant_url: String,
+
+    /// Neo4j service URL
+    #[arg(long, env = "NEO4J_URL", default_value = "http://localhost:7474")]
+    neo4j_url: String,
+
+    /// Neo4j username
+    #[arg(long, env = "NEO4J_USER", default_value = "neo4j")]
+    neo4j_user: String,
+
+    /// Neo4j password
+    #[arg(long, env = "NEO4J_PASS", default_value = "password")]
+    neo4j_pass: String,
 }
 
 #[tokio::main]
@@ -49,6 +76,9 @@ async fn main() -> anyhow::Result<()> {
             )
         };
 
-    let backend = psyche::memory::InMemoryBackend::default();
+    #[allow(deprecated)]
+    let qdrant = QdrantClient::from_url(&cli.qdrant_url).build()?;
+    let graph = Graph::new(&cli.neo4j_url, cli.neo4j_user, cli.neo4j_pass)?;
+    let backend = psyche::memory::QdrantNeo4j { qdrant, graph };
     rememberd::run(cli.socket, cli.output, backend, embed, profile).await
 }
