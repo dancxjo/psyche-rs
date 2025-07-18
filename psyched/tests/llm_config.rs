@@ -11,7 +11,7 @@ async fn load_first_llm_picks_first_provider() {
         .await
         .unwrap();
 
-    let (_reg, prof) = psyched::llm_config::load_first_llm(&path).await.unwrap();
-    assert_eq!(prof.provider, "ollama");
-    assert_eq!(prof.model, "x");
+    let llms = psyched::llm_config::load_llms(&path).await.unwrap();
+    assert_eq!(llms.first().unwrap().profile.provider, "ollama");
+    assert_eq!(llms.first().unwrap().profile.model, "x");
 }
