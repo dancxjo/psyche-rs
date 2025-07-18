@@ -307,7 +307,7 @@ pub async fn run(
 
     let memory_store =
         db_memory::DbMemory::new(memory_dir.clone(), backend, &*registry.embed, &*profile);
-    let mut rr = 1usize.min(llms.len());
+    let mut wit_round_robin = 1usize.min(llms.len());
     let mut wits: Vec<LoadedWit> = cfg
         .wit
         .into_iter()
