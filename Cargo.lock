@@ -786,6 +786,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "daemon-common"
+version = "0.1.0"
+dependencies = [
+ "clap",
+ "tracing-subscriber",
+]
+
+[[package]]
 name = "darling"
 version = "0.20.11"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1289,6 +1297,7 @@ dependencies = [
  "anyhow",
  "async-trait",
  "clap",
+ "daemon-common",
  "serde",
  "serde_json",
  "tempfile",
@@ -2484,6 +2493,7 @@ dependencies = [
  "anyhow",
  "chrono",
  "clap",
+ "daemon-common",
  "indexmap 2.10.0",
  "neo4rs",
  "psyche",

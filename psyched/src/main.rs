@@ -1,4 +1,5 @@
-use clap::{Parser, ValueEnum};
+use clap::Parser;
+use daemon_common::LogLevel;
 use std::path::PathBuf;
 use tokio::fs;
 use toml;
@@ -34,27 +35,6 @@ pub struct Cli {
     /// Logging verbosity level
     #[arg(long, default_value = "info")]
     pub log_level: LogLevel,
-}
-
-#[derive(Copy, Clone, Debug, ValueEnum)]
-pub enum LogLevel {
-    Error,
-    Warn,
-    Info,
-    Debug,
-    Trace,
-}
-
-impl From<LogLevel> for tracing_subscriber::filter::LevelFilter {
-    fn from(level: LogLevel) -> Self {
-        match level {
-            LogLevel::Error => tracing_subscriber::filter::LevelFilter::ERROR,
-            LogLevel::Warn => tracing_subscriber::filter::LevelFilter::WARN,
-            LogLevel::Info => tracing_subscriber::filter::LevelFilter::INFO,
-            LogLevel::Debug => tracing_subscriber::filter::LevelFilter::DEBUG,
-            LogLevel::Trace => tracing_subscriber::filter::LevelFilter::TRACE,
-        }
-    }
 }
 
 #[tokio::main]

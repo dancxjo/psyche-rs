@@ -44,11 +44,14 @@ pub struct WhisperStt {
 }
 
 impl WhisperStt {
-    /// Load a whisper model from the path specified in the `WHISPER_MODEL` env var.
-    pub fn new() -> anyhow::Result<Self> {
-        let model = std::env::var("WHISPER_MODEL")?;
+    /// Load a whisper model from the given path.
+    pub fn new(model: impl AsRef<std::path::Path>) -> anyhow::Result<Self> {
+        let path = model
+            .as_ref()
+            .to_str()
+            .ok_or_else(|| anyhow::anyhow!("model path must be valid UTF-8"))?;
         let ctx = whisper_rs::WhisperContext::new_with_params(
-            &model,
+            path,
             whisper_rs::WhisperContextParameters::default(),
         )?;
         let mut params = whisper_rs::FullParams::new(whisper_rs::SamplingStrategy::default());
@@ -112,7 +115,7 @@ impl Stt for WhisperStt {
 }
 
 /// Run the daemon.
-pub async fn run(socket: PathBuf, listen: PathBuf) -> anyhow::Result<()> {
+pub async fn run(socket: PathBuf, listen: PathBuf, model: PathBuf) -> anyhow::Result<()> {
     info!(?socket, ?listen, "starting heard");
     if listen.exists() {
         tokio::fs::remove_file(&listen).await.ok();
@@ -120,7 +123,7 @@ pub async fn run(socket: PathBuf, listen: PathBuf) -> anyhow::Result<()> {
     let listener = UnixListener::bind(&listen)?;
     info!(?listen, "listening for PCM input");
 
-    let stt = WhisperStt::new()?;
+    let stt = WhisperStt::new(model)?;
 
     let (tx, mut rx) = mpsc::channel::<Vec<i16>>(8);
 
