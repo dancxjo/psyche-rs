@@ -321,8 +321,8 @@ pub async fn run(
                 } else if i == 0 {
                     llms.get(0).cloned().expect("llms vector is empty")
             } else {
-                let l = llms[rr % llms.len()].clone();
-                rr += 1;
+                let l = llms[wit_round_robin % llms.len()].clone();
+                wit_round_robin += 1;
                 l
             };
             LoadedWit::new(n, c, llm)
