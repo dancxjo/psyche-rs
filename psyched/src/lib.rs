@@ -317,9 +317,9 @@ pub async fn run(
                 llms.iter()
                     .find(|l| l.name == *name)
                     .cloned()
-                    .unwrap_or_else(|| llms[0].clone())
-            } else if i == 0 {
-                llms[0].clone()
+                    .unwrap_or_else(|| llms.get(0).cloned().expect("llms vector is empty"))
+                } else if i == 0 {
+                    llms.get(0).cloned().expect("llms vector is empty")
             } else {
                 let l = llms[rr % llms.len()].clone();
                 rr += 1;
