@@ -40,7 +40,7 @@ pub struct Experience {
 ///
 /// #[async_trait(?Send)]
 /// impl MemoryBackend for Dummy {
-///     async fn store(&self, _: &Experience, _: &[f32]) -> anyhow::Result<()> { Ok(()) }
+///     async fn store(&self, _: &Experience, _: &[f32]) -> anyhow::Result<String> { Ok("1".into()) }
 ///     async fn search(&self, _: &[f32], _: usize) -> anyhow::Result<Vec<Experience>> { Ok(vec![]) }
 ///     async fn get(&self, _: &str) -> anyhow::Result<Option<Experience>> { Ok(None) }
 ///     async fn cypher_query(&self, _: &str) -> anyhow::Result<Vec<Experience>> { Ok(vec![]) }
