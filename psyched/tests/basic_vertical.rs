@@ -8,6 +8,7 @@ use tokio::task::LocalSet;
 async fn sensation_results_in_instant() {
     let dir = tempdir().unwrap();
     let socket = dir.path().join("quick.sock");
+    let memory_sock = dir.path().join("memory.sock");
     let soul_dir = dir.path().to_path_buf();
     let memory_path = soul_dir.join("memory/sensation.jsonl");
     let config_path =
@@ -48,6 +49,7 @@ async fn sensation_results_in_instant() {
         registry.clone(),
         profile.clone(),
         vec![instance.clone()],
+        memory_sock.clone(),
         async move {
             let _ = rx.await;
         },

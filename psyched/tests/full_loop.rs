@@ -9,6 +9,7 @@ use tokio::task::LocalSet;
 async fn quick_to_combobulator_generates_situation() {
     let dir = tempdir().unwrap();
     let socket = dir.path().join("quick.sock");
+    let memory_sock = dir.path().join("memory.sock");
     let soul_dir = dir.path().to_path_buf();
     let _memory_path = soul_dir.join("memory/sensation.jsonl");
     let config_path = soul_dir.join("config/pipeline.toml");
@@ -51,6 +52,7 @@ async fn quick_to_combobulator_generates_situation() {
         registry.clone(),
         profile.clone(),
         vec![instance.clone()],
+        memory_sock.clone(),
         async move {
             let _ = rx.await;
         },
