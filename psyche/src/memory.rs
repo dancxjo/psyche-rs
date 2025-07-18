@@ -87,8 +87,13 @@ pub struct StoredExperience {
 /// Simple memory interface combining vector and graph storage.
 #[async_trait(?Send)]
 pub trait MemoryBackend {
-    /// Store the given experience and embedding.
-    async fn store(&self, exp: &Experience, vector: &[f32]) -> anyhow::Result<()>;
+    /// Store the given experience and embedding returning the backend id.
+    async fn store(&self, exp: &Experience, vector: &[f32]) -> anyhow::Result<String>;
+
+    /// Link a summary experience to the original it summarizes.
+    async fn link_summary(&self, _summary_id: &str, _original_id: &str) -> anyhow::Result<()> {
+        Ok(())
+    }
 
     /// Find similar experiences using cosine similarity or a vector database.
     async fn search(&self, vector: &[f32], top_k: usize) -> anyhow::Result<Vec<Experience>>;
@@ -187,7 +192,7 @@ where
             tags,
         };
         info!(tags = ?exp.tags, "storing experience");
-        self.backend.store(&exp, &vector).await?;
+        let _ = self.backend.store(&exp, &vector).await?;
         Ok(StoredExperience {
             experience: exp,
             vector,
@@ -219,13 +224,12 @@ impl Default for InMemoryBackend {
 
 #[async_trait(?Send)]
 impl MemoryBackend for InMemoryBackend {
-    async fn store(&self, exp: &Experience, vector: &[f32]) -> anyhow::Result<()> {
+    async fn store(&self, exp: &Experience, vector: &[f32]) -> anyhow::Result<String> {
         debug!(how = %exp.how, tags = ?exp.tags, "in-memory store");
-        self.data
-            .lock()
-            .unwrap()
-            .push((exp.clone(), vector.to_vec()));
-        Ok(())
+        let mut data = self.data.lock().unwrap();
+        data.push((exp.clone(), vector.to_vec()));
+        let id = data.len() - 1;
+        Ok(id.to_string())
     }
 
     async fn search(&self, vector: &[f32], top_k: usize) -> anyhow::Result<Vec<Experience>> {
@@ -250,6 +254,10 @@ impl MemoryBackend for InMemoryBackend {
         Ok(None)
     }
 
+    async fn link_summary(&self, _summary_id: &str, _original_id: &str) -> anyhow::Result<()> {
+        Ok(())
+    }
+
     #[cfg(feature = "neo4j")]
     async fn cypher_query(&self, _query: &str) -> anyhow::Result<Vec<Experience>> {
         Ok(Vec::new())
@@ -258,13 +266,12 @@ impl MemoryBackend for InMemoryBackend {
 
 #[async_trait(?Send)]
 impl MemoryBackend for &InMemoryBackend {
-    async fn store(&self, exp: &Experience, vector: &[f32]) -> anyhow::Result<()> {
+    async fn store(&self, exp: &Experience, vector: &[f32]) -> anyhow::Result<String> {
         debug!(how = %exp.how, "in-memory store ref");
-        self.data
-            .lock()
-            .unwrap()
-            .push((exp.clone(), vector.to_vec()));
-        Ok(())
+        let mut data = self.data.lock().unwrap();
+        data.push((exp.clone(), vector.to_vec()));
+        let id = data.len() - 1;
+        Ok(id.to_string())
     }
 
     async fn search(&self, vector: &[f32], top_k: usize) -> anyhow::Result<Vec<Experience>> {
@@ -275,6 +282,10 @@ impl MemoryBackend for &InMemoryBackend {
     async fn get(&self, id: &str) -> anyhow::Result<Option<Experience>> {
         debug!(id, "in-memory get ref");
         (**self).get(id).await
+    }
+
+    async fn link_summary(&self, _summary_id: &str, _original_id: &str) -> anyhow::Result<()> {
+        Ok(())
     }
 
     #[cfg(feature = "neo4j")]
@@ -297,7 +308,7 @@ mod qdrant_store {
 
     #[async_trait(?Send)]
     impl MemoryBackend for QdrantNeo4j {
-        async fn store(&self, exp: &Experience, vector: &[f32]) -> anyhow::Result<()> {
+        async fn store(&self, exp: &Experience, vector: &[f32]) -> anyhow::Result<String> {
             let id = Uuid::new_v4().to_string();
             let points = vec![PointStruct::new(
                 id.clone(),
@@ -316,7 +327,7 @@ mod qdrant_store {
                         query(
                             "CREATE (:Experience {id: $id, how: $how, what: $what, when: $when, tags: $tags})",
                         )
-                        .param("id", id)
+                        .param("id", id.clone())
                         .param("how", exp.how.clone())
                         .param("what", exp.what.to_string())
                         .param("when", exp.when.to_rfc3339())
@@ -324,7 +335,7 @@ mod qdrant_store {
                     )
                     .await?;
             }
-            Ok(())
+            Ok(id)
         }
 
         async fn search(&self, vector: &[f32], top_k: usize) -> anyhow::Result<Vec<Experience>> {
@@ -434,6 +445,21 @@ mod qdrant_store {
                 });
             }
             Ok(out)
+        }
+
+        async fn link_summary(&self, summary_id: &str, original_id: &str) -> anyhow::Result<()> {
+            #[cfg(feature = "neo4j")]
+            {
+                use neo4rs::query;
+                self.graph
+                    .run(
+                        query("MATCH (s:Experience {id: $sid}), (o:Experience {id: $oid}) MERGE (s)-[:SUMMARIZES]->(o)")
+                            .param("sid", summary_id)
+                            .param("oid", original_id),
+                    )
+                    .await?;
+            }
+            Ok(())
         }
     }
 }

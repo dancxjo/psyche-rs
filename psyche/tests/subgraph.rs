@@ -11,8 +11,8 @@ struct SpyBackend {
 #[cfg(feature = "neo4j")]
 #[async_trait(?Send)]
 impl MemoryBackend for SpyBackend {
-    async fn store(&self, _exp: &Experience, _vector: &[f32]) -> anyhow::Result<()> {
-        Ok(())
+    async fn store(&self, _exp: &Experience, _vector: &[f32]) -> anyhow::Result<String> {
+        Ok("1".into())
     }
     async fn search(&self, _vector: &[f32], _top_k: usize) -> anyhow::Result<Vec<Experience>> {
         Ok(vec![])
@@ -23,6 +23,10 @@ impl MemoryBackend for SpyBackend {
     async fn cypher_query(&self, query: &str) -> anyhow::Result<Vec<Experience>> {
         *self.last.lock().unwrap() = Some(query.to_string());
         Ok(vec![])
+    }
+
+    async fn link_summary(&self, _summary_id: &str, _original_id: &str) -> anyhow::Result<()> {
+        Ok(())
     }
 }
 

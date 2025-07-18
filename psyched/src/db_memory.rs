@@ -58,7 +58,14 @@ impl<'a> DbMemory<'a> {
         self.inner.query_latest(kind).await
     }
 
-    pub async fn store(&self, kind: &str, text: &str) -> Result<()> {
+    pub async fn link_summary(&self, summary_id: &str, original_id: &str) -> Result<()> {
+        if let Some(backend) = &self.backend {
+            backend.link_summary(summary_id, original_id).await?;
+        }
+        Ok(())
+    }
+
+    pub async fn store(&self, kind: &str, text: &str) -> Result<String> {
         debug!(kind, "DbMemory store");
         let entry = MemoryEntry {
             id: Uuid::new_v4(),
@@ -67,12 +74,13 @@ impl<'a> DbMemory<'a> {
             what: parse_json_or_string(text),
             how: first_sentence(text),
         };
-        self.append_entries(&[entry]).await
+        let ids = self.append_entries(&[entry]).await?;
+        Ok(ids.first().cloned().unwrap_or_default())
     }
 
-    pub async fn append_entries(&self, entries: &[MemoryEntry]) -> Result<()> {
+    pub async fn append_entries(&self, entries: &[MemoryEntry]) -> Result<Vec<String>> {
         if entries.is_empty() {
-            return Ok(());
+            return Ok(Vec::new());
         }
         debug!(count = entries.len(), "appending entries");
         let path = self.dir.join(format!(
@@ -84,16 +92,18 @@ impl<'a> DbMemory<'a> {
             .create(true)
             .open(&path)
             .await?;
+        let mut out = Vec::new();
         for entry in entries {
             let line = serde_json::to_string(entry)?;
             file.write_all(line.as_bytes()).await?;
             file.write_all(b"\n").await?;
-            self.persist(entry).await?;
+            let id = self.persist(entry).await?;
+            out.push(id);
         }
-        Ok(())
+        Ok(out)
     }
 
-    pub async fn store_sensation(&self, sens: &Sensation) -> Result<()> {
+    pub async fn store_sensation(&self, sens: &Sensation) -> Result<String> {
         let path = self.dir.join("sensation.jsonl");
         let mut file = tokio::fs::OpenOptions::new()
             .append(true)
@@ -112,12 +122,13 @@ impl<'a> DbMemory<'a> {
                 when: Utc::now(),
                 tags: vec![sens.path.clone()],
             };
-            backend.store(&exp, &vector).await?;
+            let id = backend.store(&exp, &vector).await?;
+            return Ok(id);
         }
-        Ok(())
+        Ok(String::new())
     }
 
-    async fn persist(&self, entry: &MemoryEntry) -> Result<()> {
+    async fn persist(&self, entry: &MemoryEntry) -> Result<String> {
         if let Some(backend) = &self.backend {
             let vector = self.embed.embed(self.profile, &entry.how).await?;
             let exp = Experience {
@@ -126,9 +137,18 @@ impl<'a> DbMemory<'a> {
                 when: entry.when,
                 tags: vec![entry.kind.clone()],
             };
-            backend.store(&exp, &vector).await?;
+            let id = backend.store(&exp, &vector).await?;
+            if let Value::Array(arr) = &entry.what {
+                for v in arr {
+                    if let Some(pid) = v.as_str() {
+                        let _ = backend.link_summary(&id, pid).await;
+                    }
+                }
+            }
+            trace!(id = %entry.id, "persisted entry");
+            return Ok(id);
         }
         trace!(id = %entry.id, "persisted entry");
-        Ok(())
+        Ok(String::new())
     }
 }
