@@ -1,8 +1,8 @@
 use std::path::PathBuf;
 
 use crate::{Stt, audio_segmenter::AudioSegmenter, send_transcription};
-use tokio::io::{AsyncReadExt, AsyncWriteExt};
-use tokio::net::{UnixListener, UnixStream};
+use tokio::io::AsyncReadExt;
+use tokio::net::UnixListener;
 use tokio::sync::mpsc;
 use tracing::debug;
 
