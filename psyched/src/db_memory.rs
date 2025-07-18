@@ -6,9 +6,11 @@ use psyche::memory::{Experience, MemoryBackend, QdrantNeo4j};
 use psyche::models::{MemoryEntry, Sensation};
 use psyche::utils::{first_sentence, parse_json_or_string};
 use serde_json::Value;
+use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::Arc;
 use tokio::io::AsyncWriteExt;
+use tokio::sync::Mutex;
 use tracing::{debug, trace};
 use uuid::Uuid;
 
@@ -18,6 +20,7 @@ pub struct DbMemory<'a> {
     backend: Option<Arc<QdrantNeo4j>>,
     embed: &'a dyn CanEmbed,
     profile: &'a LlmProfile,
+    db_offsets: Arc<Mutex<HashMap<String, String>>>,
 }
 
 impl<'a> Clone for DbMemory<'a> {
@@ -28,6 +31,7 @@ impl<'a> Clone for DbMemory<'a> {
             backend: self.backend.clone(),
             embed: self.embed,
             profile: self.profile,
+            db_offsets: self.db_offsets.clone(),
         }
     }
 }
@@ -46,6 +50,7 @@ impl<'a> DbMemory<'a> {
             backend,
             embed,
             profile,
+            db_offsets: Arc::new(Mutex::new(HashMap::new())),
         }
     }
 
@@ -55,6 +60,41 @@ impl<'a> DbMemory<'a> {
 
     pub async fn query_latest(&self, kind: &str) -> Vec<String> {
         trace!(kind, "DbMemory query_latest");
+        if let Some(backend) = &self.backend {
+            let mut offsets = self.db_offsets.lock().await;
+            let since = offsets
+                .get(kind)
+                .cloned()
+                .unwrap_or_else(|| "1970-01-01T00:00:00Z".to_string());
+            let query = format!(
+                "MATCH (e:Experience) WHERE '{tag}' IN e.tags AND e.when > '{since}' \
+RETURN e.how AS how, e.what AS what, e.when AS when, e.tags AS tags ORDER BY e.when",
+                tag = kind,
+                since = since
+            );
+            match backend.cypher_query(&query).await {
+                Ok(mut exps) => {
+                    if let Some(last) = exps.last() {
+                        offsets.insert(kind.to_string(), last.when.to_rfc3339());
+                    }
+                    return exps
+                        .into_iter()
+                        .filter_map(|e| {
+                            if kind.starts_with("sensation") {
+                                e.what.as_str().map(|s| s.to_string())
+                            } else if !e.how.is_empty() {
+                                Some(e.how)
+                            } else {
+                                Some(e.what.to_string())
+                            }
+                        })
+                        .collect();
+                }
+                Err(e) => {
+                    tracing::error!(error = %e, "db query_latest failed");
+                }
+            }
+        }
         self.inner.query_latest(kind).await
     }
 
@@ -83,20 +123,28 @@ impl<'a> DbMemory<'a> {
             return Ok(Vec::new());
         }
         debug!(count = entries.len(), "appending entries");
-        let path = self.dir.join(format!(
-            "{}.jsonl",
-            entries[0].kind.split('/').next().unwrap()
-        ));
-        let mut file = tokio::fs::OpenOptions::new()
-            .append(true)
-            .create(true)
-            .open(&path)
-            .await?;
+        let mut file = if self.backend.is_none() {
+            let path = self.dir.join(format!(
+                "{}.jsonl",
+                entries[0].kind.split('/').next().unwrap()
+            ));
+            Some(
+                tokio::fs::OpenOptions::new()
+                    .append(true)
+                    .create(true)
+                    .open(&path)
+                    .await?,
+            )
+        } else {
+            None
+        };
         let mut out = Vec::new();
         for entry in entries {
             let line = serde_json::to_string(entry)?;
-            file.write_all(line.as_bytes()).await?;
-            file.write_all(b"\n").await?;
+            if let Some(f) = file.as_mut() {
+                f.write_all(line.as_bytes()).await?;
+                f.write_all(b"\n").await?;
+            }
             let id = self.persist(entry).await?;
             out.push(id);
         }
@@ -104,16 +152,18 @@ impl<'a> DbMemory<'a> {
     }
 
     pub async fn store_sensation(&self, sens: &Sensation) -> Result<String> {
-        let path = self.dir.join("sensation.jsonl");
-        let mut file = tokio::fs::OpenOptions::new()
-            .append(true)
-            .create(true)
-            .open(&path)
-            .await?;
-        let line = serde_json::to_string(sens)?;
-        file.write_all(line.as_bytes()).await?;
-        file.write_all(b"\n").await?;
-        trace!("stored sensation to file");
+        if self.backend.is_none() {
+            let path = self.dir.join("sensation.jsonl");
+            let mut file = tokio::fs::OpenOptions::new()
+                .append(true)
+                .create(true)
+                .open(&path)
+                .await?;
+            let line = serde_json::to_string(sens)?;
+            file.write_all(line.as_bytes()).await?;
+            file.write_all(b"\n").await?;
+            trace!("stored sensation to file");
+        }
         if let Some(backend) = &self.backend {
             let vector = self.embed.embed(self.profile, &sens.text).await?;
             let exp = Experience {
