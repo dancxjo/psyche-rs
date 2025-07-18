@@ -1,5 +1,6 @@
 use anyhow::Result;
 use chrono::Utc;
+use indexmap::IndexMap;
 use psyche::distiller::{Distiller, DistillerConfig};
 use psyche::models::{MemoryEntry, Sensation};
 use serde::Deserialize;
@@ -62,9 +63,9 @@ struct PipelineDistillerConfig {
 
 #[derive(Deserialize)]
 struct Config {
-    distiller: HashMap<String, PipelineDistillerConfig>,
+    distiller: IndexMap<String, PipelineDistillerConfig>,
     #[serde(default)]
-    wit: HashMap<String, wit::WitConfig>,
+    wit: IndexMap<String, wit::WitConfig>,
 }
 
 async fn load_config(path: &Path) -> Result<Config> {
@@ -72,7 +73,7 @@ async fn load_config(path: &Path) -> Result<Config> {
         let text = tokio::fs::read_to_string(path).await?;
         Ok(toml::from_str(&text)?)
     } else {
-        let mut map = HashMap::new();
+        let mut map = IndexMap::new();
         map.insert(
             "combobulator".into(),
             PipelineDistillerConfig {
@@ -95,7 +96,7 @@ async fn load_config(path: &Path) -> Result<Config> {
         );
         Ok(Config {
             distiller: map,
-            wit: HashMap::new(),
+            wit: IndexMap::new(),
         })
     }
 }
@@ -105,6 +106,7 @@ struct LoadedDistiller {
     name: String,
     cfg: PipelineDistillerConfig,
     distiller: Distiller,
+    llm: std::sync::Arc<psyche::llm::LlmInstance>,
     offsets: HashMap<String, usize>,
 }
 
@@ -113,6 +115,7 @@ struct LoadedWit {
     cfg: wit::WitConfig,
     beat: usize,
     interval: usize,
+    llm: std::sync::Arc<psyche::llm::LlmInstance>,
 }
 
 fn priority_to_interval(priority: usize) -> usize {
@@ -145,19 +148,28 @@ fn priority_to_interval(priority: usize) -> usize {
 }
 
 impl LoadedWit {
-    fn new(name: String, cfg: wit::WitConfig) -> Self {
+    fn new(
+        name: String,
+        cfg: wit::WitConfig,
+        llm: std::sync::Arc<psyche::llm::LlmInstance>,
+    ) -> Self {
         let interval = priority_to_interval(cfg.priority);
         Self {
             name,
             cfg,
             beat: 0,
             interval,
+            llm,
         }
     }
 }
 
 impl LoadedDistiller {
-    fn new(name: String, cfg: PipelineDistillerConfig) -> Self {
+    fn new(
+        name: String,
+        cfg: PipelineDistillerConfig,
+        llm: std::sync::Arc<psyche::llm::LlmInstance>,
+    ) -> Self {
         let prompt_template = cfg
             .prompt_template
             .clone()
@@ -170,14 +182,9 @@ impl LoadedDistiller {
             ),
             _ => None,
         };
-        let default_llm: Box<dyn psyche::llm::CanChat> = if std::env::var("USE_MOCK_LLM").is_ok() {
-            Box::new(psyche::llm::mock_chat::MockChat::default())
-        } else {
-            Box::new(psyche::llm::ollama::OllamaChat {
-                base_url: "http://localhost:11434".into(),
-                model: "mistral".into(),
-            })
-        };
+        let default_llm: Box<dyn psyche::llm::CanChat> = Box::new(
+            psyche::llm::limited::LimitedChat::new(llm.chat.clone(), llm.semaphore.clone()),
+        );
         let distiller = Distiller {
             config: DistillerConfig {
                 name: name.clone(),
@@ -187,11 +194,13 @@ impl LoadedDistiller {
                 post_process: pp,
             },
             llm: default_llm,
+            profile: (*llm.profile).clone(),
         };
         Self {
             name,
             cfg,
             distiller,
+            llm,
             offsets: HashMap::new(),
         }
     }
@@ -257,6 +266,7 @@ pub async fn run(
     beat_duration: std::time::Duration,
     registry: std::sync::Arc<psyche::llm::LlmRegistry>,
     profile: std::sync::Arc<psyche::llm::LlmProfile>,
+    llms: Vec<std::sync::Arc<psyche::llm::LlmInstance>>,
     shutdown: impl std::future::Future<Output = ()>,
 ) -> Result<()> {
     let _ = std::fs::remove_file(&socket);
@@ -269,10 +279,15 @@ pub async fn run(
     let cfg_path = pipeline;
     let cfg = load_config(&cfg_path).await?;
 
+    let mut llm_rr = 0usize;
     let mut distillers: Vec<LoadedDistiller> = cfg
         .distiller
         .into_iter()
-        .map(|(n, c)| LoadedDistiller::new(n, c))
+        .map(|(n, c)| {
+            let llm = llms[llm_rr % llms.len()].clone();
+            llm_rr += 1;
+            LoadedDistiller::new(n, c, llm)
+        })
         .collect();
 
     let backend =
@@ -292,10 +307,26 @@ pub async fn run(
 
     let memory_store =
         db_memory::DbMemory::new(memory_dir.clone(), backend, &*registry.embed, &*profile);
+    let mut rr = 1usize.min(llms.len());
     let mut wits: Vec<LoadedWit> = cfg
         .wit
         .into_iter()
-        .map(|(n, c)| LoadedWit::new(n, c))
+        .enumerate()
+        .map(|(i, (n, c))| {
+            let llm = if let Some(ref name) = c.llm {
+                llms.iter()
+                    .find(|l| l.name == *name)
+                    .cloned()
+                    .unwrap_or_else(|| llms[0].clone())
+            } else if i == 0 {
+                llms[0].clone()
+            } else {
+                let l = llms[rr % llms.len()].clone();
+                rr += 1;
+                l
+            };
+            LoadedWit::new(n, c, llm)
+        })
         .collect();
     let wit_inputs: std::collections::HashMap<String, String> = wits
         .iter()
@@ -365,9 +396,11 @@ pub async fn run(
                         if items.is_empty() { continue; }
                         let user_prompt = items.join("\n");
                         let system_prompt = w.cfg.prompt.clone();
-                        let mut stream = registry
+                        let permit = w.llm.semaphore.clone().acquire_owned().await?;
+                        let mut stream = w
+                            .llm
                             .chat
-                            .chat_stream(&profile, &system_prompt, &user_prompt)
+                            .chat_stream(&w.llm.profile, &system_prompt, &user_prompt)
                             .await
                             .expect("Failed to get chat stream");
                         use tokio_stream::StreamExt;
@@ -375,6 +408,7 @@ pub async fn run(
                         while let Some(token) = stream.next().await {
                             response.push_str(&token);
                         }
+                        drop(permit);
                         memory_store.store(&w.cfg.output, &response).await?;
                         if let Some(target) = &w.cfg.feedback {
                             if let Some(kind) = wit_inputs.get(target) {

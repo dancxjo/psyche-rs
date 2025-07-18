@@ -14,4 +14,7 @@ pub struct WitConfig {
     /// Optional name of another Wit to receive this Wit’s output as input.
     #[serde(default)]
     pub feedback: Option<String>,
+    /// Optional name of the LLM profile this Wit should use.
+    #[serde(default)]
+    pub llm: Option<String>,
 }

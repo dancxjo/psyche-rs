@@ -1,6 +1,7 @@
 use chrono::Utc;
 use psyche::distiller::{link_sources, Distiller, DistillerConfig};
 use psyche::llm::mock_chat::MockChat;
+use psyche::llm::{LlmCapability, LlmProfile};
 use psyche::models::MemoryEntry;
 use serde_json::json;
 use uuid::Uuid;
@@ -18,6 +19,11 @@ async fn combobulator_config_distills_chat() {
     let mut d = Distiller {
         config: cfg,
         llm: Box::new(MockChat::default()),
+        profile: LlmProfile {
+            provider: "mock".into(),
+            model: "mock".into(),
+            capabilities: vec![LlmCapability::Chat],
+        },
     };
     let entry = MemoryEntry {
         id: entry_id,
@@ -45,6 +51,11 @@ async fn prefix_filter_matches_subkind() {
     let mut d = Distiller {
         config: cfg,
         llm: Box::new(MockChat::default()),
+        profile: LlmProfile {
+            provider: "mock".into(),
+            model: "mock".into(),
+            capabilities: vec![LlmCapability::Chat],
+        },
     };
     let entry = MemoryEntry {
         id: entry_id,
@@ -72,6 +83,11 @@ async fn memory_config_distills_instant() {
     let mut d = Distiller {
         config: cfg,
         llm: Box::new(MockChat::default()),
+        profile: LlmProfile {
+            provider: "mock".into(),
+            model: "mock".into(),
+            capabilities: vec![LlmCapability::Chat],
+        },
     };
     let entry1 = MemoryEntry {
         id: id1,

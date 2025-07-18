@@ -32,6 +32,12 @@ async fn wit_produces_output() {
     });
 
     let (tx, rx) = tokio::sync::oneshot::channel();
+    let instance = std::sync::Arc::new(psyche::llm::LlmInstance {
+        name: "mock".into(),
+        chat: std::sync::Arc::new(psyche::llm::mock_chat::MockChat::default()),
+        profile: profile.clone(),
+        semaphore: std::sync::Arc::new(tokio::sync::Semaphore::new(1)),
+    });
     let local = LocalSet::new();
     let server = local.spawn_local(psyched::run(
         socket.clone(),
@@ -40,6 +46,7 @@ async fn wit_produces_output() {
         std::time::Duration::from_millis(50),
         registry.clone(),
         profile.clone(),
+        vec![instance.clone()],
         async move {
             let _ = rx.await;
         },
@@ -99,6 +106,12 @@ async fn feedback_forwards_output() {
     });
 
     let (tx, rx) = tokio::sync::oneshot::channel();
+    let instance = std::sync::Arc::new(psyche::llm::LlmInstance {
+        name: "mock".into(),
+        chat: std::sync::Arc::new(psyche::llm::mock_chat::MockChat::default()),
+        profile: profile.clone(),
+        semaphore: std::sync::Arc::new(tokio::sync::Semaphore::new(1)),
+    });
     let local = LocalSet::new();
     let server = local.spawn_local(psyched::run(
         socket.clone(),
@@ -107,6 +120,7 @@ async fn feedback_forwards_output() {
         std::time::Duration::from_millis(50),
         registry.clone(),
         profile.clone(),
+        vec![instance.clone()],
         async move {
             let _ = rx.await;
         },

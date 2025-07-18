@@ -34,6 +34,12 @@ async fn sensation_results_in_instant() {
         model: "mock".into(),
         capabilities: vec![psyche::llm::LlmCapability::Chat],
     });
+    let instance = std::sync::Arc::new(psyche::llm::LlmInstance {
+        name: "mock".into(),
+        chat: std::sync::Arc::new(psyche::llm::mock_chat::MockChat::default()),
+        profile: profile.clone(),
+        semaphore: std::sync::Arc::new(tokio::sync::Semaphore::new(1)),
+    });
     let server = local.spawn_local(psyched::run(
         socket.clone(),
         soul_dir.clone(),
@@ -41,6 +47,7 @@ async fn sensation_results_in_instant() {
         std::time::Duration::from_millis(50),
         registry.clone(),
         profile.clone(),
+        vec![instance.clone()],
         async move {
             let _ = rx.await;
         },

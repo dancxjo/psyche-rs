@@ -94,9 +94,20 @@ async fn main() -> anyhow::Result<()> {
     }
 
     // Construct LLM registry from configuration
-    let (registry, profile) = psyched::llm_config::load_first_llm(&llm_cfg).await?;
-    let registry = std::sync::Arc::new(registry);
-    let profile = std::sync::Arc::new(profile);
+    let llms = psyched::llm_config::load_llms(&llm_cfg).await?;
+    let first = llms
+        .first()
+        .cloned()
+        .ok_or_else(|| anyhow::anyhow!("no llm"))?;
+    let registry = std::sync::Arc::new(psyche::llm::LlmRegistry {
+        chat: Box::new(psyche::llm::limited::LimitedChat::new(
+            first.chat.clone(),
+            first.semaphore.clone(),
+        )),
+        embed: Box::new(psyche::llm::mock_embed::MockEmbed::default()),
+    });
+    let profile = first.profile.clone();
+    let llms: Vec<_> = llms.into_iter().map(std::sync::Arc::new).collect();
 
     // Kick off orchestrator
     let local = tokio::task::LocalSet::new();
@@ -108,6 +119,7 @@ async fn main() -> anyhow::Result<()> {
             std::time::Duration::from_millis(cli.beat_ms),
             registry,
             profile,
+            llms,
             shutdown_signal(),
         ))
         .await

@@ -1,4 +1,4 @@
-use crate::llm::{CanChat, LlmCapability, LlmProfile};
+use crate::llm::{CanChat, LlmProfile};
 use crate::models::{Instant, MemoryEntry, Sensation};
 use chrono::Utc;
 use serde_json::Value;
@@ -45,6 +45,8 @@ pub struct Distiller {
     pub config: DistillerConfig,
     /// LLM used to generate summaries.
     pub llm: Box<dyn CanChat>,
+    /// Profile for the bound LLM.
+    pub profile: LlmProfile,
 }
 
 impl Distiller {
@@ -80,14 +82,9 @@ impl Distiller {
             .join("\n");
 
         let prompt = self.config.prompt_template.replace("{input}", &joined);
-        let profile = LlmProfile {
-            provider: "local".into(),
-            model: "mock".into(),
-            capabilities: vec![LlmCapability::Chat],
-        };
 
         trace!(target = "llm", prompt = %prompt, "distiller prompt");
-        let mut stream = self.llm.chat_stream(&profile, "", &prompt).await?;
+        let mut stream = self.llm.chat_stream(&self.profile, "", &prompt).await?;
         let mut resp = String::new();
         while let Some(token) = stream.next().await {
             resp.push_str(&token);

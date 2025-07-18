@@ -1,5 +1,6 @@
 pub mod chat;
 pub mod embed;
+pub mod limited;
 pub mod mock_chat;
 pub mod mock_embed;
 pub mod ollama;
@@ -57,4 +58,20 @@ pub struct LlmRegistry {
     pub chat: Box<dyn CanChat>,
     /// Embedding implementation.
     pub embed: Box<dyn CanEmbed>,
+}
+
+use std::sync::Arc;
+use tokio::sync::Semaphore;
+
+/// Runtime handle to a specific LLM instance with concurrency limits.
+#[derive(Clone)]
+pub struct LlmInstance {
+    /// Human friendly name used in configuration overrides.
+    pub name: String,
+    /// Chat implementation for this LLM.
+    pub chat: Arc<dyn CanChat>,
+    /// Profile describing the model.
+    pub profile: Arc<LlmProfile>,
+    /// Semaphore limiting concurrent usage.
+    pub semaphore: Arc<Semaphore>,
 }
