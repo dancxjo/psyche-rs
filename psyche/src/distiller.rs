@@ -1,5 +1,6 @@
 use crate::llm::{CanChat, LlmProfile};
 use crate::models::{Instant, MemoryEntry, Sensation};
+use crate::utils::{first_sentence, parse_json_or_string};
 use chrono::Utc;
 use serde_json::Value;
 use tokio_stream::StreamExt;
@@ -95,7 +96,7 @@ impl Distiller {
         let value = if let Some(pp) = self.config.post_process {
             pp(&entries, &resp)?
         } else {
-            Value::String(resp.clone())
+            parse_json_or_string(&resp)
         };
 
         Ok(vec![MemoryEntry {
@@ -103,7 +104,7 @@ impl Distiller {
             kind: self.config.output_kind.clone(),
             when: Utc::now(),
             what: value,
-            how: resp,
+            how: first_sentence(&resp),
         }])
     }
 }

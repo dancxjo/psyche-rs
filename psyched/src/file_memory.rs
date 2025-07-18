@@ -4,6 +4,7 @@ use tokio::sync::Mutex;
 
 use chrono::Utc;
 use psyche::models::{MemoryEntry, Sensation};
+use psyche::utils::{first_sentence, parse_json_or_string};
 use serde_json::Value;
 use tracing::{debug, trace};
 use uuid::Uuid;
@@ -75,8 +76,8 @@ impl FileMemory {
             id: Uuid::new_v4(),
             kind: kind.to_string(),
             when: Utc::now(),
-            what: Value::String(text.to_string()),
-            how: text.to_string(),
+            what: parse_json_or_string(text),
+            how: first_sentence(text),
         };
         self.append(kind, &entry).await
     }
