@@ -318,8 +318,8 @@ pub async fn run(
                     .find(|l| l.name == *name)
                     .cloned()
                     .unwrap_or_else(|| llms.get(0).cloned().expect("llms vector is empty"))
-                } else if i == 0 {
-                    llms.get(0).cloned().expect("llms vector is empty")
+            } else if i == 0 {
+                llms.get(0).cloned().expect("llms vector is empty")
             } else {
                 let l = llms[wit_round_robin % llms.len()].clone();
                 wit_round_robin += 1;

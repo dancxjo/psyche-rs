@@ -91,6 +91,7 @@ impl Stt for WhisperStt {
 
 /// Run the daemon.
 pub async fn run(socket: PathBuf, listen: PathBuf) -> anyhow::Result<()> {
+    info!(?socket, ?listen, "starting heard");
     if listen.exists() {
         tokio::fs::remove_file(&listen).await.ok();
     }
@@ -108,6 +109,7 @@ pub async fn run(socket: PathBuf, listen: PathBuf) -> anyhow::Result<()> {
         loop {
             match listener.accept().await {
                 Ok((mut stream, _addr)) => {
+                    debug!("accepted connection");
                     let tx = tx.clone();
                     tokio::spawn(async move {
                         let mut buf = [0u8; 4096];
@@ -119,6 +121,7 @@ pub async fn run(socket: PathBuf, listen: PathBuf) -> anyhow::Result<()> {
                                     for chunk in buf[..n].chunks_exact(2) {
                                         frames.push(i16::from_le_bytes([chunk[0], chunk[1]]));
                                     }
+                                    trace!(frames = frames.len(), "received audio frames");
                                     if tx.send(frames).await.is_err() {
                                         break;
                                     }
@@ -160,7 +163,9 @@ pub async fn run(socket: PathBuf, listen: PathBuf) -> anyhow::Result<()> {
                 idx = 0;
                 silence = 0;
                 if !spoken.is_empty() {
+                    debug!(samples = spoken.len(), "transcribing audio");
                     if let Ok(trans) = stt.transcribe(&spoken).await {
+                        debug!(text = %trans.text, "transcription done");
                         send_transcription(&socket, &trans).await.ok();
                     }
                 }
@@ -177,7 +182,7 @@ async fn send_transcription(socket: &PathBuf, result: &Transcription) -> anyhow:
     stream
         .write_all(format!("/heard/asr\n{}\n---\n", text).as_bytes())
         .await?;
-    debug!("sent transcription");
+    debug!(text = %result.text, "sent transcription");
     Ok(())
 }
 
