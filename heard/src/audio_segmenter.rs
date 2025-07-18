@@ -83,7 +83,9 @@ impl AudioSegmenter {
                     return Some(spoken);
                 } else {
                     self.discarded += spoken.len();
-                    debug!(samples = spoken.len(), "discarding short segment");
+                    if !spoken.is_empty() {
+                        debug!(samples = spoken.len(), "discarding short segment");
+                    }
                 }
             }
         }
