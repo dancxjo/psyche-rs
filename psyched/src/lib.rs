@@ -308,6 +308,7 @@ pub async fn run(
 
     let backend =
         if let (Ok(qurl), Ok(nurl)) = (std::env::var("QDRANT_URL"), std::env::var("NEO4J_URL")) {
+            tracing::debug!(qdrant = %qurl, neo4j = %nurl, "connecting to backends");
             let qdrant = qdrant_client::prelude::QdrantClient::from_url(&qurl).build();
             let qdrant = qdrant.expect("qdrant");
             let user = std::env::var("NEO4J_USER").unwrap_or_else(|_| "neo4j".into());

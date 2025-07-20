@@ -1,4 +1,4 @@
 [neo4j]
-url = "http://localhost:7474"
+url = "bolt://localhost:7687"
 [qdrant]
 url = "http://localhost:6333"
