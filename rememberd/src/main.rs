@@ -1,7 +1,7 @@
 //! Memory recall daemon backed by Neo4j + Qdrant
 //!
 //! ```bash
-//! rememberd --qdrant-url http://localhost:6333 \
+//! rememberd --qdrant-url http://localhost:6334 \
 //!           --neo4j-url bolt://localhost:7687 \
 //!           --neo4j-user neo4j --neo4j-pass password
 //! ```
@@ -37,7 +37,7 @@ struct Cli {
     log_level: LogLevel,
 
     /// Qdrant service URL
-    #[arg(long, default_value = "http://localhost:6333")]
+    #[arg(long, default_value = "http://localhost:6334")]
     qdrant_url: String,
 
     /// Neo4j service URL

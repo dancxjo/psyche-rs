@@ -42,7 +42,7 @@ pub struct Cli {
     pub log_level: LogLevel,
 
     /// Qdrant service URL
-    #[arg(long, default_value = "http://localhost:6333")]
+    #[arg(long, default_value = "http://localhost:6334")]
     pub qdrant_url: String,
 
     /// Neo4j service URL
