@@ -118,7 +118,7 @@ async fn cli_flags_work() {
         .arg("--qdrant-url")
         .arg("http://localhost:6333")
         .arg("--neo4j-url")
-        .arg("http://localhost:7474")
+        .arg("bolt://localhost:7687")
         .arg("--neo4j-user")
         .arg("neo4j")
         .arg("--neo4j-pass")

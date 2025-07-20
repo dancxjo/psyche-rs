@@ -46,7 +46,7 @@ pub struct Cli {
     pub qdrant_url: String,
 
     /// Neo4j service URL
-    #[arg(long, default_value = "http://localhost:7474")]
+    #[arg(long, default_value = "bolt://localhost:7687")]
     pub neo4j_url: String,
 
     /// Neo4j username

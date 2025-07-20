@@ -2,7 +2,7 @@
 //!
 //! ```bash
 //! rememberd --qdrant-url http://localhost:6333 \
-//!           --neo4j-url http://localhost:7474 \
+//!           --neo4j-url bolt://localhost:7687 \
 //!           --neo4j-user neo4j --neo4j-pass password
 //! ```
 use clap::Parser;
@@ -41,7 +41,7 @@ struct Cli {
     qdrant_url: String,
 
     /// Neo4j service URL
-    #[arg(long, default_value = "http://localhost:7474")]
+    #[arg(long, default_value = "bolt://localhost:7687")]
     neo4j_url: String,
 
     /// Neo4j username

@@ -45,7 +45,7 @@ cargo build
 sudo ./target/debug/psyched \
   --log-level info \
   --qdrant-url http://localhost:6333 \
-  --neo4j-url http://localhost:7474 \
+  --neo4j-url bolt://localhost:7687 \
   --neo4j-user neo4j --neo4j-pass password
 ````
 
