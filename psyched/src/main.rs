@@ -3,7 +3,7 @@ use daemon_common::LogLevel;
 use std::path::PathBuf;
 use tokio::fs;
 use toml;
-use tracing::trace;
+use tracing::{debug, trace};
 
 /// `psyched` — the orchestrator for psycheOS
 #[derive(Parser, Debug)]
@@ -110,7 +110,7 @@ async fn main() -> anyhow::Result<()> {
     let profile = first.profile.clone();
     let llms: Vec<_> = llms.into_iter().map(std::sync::Arc::new).collect();
 
-    trace!("\u{1F4C1}  Loading pipeline from {}", pipeline.display());
+    debug!("\u{1F4C1}  Loading pipeline from {}", pipeline.display());
 
     std::env::set_var("QDRANT_URL", &cli.qdrant_url);
     std::env::set_var("NEO4J_URL", &cli.neo4j_url);

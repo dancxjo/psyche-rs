@@ -294,7 +294,7 @@ pub async fn run(
 
     let cfg_path = pipeline;
     let cfg = load_config(&cfg_path).await?;
-    trace!(pipeline = %cfg_path.display(), "loaded pipeline configuration");
+    debug!(pipeline = %cfg_path.display(), "loaded pipeline configuration");
     let mut llm_rr = 0usize;
     let mut distillers: Vec<LoadedDistiller> = cfg
         .distiller
@@ -306,7 +306,7 @@ pub async fn run(
         })
         .collect();
 
-    trace!(distillers = distillers.len(), "loaded distillers");
+    debug!(distillers = distillers.len(), "loaded distillers");
 
     let backend =
         if let (Ok(qurl), Ok(nurl)) = (std::env::var("QDRANT_URL"), std::env::var("NEO4J_URL")) {
