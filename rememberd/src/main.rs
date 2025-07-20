@@ -37,19 +37,19 @@ struct Cli {
     log_level: LogLevel,
 
     /// Qdrant service URL
-    #[arg(long, env = "QDRANT_URL", default_value = "http://localhost:6333")]
+    #[arg(long, default_value = "http://localhost:6333")]
     qdrant_url: String,
 
     /// Neo4j service URL
-    #[arg(long, env = "NEO4J_URL", default_value = "http://localhost:7474")]
+    #[arg(long, default_value = "http://localhost:7474")]
     neo4j_url: String,
 
     /// Neo4j username
-    #[arg(long, env = "NEO4J_USER", default_value = "neo4j")]
+    #[arg(long, default_value = "neo4j")]
     neo4j_user: String,
 
     /// Neo4j password
-    #[arg(long, env = "NEO4J_PASS", default_value = "password")]
+    #[arg(long, default_value = "password")]
     neo4j_pass: String,
 }
 

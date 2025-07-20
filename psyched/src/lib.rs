@@ -294,7 +294,7 @@ pub async fn run(
 
     let cfg_path = pipeline;
     let cfg = load_config(&cfg_path).await?;
-
+    trace!(pipeline = %cfg_path.display(), "loaded pipeline configuration");
     let mut llm_rr = 0usize;
     let mut distillers: Vec<LoadedDistiller> = cfg
         .distiller
@@ -305,6 +305,8 @@ pub async fn run(
             LoadedDistiller::new(n, c, llm)
         })
         .collect();
+
+    trace!(distillers = distillers.len(), "loaded distillers");
 
     let backend =
         if let (Ok(qurl), Ok(nurl)) = (std::env::var("QDRANT_URL"), std::env::var("NEO4J_URL")) {
@@ -320,6 +322,8 @@ pub async fn run(
         } else {
             None
         };
+
+    trace!("using memory backend");
 
     let memory_store =
         db_memory::DbMemory::new(memory_dir.clone(), backend, &*registry.embed, &*profile);
