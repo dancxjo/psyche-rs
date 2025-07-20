@@ -303,6 +303,36 @@ impl MemoryBackend for &InMemoryBackend {
 mod qdrant_store {
     use super::*;
     use qdrant_client::prelude::*;
+    use qdrant_client::qdrant::{CreateCollectionBuilder, Distance, VectorParamsBuilder};
+
+    #[async_trait(?Send)]
+    pub trait CollectionMaker {
+        async fn collection_exists(&self, name: &str) -> anyhow::Result<bool>;
+        async fn create_memory_collection(&self, dim: u64) -> anyhow::Result<()>;
+    }
+
+    #[async_trait(?Send)]
+    impl CollectionMaker for QdrantClient {
+        async fn collection_exists(&self, name: &str) -> anyhow::Result<bool> {
+            Ok(self.collection_exists(name).await?)
+        }
+
+        async fn create_memory_collection(&self, dim: u64) -> anyhow::Result<()> {
+            let req = CreateCollectionBuilder::new("memory")
+                .vectors_config(VectorParamsBuilder::new(dim, Distance::Cosine))
+                .build();
+            self.create_collection(&req).await?;
+            Ok(())
+        }
+    }
+
+    /// Ensure the `memory` collection exists creating it on first use.
+    pub async fn ensure_collection(client: &impl CollectionMaker, dim: u64) -> anyhow::Result<()> {
+        if !client.collection_exists("memory").await? {
+            client.create_memory_collection(dim).await?;
+        }
+        Ok(())
+    }
 
     /// Qdrant + Neo4j backend implementation.
     pub struct QdrantNeo4j {
@@ -314,6 +344,7 @@ mod qdrant_store {
     #[async_trait(?Send)]
     impl MemoryBackend for QdrantNeo4j {
         async fn store(&self, exp: &Experience, vector: &[f32]) -> anyhow::Result<String> {
+            ensure_collection(&self.qdrant, vector.len() as u64).await?;
             let id = Uuid::new_v4().to_string();
             let points = vec![PointStruct::new(
                 id.clone(),
@@ -485,4 +516,4 @@ mod qdrant_store {
 }
 
 #[cfg(feature = "qdrant")]
-pub use qdrant_store::QdrantNeo4j;
+pub use qdrant_store::{ensure_collection, CollectionMaker, QdrantNeo4j};
