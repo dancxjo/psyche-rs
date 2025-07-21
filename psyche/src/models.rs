@@ -11,7 +11,7 @@ pub struct Sensation {
     pub text: String,
 }
 
-/// Simplified representation produced by the distiller.
+/// Simplified representation produced by the wit.
 #[derive(Debug, Serialize, Deserialize, Clone, PartialEq)]
 pub struct Instant {
     /// Always `"instant"` for this basic vertical.
@@ -22,7 +22,7 @@ pub struct Instant {
     pub what: Vec<String>,
 }
 
-/// Generalized memory entry passed between distillers.
+/// Generalized memory entry passed between wits.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct MemoryEntry {
     /// Unique identifier for this entry.

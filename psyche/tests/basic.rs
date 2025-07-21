@@ -1,22 +1,22 @@
 use chrono::Utc;
-use psyche::distiller::{link_sources, Distiller, DistillerConfig};
 use psyche::llm::mock_chat::MockChat;
 use psyche::llm::{LlmCapability, LlmProfile};
 use psyche::models::MemoryEntry;
+use psyche::wit::{link_sources, Wit, WitConfig};
 use serde_json::json;
 use uuid::Uuid;
 
 #[tokio::test]
 async fn combobulator_config_distills_chat() {
     let entry_id = Uuid::new_v4();
-    let cfg = DistillerConfig {
+    let cfg = WitConfig {
         name: "combobulator".into(),
         input_kind: "sensation/chat".into(),
         output_kind: "instant".into(),
         prompt_template: "{input}".into(),
         post_process: Some(link_sources),
     };
-    let mut d = Distiller {
+    let mut d = Wit {
         config: cfg,
         llm: Box::new(MockChat::default()),
         profile: LlmProfile {
@@ -41,14 +41,14 @@ async fn combobulator_config_distills_chat() {
 #[tokio::test]
 async fn prefix_filter_matches_subkind() {
     let entry_id = Uuid::new_v4();
-    let cfg = DistillerConfig {
+    let cfg = WitConfig {
         name: "combobulator".into(),
         input_kind: "sensation".into(),
         output_kind: "instant".into(),
         prompt_template: "{input}".into(),
         post_process: Some(link_sources),
     };
-    let mut d = Distiller {
+    let mut d = Wit {
         config: cfg,
         llm: Box::new(MockChat::default()),
         profile: LlmProfile {
@@ -73,14 +73,14 @@ async fn prefix_filter_matches_subkind() {
 async fn memory_config_distills_instant() {
     let id1 = Uuid::new_v4();
     let id2 = Uuid::new_v4();
-    let cfg = DistillerConfig {
+    let cfg = WitConfig {
         name: "memory".into(),
         input_kind: "instant".into(),
         output_kind: "situation".into(),
         prompt_template: "{input}".into(),
         post_process: Some(link_sources),
     };
-    let mut d = Distiller {
+    let mut d = Wit {
         config: cfg,
         llm: Box::new(MockChat::default()),
         profile: LlmProfile {

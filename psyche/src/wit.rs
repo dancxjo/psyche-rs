@@ -23,12 +23,12 @@ pub fn distill(sensation: &Sensation) -> Option<Instant> {
     }
 }
 
-/// Configuration for a [`Distiller`].
+/// Configuration for a [`Wit`].
 #[derive(Clone, Debug)]
-pub struct DistillerConfig {
-    /// Human readable name for this distiller.
+pub struct WitConfig {
+    /// Human readable name for this wit.
     pub name: String,
-    /// Input memory kind this distiller consumes.
+    /// Input memory kind this wit consumes.
     pub input_kind: String,
     /// Kind of memory entry produced.
     pub output_kind: String,
@@ -40,17 +40,17 @@ pub struct DistillerConfig {
     pub post_process: Option<fn(&[MemoryEntry], &str) -> anyhow::Result<Value>>,
 }
 
-/// General-purpose distiller powered by a language model.
-pub struct Distiller {
-    /// Configuration for this distiller.
-    pub config: DistillerConfig,
+/// General-purpose wit powered by a language model.
+pub struct Wit {
+    /// Configuration for this wit.
+    pub config: WitConfig,
     /// LLM used to generate summaries.
     pub llm: Box<dyn CanChat>,
     /// Profile for the bound LLM.
     pub profile: LlmProfile,
 }
 
-impl Distiller {
+impl Wit {
     /// Distill a group of memory entries into a single output memory entry.
     pub async fn distill(&mut self, input: Vec<MemoryEntry>) -> anyhow::Result<Vec<MemoryEntry>> {
         // Filter by input kind
@@ -84,13 +84,13 @@ impl Distiller {
 
         let prompt = self.config.prompt_template.replace("{input}", &joined);
 
-        trace!(target = "llm", prompt = %prompt, "distiller prompt");
+        trace!(target = "llm", prompt = %prompt, "wit prompt");
         let mut stream = self.llm.chat_stream(&self.profile, "", &prompt).await?;
         let mut resp = String::new();
         while let Some(token) = stream.next().await {
             resp.push_str(&token);
         }
-        debug!(target = "llm", response = %resp, "distiller response");
+        debug!(target = "llm", response = %resp, "wit response");
 
         // Optional post-processing
         let value = if let Some(pp) = self.config.post_process {

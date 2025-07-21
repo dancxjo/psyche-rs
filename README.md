@@ -7,7 +7,7 @@
 psycheOS is not a conventional OS. It’s a cognitive architecture built on top of a minimal Linux environment that uses:
 
 - 🧱 **Sensation logs**: Raw data input (e.g. vision, audio, telemetry) stored chronologically.
-- 🌀 **Distillers (Wits)**: Modular cognitive layers that compress and interpret sensations into:
+- 🌀 **Wits**: Modular cognitive layers that compress and interpret sensations into:
   - **Instants** → **Situations** → **Episodes** → **Narratives**
 - 🧬 **Memory layer**: Shared bus backed by:
   - **Neo4j** for symbolic/graph memory
@@ -72,7 +72,7 @@ echo -e "/vision\nI see a red light blinking in the distance.\n.\n" | socat - UN
 └────────────┘      └─────┬──────┘
                           │
          ┌────────────────┴────────────────┐
-         │         Distillers (Wits)       │
+         │              Wits              │
          │                                  │
          │  Instant ▶ Situation ▶ Episode   │
          └────────────────┬────────────────┘
@@ -83,7 +83,7 @@ echo -e "/vision\nI see a red light blinking in the distance.\n.\n" | socat - UN
                └────────────────────┘
 ```
 
-Each *Wit* is a modular distiller defined declaratively and run by `psyched`.
+Each *Wit* is a modular wit defined declaratively and run by `psyched`.
 Pipeline sections can include a `feedback` field naming another Wit. When set,
 the originating Wit’s output is stored under the target Wit’s input kind so it
 can immediately act on that text.

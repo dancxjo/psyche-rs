@@ -19,7 +19,7 @@ async fn wit_recall_postprocess_sends_query() {
     let config_path = soul_dir.join("config/pipeline.toml");
     tokio::fs::write(
         &config_path,
-        "[distiller]\n\n[wit.echo]\ninput = \"sensation/chat\"\noutput = \"reply\"\nprompt = \"Respond\"\npriority = 0\npostprocess = \"recall\"\n",
+        "[pipeline]\n\n[wit.echo]\ninput = \"sensation/chat\"\noutput = \"reply\"\nprompt = \"Respond\"\npriority = 0\npostprocess = \"recall\"\n",
     )
     .await
     .unwrap();

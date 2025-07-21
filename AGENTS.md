@@ -19,7 +19,7 @@
 - Keep narrative prompt text under `daringsby/src` and pass it into library
   constructors instead of embedding it in `psyche-rs`.
 - Use `httpmock` for HTTP-based tests to avoid external network dependencies.
-- Set `USE_MOCK_LLM=1` in tests to force Ollama-backed distillers to use `MockChat`.
+- Set `USE_MOCK_LLM=1` in tests to force Ollama-backed wits to use `MockChat`.
 - Keep `.rs` files focused. Create a new source file for each new type and split
   large modules like `lib.rs` into smaller pieces.
 - Provide mutable `set_*` variants when adding builder methods to wrappers.
