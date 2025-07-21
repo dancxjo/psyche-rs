@@ -1,8 +1,8 @@
 use anyhow::Result;
 use chrono::Utc;
 use indexmap::IndexMap;
-use psyche::distiller::{Distiller, DistillerConfig};
 use psyche::models::{MemoryEntry, Sensation};
+use psyche::wit::{link_sources, Wit as PipelineWit};
 use serde::Deserialize;
 use serde_json::json;
 use std::collections::HashMap;
@@ -51,7 +51,7 @@ async fn read_sensation(stream: UnixStream) -> Result<Sensation> {
 }
 
 #[derive(Deserialize, Clone)]
-struct PipelineDistillerConfig {
+struct PipelineWitConfig {
     input_kinds: Vec<String>,
     output_kind: String,
     #[allow(dead_code)]
@@ -63,7 +63,7 @@ struct PipelineDistillerConfig {
 
 #[derive(Deserialize)]
 struct Config {
-    distiller: IndexMap<String, PipelineDistillerConfig>,
+    pipeline: IndexMap<String, PipelineWitConfig>,
     #[serde(default)]
     wit: IndexMap<String, wit::WitConfig>,
 }
@@ -76,7 +76,7 @@ async fn load_config(path: &Path) -> Result<Config> {
         let mut map = IndexMap::new();
         map.insert(
             "combobulator".into(),
-            PipelineDistillerConfig {
+            PipelineWitConfig {
                 input_kinds: vec!["sensation/chat".into()],
                 output_kind: "instant".into(),
                 prompt_template: None,
@@ -86,7 +86,7 @@ async fn load_config(path: &Path) -> Result<Config> {
         );
         map.insert(
             "memory".into(),
-            PipelineDistillerConfig {
+            PipelineWitConfig {
                 input_kinds: vec!["instant".into()],
                 output_kind: "situation".into(),
                 prompt_template: None,
@@ -95,17 +95,17 @@ async fn load_config(path: &Path) -> Result<Config> {
             },
         );
         Ok(Config {
-            distiller: map,
+            pipeline: map,
             wit: IndexMap::new(),
         })
     }
 }
 
-struct LoadedDistiller {
+struct LoadedPipelineWit {
     #[allow(dead_code)]
     name: String,
-    cfg: PipelineDistillerConfig,
-    distiller: Distiller,
+    cfg: PipelineWitConfig,
+    wit: PipelineWit,
     llm: std::sync::Arc<psyche::llm::LlmInstance>,
     offsets: HashMap<String, usize>,
 }
@@ -164,10 +164,10 @@ impl LoadedWit {
     }
 }
 
-impl LoadedDistiller {
+impl LoadedPipelineWit {
     fn new(
         name: String,
-        cfg: PipelineDistillerConfig,
+        cfg: PipelineWitConfig,
         llm: std::sync::Arc<psyche::llm::LlmInstance>,
     ) -> Self {
         let prompt_template = cfg
@@ -177,16 +177,16 @@ impl LoadedDistiller {
         let pp: Option<
             fn(&[psyche::models::MemoryEntry], &str) -> anyhow::Result<serde_json::Value>,
         > = match name.as_str() {
-            "combobulator" | "memory" => Some(
-                psyche::distiller::link_sources as fn(&[psyche::models::MemoryEntry], &str) -> _,
-            ),
+            "combobulator" | "memory" => {
+                Some(link_sources as fn(&[psyche::models::MemoryEntry], &str) -> _)
+            }
             _ => None,
         };
         let default_llm: Box<dyn psyche::llm::CanChat> = Box::new(
             psyche::llm::limited::LimitedChat::new(llm.chat.clone(), llm.semaphore.clone()),
         );
-        let distiller = Distiller {
-            config: DistillerConfig {
+        let wit = PipelineWit {
+            config: psyche::wit::WitConfig {
                 name: name.clone(),
                 input_kind: cfg.input_kinds.first().cloned().unwrap_or_default(),
                 output_kind: cfg.output_kind.clone(),
@@ -199,14 +199,14 @@ impl LoadedDistiller {
         Self {
             name,
             cfg,
-            distiller,
+            wit,
             llm,
             offsets: HashMap::new(),
         }
     }
 
     async fn collect(&mut self, dir: &Path) -> Result<Vec<MemoryEntry>> {
-        trace!(distiller = %self.name, "collecting inputs");
+        trace!(wit = %self.name, "collecting inputs");
         let mut out = Vec::new();
         for kind in &self.cfg.input_kinds {
             let path = dir.join(format!("{}.jsonl", kind.split('/').next().unwrap()));
@@ -237,7 +237,7 @@ impl LoadedDistiller {
             }
         }
         if out.len() > 0 {
-            debug!(distiller = %self.name, count = out.len(), "input entries collected");
+            debug!(wit = %self.name, count = out.len(), "input entries collected");
         }
         Ok(out)
     }
@@ -298,17 +298,17 @@ pub async fn run(
     let cfg = load_config(&cfg_path).await?;
     debug!(pipeline = %cfg_path.display(), "loaded pipeline configuration");
     let mut llm_rr = 0usize;
-    let mut distillers: Vec<LoadedDistiller> = cfg
-        .distiller
+    let mut pipeline: Vec<LoadedPipelineWit> = cfg
+        .pipeline
         .into_iter()
         .map(|(n, c)| {
             let llm = llms[llm_rr % llms.len()].clone();
             llm_rr += 1;
-            LoadedDistiller::new(n, c, llm)
+            LoadedPipelineWit::new(n, c, llm)
         })
         .collect();
 
-    debug!(distillers = distillers.len(), "loaded distillers");
+    debug!(wits = pipeline.len(), "loaded pipeline wits");
 
     let backend =
         if let (Ok(qurl), Ok(nurl)) = (std::env::var("QDRANT_URL"), std::env::var("NEO4J_URL")) {
@@ -396,11 +396,11 @@ pub async fn run(
             _ = beat.tick() => {
                 beat_counter += 1;
                 trace!(beat = beat_counter, "beat tick");
-                for d in &mut distillers {
+                for d in &mut pipeline {
                     if beat_counter % d.cfg.beat_mod == 0 {
                         let input = d.collect(&memory_dir).await?;
                         if input.is_empty() { continue; }
-                        let mut output = d.distiller.distill(input).await?;
+                        let mut output = d.wit.distill(input).await?;
                         for entry in &mut output {
                             entry.kind = d.cfg.output_kind.clone();
                             if let Some(ref post) = d.cfg.postprocess {

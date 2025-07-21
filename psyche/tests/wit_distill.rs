@@ -1,5 +1,5 @@
-use psyche::distiller::distill;
 use psyche::models::Sensation;
+use psyche::wit::distill;
 
 #[test]
 fn distills_basic_feeling() {
