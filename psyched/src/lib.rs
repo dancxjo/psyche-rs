@@ -236,7 +236,9 @@ impl LoadedDistiller {
                 *offset = lines.len();
             }
         }
-        debug!(distiller = %self.name, count = out.len(), "input entries collected");
+        if out.len() > 0 {
+            debug!(distiller = %self.name, count = out.len(), "input entries collected");
+        }
         Ok(out)
     }
 }
