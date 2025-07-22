@@ -1,15 +1,15 @@
 [pipeline.quick]
-input_kinds = ["sensation"]
-output_kind = "instant"
-prompt_template = "From these recent sensations, infer what is happening. Generate a brief summary, emphasizing what is important and omitting what isn't. Use the first person perspective from your point of view. Be terse and concise. Use the information provided in the context to guide your responses, without inventing new details (this is real life, not fiction). Do not attempt to speak to the user here directly; these are your internal thoughts. Limit it to one sentence."
+input = "sensation"
+output = "instant"
+prompt = "From these recent sensations, infer what is happening. Generate a brief summary, emphasizing what is important and omitting what isn't. Use the first person perspective from your point of view. Be terse and concise. Use the information provided in the context to guide your responses, without inventing new details (this is real life, not fiction). Do not attempt to speak to the user here directly; these are your internal thoughts. Limit it to one sentence."
 beat_mod = 1
 postprocess = "recall"
 
 
 
 [pipeline.combobulator]
-input_kinds = ["instant"]
-output_kind = "situation"
-prompt_template = "Combine recent instants into a coherent summary of the current situation, as if explaining to yourself what is happening now. Generate a brief summary, emphasizing what is important and omitting what isn't. Use the first person perspective from your point of view. Be terse and concise.  Use the information provided in the context to guide your responses, without inventing new details (this is real life, not fiction). Do not attempt to speak to the user here directly; these are your internal thoughts. Limit it to one sentence."
+input = "instant"
+output = "situation"
+prompt = "Combine recent instants into a coherent summary of the current situation, as if explaining to yourself what is happening now. Generate a brief summary, emphasizing what is important and omitting what isn't. Use the first person perspective from your point of view. Be terse and concise.  Use the information provided in the context to guide your responses, without inventing new details (this is real life, not fiction). Do not attempt to speak to the user here directly; these are your internal thoughts. Limit it to one sentence."
 beat_mod = 1
 postprocess = "recall"

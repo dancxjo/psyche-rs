@@ -50,20 +50,10 @@ async fn read_sensation(stream: UnixStream) -> Result<Sensation> {
     })
 }
 
-#[derive(Deserialize, Clone)]
-struct PipelineWitConfig {
-    input_kinds: Vec<String>,
-    output_kind: String,
-    #[allow(dead_code)]
-    prompt_template: Option<String>,
-    beat_mod: usize,
-    #[serde(default)]
-    postprocess: Option<String>,
-}
-
 #[derive(Deserialize)]
 struct Config {
-    pipeline: IndexMap<String, PipelineWitConfig>,
+    #[serde(default)]
+    pipeline: IndexMap<String, wit::WitConfig>,
     #[serde(default)]
     wit: IndexMap<String, wit::WitConfig>,
 }
@@ -76,21 +66,27 @@ async fn load_config(path: &Path) -> Result<Config> {
         let mut map = IndexMap::new();
         map.insert(
             "combobulator".into(),
-            PipelineWitConfig {
-                input_kinds: vec!["sensation/chat".into()],
-                output_kind: "instant".into(),
-                prompt_template: None,
+            wit::WitConfig {
+                input: "sensation/chat".into(),
+                output: "instant".into(),
+                prompt: "{input}".into(),
+                priority: 0,
                 beat_mod: 1,
+                feedback: None,
+                llm: None,
                 postprocess: None,
             },
         );
         map.insert(
             "memory".into(),
-            PipelineWitConfig {
-                input_kinds: vec!["instant".into()],
-                output_kind: "situation".into(),
-                prompt_template: None,
+            wit::WitConfig {
+                input: "instant".into(),
+                output: "situation".into(),
+                prompt: "{input}".into(),
+                priority: 0,
                 beat_mod: 4,
+                feedback: None,
+                llm: None,
                 postprocess: Some("flatten_links".into()),
             },
         );
@@ -104,7 +100,7 @@ async fn load_config(path: &Path) -> Result<Config> {
 struct LoadedPipelineWit {
     #[allow(dead_code)]
     name: String,
-    cfg: PipelineWitConfig,
+    cfg: wit::WitConfig,
     wit: PipelineWit,
     llm: std::sync::Arc<psyche::llm::LlmInstance>,
     offsets: HashMap<String, usize>,
@@ -167,13 +163,10 @@ impl LoadedWit {
 impl LoadedPipelineWit {
     fn new(
         name: String,
-        cfg: PipelineWitConfig,
+        cfg: wit::WitConfig,
         llm: std::sync::Arc<psyche::llm::LlmInstance>,
     ) -> Self {
-        let prompt_template = cfg
-            .prompt_template
-            .clone()
-            .unwrap_or_else(|| "{input}".to_string());
+        let prompt_template = cfg.prompt.clone();
         let pp: Option<
             fn(&[psyche::models::MemoryEntry], &str) -> anyhow::Result<serde_json::Value>,
         > = match name.as_str() {
@@ -188,8 +181,8 @@ impl LoadedPipelineWit {
         let wit = PipelineWit {
             config: psyche::wit::WitConfig {
                 name: name.clone(),
-                input_kind: cfg.input_kinds.first().cloned().unwrap_or_default(),
-                output_kind: cfg.output_kind.clone(),
+                input_kind: cfg.input.clone(),
+                output_kind: cfg.output.clone(),
                 prompt_template,
                 post_process: pp,
             },
@@ -208,13 +201,12 @@ impl LoadedPipelineWit {
     async fn collect(&mut self, store: &impl db_memory::QueryMemory) -> Result<Vec<MemoryEntry>> {
         trace!(wit = %self.name, "collecting inputs");
         let mut out = Vec::new();
-        for kind in &self.cfg.input_kinds {
-            let entries = store.query_by_kind(kind).await?;
-            let offset = self.offsets.entry(kind.clone()).or_insert(0);
-            if *offset < entries.len() {
-                out.extend_from_slice(&entries[*offset..]);
-                *offset = entries.len();
-            }
+        let kind = &self.cfg.input;
+        let entries = store.query_by_kind(kind).await?;
+        let offset = self.offsets.entry(kind.clone()).or_insert(0);
+        if *offset < entries.len() {
+            out.extend_from_slice(&entries[*offset..]);
+            *offset = entries.len();
         }
         if !out.is_empty() {
             debug!(wit = %self.name, count = out.len(), "input entries collected");
@@ -393,7 +385,7 @@ pub async fn run(
                         if input.is_empty() { continue; }
                         let mut output = d.wit.distill(input).await?;
                         for entry in &mut output {
-                            entry.kind = d.cfg.output_kind.clone();
+                            entry.kind = d.cfg.output.clone();
                             if let Some(ref post) = d.cfg.postprocess {
                                 if post == "flatten_links" {
                                     entry.what = flatten_links(&entry.what);
