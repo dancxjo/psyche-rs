@@ -313,15 +313,26 @@ pub async fn run(
     let backend =
         if let (Ok(qurl), Ok(nurl)) = (std::env::var("QDRANT_URL"), std::env::var("NEO4J_URL")) {
             tracing::debug!(qdrant = %qurl, neo4j = %nurl, "connecting to backends");
-            let qdrant = qdrant_client::prelude::QdrantClient::from_url(&qurl).build();
-            let qdrant = qdrant.expect("qdrant");
-            let user = std::env::var("NEO4J_USER").unwrap_or_else(|_| "neo4j".into());
-            let pass = std::env::var("NEO4J_PASS").unwrap_or_else(|_| "password".into());
-            let graph = neo4rs::Graph::new(&nurl, user, pass)?;
-            Some(std::sync::Arc::new(psyche::memory::QdrantNeo4j {
-                qdrant,
-                graph,
-            }))
+            match qdrant_client::prelude::QdrantClient::from_url(&qurl).build() {
+                Ok(qdrant) => {
+                    let user = std::env::var("NEO4J_USER").unwrap_or_else(|_| "neo4j".into());
+                    let pass = std::env::var("NEO4J_PASS").unwrap_or_else(|_| "password".into());
+                    match neo4rs::Graph::new(&nurl, user, pass) {
+                        Ok(graph) => Some(std::sync::Arc::new(psyche::memory::QdrantNeo4j {
+                            qdrant,
+                            graph,
+                        })),
+                        Err(e) => {
+                            tracing::warn!(error = %e, "neo4j connection failed");
+                            None
+                        }
+                    }
+                }
+                Err(e) => {
+                    tracing::warn!(error = %e, "qdrant connection failed");
+                    None
+                }
+            }
         } else {
             None
         };
