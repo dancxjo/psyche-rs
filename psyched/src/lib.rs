@@ -205,38 +205,18 @@ impl LoadedPipelineWit {
         }
     }
 
-    async fn collect(&mut self, dir: &Path) -> Result<Vec<MemoryEntry>> {
+    async fn collect(&mut self, store: &impl db_memory::QueryMemory) -> Result<Vec<MemoryEntry>> {
         trace!(wit = %self.name, "collecting inputs");
         let mut out = Vec::new();
         for kind in &self.cfg.input_kinds {
-            let path = dir.join(format!("{}.jsonl", kind.split('/').next().unwrap()));
+            let entries = store.query_by_kind(kind).await?;
             let offset = self.offsets.entry(kind.clone()).or_insert(0);
-            let content = tokio::fs::read_to_string(&path).await.unwrap_or_default();
-            let lines: Vec<_> = content.lines().collect();
-            if *offset < lines.len() {
-                for line in &lines[*offset..] {
-                    if kind.starts_with("sensation") {
-                        let s: Sensation = serde_json::from_str(line)?;
-                        let entry_kind = format!("sensation{}", s.path);
-                        if entry_kind.starts_with(kind) {
-                            out.push(MemoryEntry {
-                                id: Uuid::parse_str(&s.id)?,
-                                kind: entry_kind,
-                                when: Utc::now(),
-                                what: json!(s.text),
-                                how: String::new(),
-                            });
-                        }
-                    } else {
-                        let mut e: MemoryEntry = serde_json::from_str(line)?;
-                        e.kind = kind.clone();
-                        out.push(e);
-                    }
-                }
-                *offset = lines.len();
+            if *offset < entries.len() {
+                out.extend_from_slice(&entries[*offset..]);
+                *offset = entries.len();
             }
         }
-        if out.len() > 0 {
+        if !out.is_empty() {
             debug!(wit = %self.name, count = out.len(), "input entries collected");
         }
         Ok(out)
@@ -409,7 +389,7 @@ pub async fn run(
                 trace!(beat = beat_counter, "beat tick");
                 for d in &mut pipeline {
                     if beat_counter % d.cfg.beat_mod == 0 {
-                        let input = d.collect(&memory_dir).await?;
+                        let input = d.collect(&memory_store).await?;
                         if input.is_empty() { continue; }
                         let mut output = d.wit.distill(input).await?;
                         for entry in &mut output {

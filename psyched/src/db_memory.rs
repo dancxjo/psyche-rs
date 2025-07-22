@@ -14,6 +14,15 @@ use tokio::sync::Mutex;
 use tracing::{debug, trace};
 use uuid::Uuid;
 
+use async_trait::async_trait;
+
+/// Lightweight interface used by pipeline wits to fetch entries.
+#[async_trait(?Send)]
+pub trait QueryMemory {
+    /// Return all entries for the provided kind.
+    async fn query_by_kind(&self, kind: &str) -> Result<Vec<MemoryEntry>>;
+}
+
 pub struct DbMemory<'a> {
     dir: PathBuf,
     inner: FileMemory,
@@ -96,6 +105,53 @@ RETURN e.how AS how, e.what AS what, e.when AS when, e.tags AS tags ORDER BY e.w
             }
         }
         self.inner.query_latest(kind).await
+    }
+
+    /// Retrieve all stored entries for `kind` advancing database offsets.
+    pub async fn entries_by_kind(&self, kind: &str) -> Result<Vec<MemoryEntry>> {
+        trace!(kind, "DbMemory query_by_kind");
+        if let Some(backend) = &self.backend {
+            #[cfg(feature = "neo4j")]
+            {
+                use chrono::{DateTime, Utc};
+                use neo4rs::query;
+                let mut offsets = self.db_offsets.lock().await;
+                let since = offsets
+                    .get(kind)
+                    .cloned()
+                    .unwrap_or_else(|| "1970-01-01T00:00:00Z".to_string());
+                let mut rows = backend
+                    .graph
+                    .execute(
+                        query(
+                            "MATCH (e:Experience) WHERE $tag IN e.tags AND e.when > $since RETURN e.id AS id, e.how AS how, e.what AS what, e.when AS when ORDER BY e.when",
+                        )
+                        .param("tag", kind)
+                        .param("since", &since),
+                    )
+                    .await?;
+                let mut out = Vec::new();
+                while let Ok(Some(row)) = rows.next().await {
+                    let id: String = row.get("id")?;
+                    let how: String = row.get("how")?;
+                    let what: serde_json::Value = row.get("what")?;
+                    let when: String = row.get("when")?;
+                    let when = DateTime::parse_from_rfc3339(&when)?.with_timezone(&Utc);
+                    out.push(MemoryEntry {
+                        id: Uuid::parse_str(&id)?,
+                        kind: kind.to_string(),
+                        when,
+                        what,
+                        how,
+                    });
+                }
+                if let Some(last) = out.last() {
+                    offsets.insert(kind.to_string(), last.when.to_rfc3339());
+                }
+                return Ok(out);
+            }
+        }
+        Ok(self.inner.query_by_kind(kind).await?)
     }
 
     pub async fn link_summary(&self, summary_id: &str, original_id: &str) -> Result<()> {
@@ -202,5 +258,12 @@ RETURN e.how AS how, e.what AS what, e.when AS when, e.tags AS tags ORDER BY e.w
         debug!(target = "psyched", ?entry.kind, id = %entry.id, "stored memory entry from wit");
         trace!(id = %entry.id, "persisted entry");
         Ok(String::new())
+    }
+}
+
+#[async_trait(?Send)]
+impl<'a> QueryMemory for DbMemory<'a> {
+    async fn query_by_kind(&self, kind: &str) -> Result<Vec<MemoryEntry>> {
+        self.entries_by_kind(kind).await
     }
 }
