@@ -12,15 +12,12 @@ async fn quick_to_combobulator_generates_situation() {
     let memory_sock = dir.path().join("memory.sock");
     let soul_dir = dir.path().to_path_buf();
     let _memory_path = soul_dir.join("memory/sensation.jsonl");
-    let config_path = soul_dir.join("config/pipeline.toml");
-    tokio::fs::create_dir_all(soul_dir.join("config"))
-        .await
-        .unwrap();
+    let config_path = soul_dir.join("identity.toml");
     tokio::fs::create_dir_all(soul_dir.join("memory"))
         .await
         .unwrap();
     tokio::fs::copy(
-        PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../soul/config/pipeline.toml"),
+        PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../all_souls/layka/identity.toml"),
         &config_path,
     )
     .await

@@ -13,14 +13,11 @@ async fn sensation_results_in_instant() {
     let memory_path = soul_dir.join("memory/sensation.jsonl");
     let config_path =
         PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../tests/configs/sample.toml");
-    tokio::fs::create_dir_all(soul_dir.join("config"))
-        .await
-        .unwrap();
     tokio::fs::create_dir_all(soul_dir.join("memory"))
         .await
         .unwrap();
     std::env::set_var("USE_MOCK_LLM", "1");
-    tokio::fs::copy(config_path, soul_dir.join("config/pipeline.toml"))
+    tokio::fs::copy(config_path, soul_dir.join("identity.toml"))
         .await
         .unwrap();
 
@@ -44,7 +41,7 @@ async fn sensation_results_in_instant() {
     let server = local.spawn_local(psyched::run(
         socket.clone(),
         soul_dir.clone(),
-        soul_dir.join("config/pipeline.toml"),
+        soul_dir.join("identity.toml"),
         std::time::Duration::from_millis(50),
         registry.clone(),
         profile.clone(),
@@ -111,7 +108,7 @@ async fn cli_flags_work() {
     let status = tokio::process::Command::new(exe)
         .arg("--soul")
         .arg("/tmp/foo")
-        .arg("--pipeline")
+        .arg("--identity")
         .arg("/tmp/bar")
         .arg("--log-level")
         .arg("debug")

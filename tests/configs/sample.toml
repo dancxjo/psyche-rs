@@ -1,10 +1,10 @@
-[pipeline.combobulator]
+[wit.combobulator]
 input = "sensation/chat"
 output = "instant"
 prompt = "prompts/combobulator.txt"
 beat_mod = 1
 
-[pipeline.memory]
+[wit.memory]
 input = "instant"
 output = "situation"
 prompt = "prompts/memory.txt"

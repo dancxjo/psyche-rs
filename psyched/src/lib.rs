@@ -19,11 +19,19 @@ pub mod llm_config;
 mod wit;
 
 /// Identity information loaded from `soul/identity.toml`.
+fn default_name() -> String {
+    "Unknown".into()
+}
+
 #[derive(Deserialize)]
 pub struct Identity {
+    #[serde(default = "default_name")]
     pub name: String,
     pub role: Option<String>,
     pub purpose: Option<String>,
+    /// Wits available to this identity.
+    #[serde(default)]
+    pub wit: IndexMap<String, wit::WitConfig>,
 }
 
 /// Read a sensation from a Unix stream until a line containing `---` is found.
@@ -50,21 +58,13 @@ async fn read_sensation(stream: UnixStream) -> Result<Sensation> {
     })
 }
 
-#[derive(Deserialize)]
-struct Config {
-    #[serde(default)]
-    pipeline: IndexMap<String, wit::WitConfig>,
-    #[serde(default)]
-    wit: IndexMap<String, wit::WitConfig>,
-}
-
-async fn load_config(path: &Path) -> Result<Config> {
+async fn load_identity(path: &Path) -> Result<Identity> {
     if path.exists() {
         let text = tokio::fs::read_to_string(path).await?;
         Ok(toml::from_str(&text)?)
     } else {
-        let mut map = IndexMap::new();
-        map.insert(
+        let mut wit = IndexMap::new();
+        wit.insert(
             "combobulator".into(),
             wit::WitConfig {
                 input: "sensation/chat".into(),
@@ -77,7 +77,7 @@ async fn load_config(path: &Path) -> Result<Config> {
                 postprocess: None,
             },
         );
-        map.insert(
+        wit.insert(
             "memory".into(),
             wit::WitConfig {
                 input: "instant".into(),
@@ -90,9 +90,11 @@ async fn load_config(path: &Path) -> Result<Config> {
                 postprocess: Some("flatten_links".into()),
             },
         );
-        Ok(Config {
-            pipeline: map,
-            wit: IndexMap::new(),
+        Ok(Identity {
+            name: "Unknown".into(),
+            role: None,
+            purpose: None,
+            wit,
         })
     }
 }
@@ -251,7 +253,7 @@ async fn fire_and_forget_recall(socket: &Path, query: &str) -> std::io::Result<(
 pub async fn run(
     socket: PathBuf,
     soul: PathBuf,
-    pipeline: PathBuf,
+    identity: PathBuf,
     beat_duration: std::time::Duration,
     registry: std::sync::Arc<psyche::llm::LlmRegistry>,
     profile: std::sync::Arc<psyche::llm::LlmProfile>,
@@ -266,17 +268,18 @@ pub async fn run(
     let memory_dir = soul.join("memory");
     tokio::fs::create_dir_all(&memory_dir).await?;
 
-    let cfg_path = pipeline;
-    let cfg = load_config(&cfg_path).await?;
-    debug!(pipeline = %cfg_path.display(), "loaded pipeline configuration");
+    let cfg_path = identity;
+    let identity = load_identity(&cfg_path).await?;
+    debug!(identity = %cfg_path.display(), "loaded identity configuration");
     let mut llm_rr = 0usize;
-    let mut pipeline: Vec<LoadedPipelineWit> = cfg
-        .pipeline
-        .into_iter()
+    let mut pipeline: Vec<LoadedPipelineWit> = identity
+        .wit
+        .iter()
+        .filter(|(_, c)| c.priority == 0)
         .map(|(n, c)| {
             let llm = llms[llm_rr % llms.len()].clone();
             llm_rr += 1;
-            LoadedPipelineWit::new(n, c, llm)
+            LoadedPipelineWit::new(n.clone(), c.clone(), llm)
         })
         .collect();
 
@@ -314,9 +317,10 @@ pub async fn run(
     let memory_store =
         db_memory::DbMemory::new(memory_dir.clone(), backend, &*registry.embed, &*profile);
     let mut wit_round_robin = 1usize.min(llms.len());
-    let mut wits: Vec<LoadedWit> = cfg
+    let mut wits: Vec<LoadedWit> = identity
         .wit
         .into_iter()
+        .filter(|(_, c)| c.priority > 0)
         .enumerate()
         .map(|(i, (n, c))| {
             let llm = if let Some(ref name) = c.llm {
