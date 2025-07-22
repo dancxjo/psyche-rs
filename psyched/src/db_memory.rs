@@ -195,9 +195,11 @@ RETURN e.how AS how, e.what AS what, e.when AS when, e.tags AS tags ORDER BY e.w
                     }
                 }
             }
+            debug!(target = "psyched", ?entry.kind, id = %entry.id, "stored memory entry from wit");
             trace!(id = %entry.id, "persisted entry");
             return Ok(id);
         }
+        debug!(target = "psyched", ?entry.kind, id = %entry.id, "stored memory entry from wit");
         trace!(id = %entry.id, "persisted entry");
         Ok(String::new())
     }
