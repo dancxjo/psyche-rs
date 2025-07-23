@@ -37,7 +37,7 @@ async fn pulls_missing_model() {
                     if req.method() == Method::POST && req.uri().path() == "/api/pull" {
                         return Ok(Response::builder()
                             .header("Content-Type", "application/json")
-                            .body(Body::from("{\"status\":\"success\"}"))
+                            .body(Body::from("{\"status\":\"success\"}\n"))
                             .unwrap());
                     }
                     Ok(Response::new(Body::empty()))

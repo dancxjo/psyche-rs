@@ -17,13 +17,15 @@
 //! distill::run(cfg, ollama, tokio::io::BufReader::new(stdin()), stdout()).await?;
 //! # Ok(()) }
 //! ```
+use indicatif::{ProgressBar, ProgressDrawTarget, ProgressStyle};
 use ollama_rs::generation::chat::request::ChatMessageRequest;
 use ollama_rs::generation::chat::{ChatMessage, MessageRole};
+use ollama_rs::models::pull::PullModelStatus;
 use ollama_rs::{error::OllamaError, Ollama};
 use tera::{Context, Tera};
 use tokio::io::{AsyncBufRead, AsyncBufReadExt, AsyncWrite, AsyncWriteExt, BufReader};
 use tokio_stream::StreamExt;
-use tracing::{debug, trace};
+use tracing::{debug, trace, warn};
 
 /// Configuration for [`run`].
 #[derive(Debug, Clone)]
@@ -99,7 +101,7 @@ where
         Ok(s) => s,
         Err(e) => match e {
             OllamaError::Other(msg) if msg.contains("not found") && msg.contains("pull") => {
-                ollama.pull_model(cfg.model.clone(), false).await?;
+                pull_with_progress(ollama, cfg.model.clone()).await?;
                 ollama.send_chat_messages_stream(req).await?
             }
             other => return Err(other.into()),
@@ -127,4 +129,41 @@ where
 
 fn output_token(token: &str) {
     trace!(token, "stream token");
+}
+
+async fn pull_with_progress(ollama: &Ollama, model: String) -> anyhow::Result<()> {
+    warn!(%model, "pulling missing model");
+    let pb = ProgressBar::new_spinner();
+    pb.set_draw_target(ProgressDrawTarget::stderr());
+    pb.set_style(ProgressStyle::with_template("{spinner} {msg}").unwrap());
+    pb.enable_steady_tick(std::time::Duration::from_millis(100));
+    let mut stream = ollama.pull_model_stream(model, false).await?;
+    while let Some(status) = stream.next().await {
+        let status = status?;
+        trace!(status = ?status, "pull progress");
+        match status {
+            PullModelStatus {
+                message,
+                total: Some(t),
+                completed: Some(c),
+                ..
+            } => {
+                if pb.length().is_none() {
+                    pb.set_style(
+                        ProgressStyle::with_template("{bar:40.cyan/blue} {pos}/{len} {msg}")
+                            .unwrap(),
+                    );
+                    pb.set_length(t);
+                }
+                pb.set_message(message);
+                pb.set_position(c);
+            }
+            PullModelStatus { message, .. } => {
+                pb.set_message(message);
+                pb.tick();
+            }
+        }
+    }
+    pb.finish_and_clear();
+    Ok(())
 }

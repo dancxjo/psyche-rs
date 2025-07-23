@@ -66,3 +66,5 @@
 - Set `NASA_API_KEY` when using rover data scripts to avoid API rate limits.
 - When adding new daemons, list them in `Cargo.toml` and provide matching
   executable scripts in `scripts/` without the `.sh` extension.
+- When showing long download progress in CLI tools, direct `indicatif`
+  progress bars to stderr to avoid polluting captured stdout in tests.
