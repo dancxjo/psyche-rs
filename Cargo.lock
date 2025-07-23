@@ -1043,6 +1043,7 @@ dependencies = [
  "assert_cmd",
  "clap",
  "httpmock 0.7.0",
+ "hyper 0.14.32",
  "ollama-rs",
  "tera",
  "tokio",

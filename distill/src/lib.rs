@@ -19,7 +19,7 @@
 //! ```
 use ollama_rs::generation::chat::request::ChatMessageRequest;
 use ollama_rs::generation::chat::{ChatMessage, MessageRole};
-use ollama_rs::Ollama;
+use ollama_rs::{error::OllamaError, Ollama};
 use tera::{Context, Tera};
 use tokio::io::{AsyncBufRead, AsyncBufReadExt, AsyncWrite, AsyncWriteExt, BufReader};
 use tokio_stream::StreamExt;
@@ -93,7 +93,16 @@ async fn summarize(
         ],
     );
 
-    let mut stream = ollama.send_chat_messages_stream(req).await?;
+    let mut stream = match ollama.send_chat_messages_stream(req.clone()).await {
+        Ok(s) => s,
+        Err(e) => match e {
+            OllamaError::Other(msg) if msg.contains("not found") && msg.contains("pull") => {
+                ollama.pull_model(cfg.model.clone(), false).await?;
+                ollama.send_chat_messages_stream(req).await?
+            }
+            other => return Err(other.into()),
+        },
+    };
     let mut out = String::new();
     while let Some(chunk) = stream.next().await {
         match chunk {
