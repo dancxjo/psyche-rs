@@ -53,8 +53,7 @@ where
         if batch.len() >= cfg.lines {
             let current = batch.join("\n");
             batch.clear();
-            let summary = summarize(&ollama, &cfg, &previous, &current).await?;
-            output.write_all(summary.as_bytes()).await?;
+            let summary = summarize_into(&ollama, &cfg, &previous, &current, &mut output).await?;
             output.write_all(b"\n").await?;
             if cfg.continuous {
                 previous = summary;
@@ -64,8 +63,7 @@ where
 
     if !batch.is_empty() {
         let current = batch.join("\n");
-        let summary = summarize(&ollama, &cfg, &previous, &current).await?;
-        output.write_all(summary.as_bytes()).await?;
+        let _ = summarize_into(&ollama, &cfg, &previous, &current, &mut output).await?;
         output.write_all(b"\n").await?;
     }
 
@@ -73,12 +71,16 @@ where
     Ok(())
 }
 
-async fn summarize(
+async fn summarize_into<W>(
     ollama: &Ollama,
     cfg: &Config,
     previous: &str,
     current: &str,
-) -> anyhow::Result<String> {
+    output: &mut W,
+) -> anyhow::Result<String>
+where
+    W: AsyncWrite + Unpin,
+{
     let mut ctx = Context::new();
     ctx.insert("previous", previous);
     ctx.insert("current", current);
@@ -103,6 +105,8 @@ async fn summarize(
                     text = t.to_string();
                 }
                 output_token(&text);
+                output.write_all(text.as_bytes()).await?;
+                output.flush().await?;
                 out.push_str(&text);
             }
             Err(_) => break,
