@@ -1,6 +1,7 @@
 use clap::Parser;
 use distill::{run, Config};
 use ollama_rs::Ollama;
+use std::path::PathBuf;
 use tokio::fs::File;
 use tokio::io::{stdin, stdout, BufReader};
 use tracing_subscriber::EnvFilter;
@@ -12,7 +13,7 @@ const SIMPLE_PROMPT: &str = "These things happened: {{current}}\n\nMake a one se
 #[command(name = "distill", version)]
 struct Cli {
     /// Run continuously, reusing each summary as {{previous}}
-    #[arg(long)]
+    #[arg(short = 'c', long)]
     continuous: bool,
 
     /// Lines per batch
@@ -20,16 +21,24 @@ struct Cli {
     lines: usize,
 
     /// Prompt template with placeholders
-    #[arg(long)]
+    #[arg(short = 'p', long)]
     prompt: Option<String>,
 
-    /// Input file (stdin if omitted)
-    #[arg(long)]
-    input: Option<std::path::PathBuf>,
+    /// Input path or - for stdin
+    #[arg(short = 'i', long, default_value = "-")]
+    input: std::path::PathBuf,
 
-    /// Output file (stdout if omitted)
-    #[arg(long)]
+    /// Output path or stdout
+    #[arg(short = 'o', long)]
     output: Option<std::path::PathBuf>,
+
+    /// Number of previous summaries to include in {{previous}}
+    #[arg(short = 'd', long, default_value_t = 1)]
+    history_depth: usize,
+
+    /// Milliseconds to wait between batches
+    #[arg(short = 'b', long, default_value_t = 0)]
+    beat: u64,
 
     /// Base URL for Ollama
     #[arg(long, default_value = "http://localhost:11434")]
@@ -66,13 +75,16 @@ async fn main() -> anyhow::Result<()> {
         prompt,
         model: cli.model.clone(),
         terminal: cli.terminal.clone(),
+        history_depth: cli.history_depth,
+        beat: cli.beat,
     };
 
     let ollama = Ollama::try_new(&cli.llm_url)?;
 
-    let input: Box<dyn tokio::io::AsyncBufRead + Unpin> = match cli.input {
-        Some(p) => Box::new(BufReader::new(File::open(p).await?)),
-        None => Box::new(BufReader::new(stdin())),
+    let input: Box<dyn tokio::io::AsyncBufRead + Unpin> = if cli.input == PathBuf::from("-") {
+        Box::new(BufReader::new(stdin()))
+    } else {
+        Box::new(BufReader::new(File::open(cli.input).await?))
     };
 
     let output: Box<dyn tokio::io::AsyncWrite + Unpin> = match cli.output {

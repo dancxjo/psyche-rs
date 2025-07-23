@@ -56,6 +56,8 @@ async fn pulls_missing_model() {
         prompt: "Summarize: {{current}}".into(),
         model: "phi4".into(),
         terminal: "\n".into(),
+        history_depth: 1,
+        beat: 0,
     };
     let ollama = Ollama::try_new(format!("http://{}", addr)).unwrap();
     let input = BufReader::new("hello".as_bytes());

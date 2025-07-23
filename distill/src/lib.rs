@@ -13,6 +13,8 @@
 //!     prompt: "Summarize: {{current}}".into(),
 //!     model: "llama3".into(),
 //!     terminal: "\n".into(),
+//!     history_depth: 1,
+//!     beat: 0,
 //! };
 //! let ollama = ollama_rs::Ollama::try_new("http://localhost:11434")?;
 //! distill::run(cfg, ollama, tokio::io::BufReader::new(stdin()), stdout()).await?;
@@ -23,8 +25,10 @@ use ollama_rs::generation::completion::request::GenerationRequest;
 use ollama_rs::generation::completion::GenerationResponseStream;
 use ollama_rs::models::pull::PullModelStatus;
 use ollama_rs::{error::OllamaError, Ollama};
+use std::collections::VecDeque;
 use tera::{Context, Tera};
 use tokio::io::{AsyncBufRead, AsyncBufReadExt, AsyncWrite, AsyncWriteExt, BufReader};
+use tokio::time::{sleep, Duration};
 use tokio_stream::StreamExt;
 use tracing::{debug, trace, warn};
 
@@ -41,6 +45,10 @@ pub struct Config {
     pub model: String,
     /// Delimiter printed after each response
     pub terminal: String,
+    /// How many prior summaries to include in {{previous}}
+    pub history_depth: usize,
+    /// Delay between batches in milliseconds
+    pub beat: u64,
 }
 
 /// Processes the input stream and writes summaries to the output stream.
@@ -51,27 +59,49 @@ where
 {
     let mut reader = BufReader::new(input).lines();
     let mut batch = Vec::new();
-    let mut previous = String::new();
+    let mut history: VecDeque<String> = VecDeque::new();
 
     while let Some(line) = reader.next_line().await? {
         batch.push(line);
         if batch.len() >= cfg.lines {
             let current = batch.join("\n");
             batch.clear();
+            let previous = if cfg.history_depth == 0 {
+                String::new()
+            } else {
+                history.iter().cloned().collect::<Vec<_>>().join("\n\n")
+            };
             let summary = summarize_into(&ollama, &cfg, &previous, &current, &mut output).await?;
             output.write_all(cfg.terminal.as_bytes()).await?;
             output.write_all(b"\n").await?;
-            if cfg.continuous {
-                previous = summary;
+            if cfg.continuous && cfg.history_depth > 0 {
+                history.push_back(summary);
+                while history.len() > cfg.history_depth {
+                    history.pop_front();
+                }
+            }
+            if cfg.beat > 0 {
+                sleep(Duration::from_millis(cfg.beat)).await;
             }
         }
     }
 
     if !batch.is_empty() {
         let current = batch.join("\n");
-        let _ = summarize_into(&ollama, &cfg, &previous, &current, &mut output).await?;
+        let previous = if cfg.history_depth == 0 {
+            String::new()
+        } else {
+            history.iter().cloned().collect::<Vec<_>>().join("\n\n")
+        };
+        let summary = summarize_into(&ollama, &cfg, &previous, &current, &mut output).await?;
         output.write_all(cfg.terminal.as_bytes()).await?;
         output.write_all(b"\n").await?;
+        if cfg.continuous && cfg.history_depth > 0 {
+            history.push_back(summary);
+            while history.len() > cfg.history_depth {
+                history.pop_front();
+            }
+        }
     }
 
     output.flush().await?;

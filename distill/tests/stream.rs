@@ -27,6 +27,8 @@ async fn run_streams_output() {
         prompt: "Summarize: {{current}}".into(),
         model: "llama3".into(),
         terminal: "\n".into(),
+        history_depth: 1,
+        beat: 0,
     };
     let input = BufReader::new("hi".as_bytes());
     let mut out = Vec::new();
