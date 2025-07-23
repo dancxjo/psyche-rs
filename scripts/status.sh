@@ -15,7 +15,7 @@ cat /var/log/dmesg \
 # 🧠 Quick — factual distillation @ localhost (slow)
 (
   distill -n 25 --continuous \
-    --model gemma3:27b \
+    --model gemma3n \
     --llm-url http://localhost:11434 \
     --prompt "Summarize the most important facts from the following system logs.\n\n{{current}}\n\nPrevious:\n{{previous}}\n\nRespond with one concise, factual sentence. Do not speculate." \
     < "$PIPE_QUICK" \
