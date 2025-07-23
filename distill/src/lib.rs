@@ -19,8 +19,8 @@
 //! # Ok(()) }
 //! ```
 use indicatif::{ProgressBar, ProgressDrawTarget, ProgressStyle};
-use ollama_rs::generation::chat::request::ChatMessageRequest;
-use ollama_rs::generation::chat::{ChatMessage, MessageRole};
+use ollama_rs::generation::completion::request::GenerationRequest;
+use ollama_rs::generation::completion::GenerationResponseStream;
 use ollama_rs::models::pull::PullModelStatus;
 use ollama_rs::{error::OllamaError, Ollama};
 use tera::{Context, Tera};
@@ -94,20 +94,14 @@ where
     let rendered = Tera::one_off(&cfg.prompt, &ctx, true)?;
     trace!(prompt = %rendered, "llm prompt");
 
-    let req = ChatMessageRequest::new(
-        cfg.model.clone(),
-        vec![
-            ChatMessage::new(MessageRole::System, "You summarize text.".into()),
-            ChatMessage::new(MessageRole::User, rendered),
-        ],
-    );
+    let req = GenerationRequest::new(cfg.model.clone(), rendered).system("You summarize text.");
 
-    let mut stream = match ollama.send_chat_messages_stream(req.clone()).await {
+    let mut stream: GenerationResponseStream = match ollama.generate_stream(req.clone()).await {
         Ok(s) => s,
         Err(e) => match e {
             OllamaError::Other(msg) if msg.contains("not found") && msg.contains("pull") => {
                 pull_with_progress(ollama, cfg.model.clone()).await?;
-                ollama.send_chat_messages_stream(req).await?
+                ollama.generate_stream(req).await?
             }
             other => return Err(other.into()),
         },
@@ -115,15 +109,17 @@ where
     let mut out = String::new();
     while let Some(chunk) = stream.next().await {
         match chunk {
-            Ok(resp) => {
-                let mut text = resp.message.content;
-                if let Some(t) = text.strip_prefix('\u{FEFF}') {
-                    text = t.to_string();
+            Ok(responses) => {
+                for resp in responses {
+                    let mut text = resp.response;
+                    if let Some(t) = text.strip_prefix('\u{FEFF}') {
+                        text = t.to_string();
+                    }
+                    output_token(&text);
+                    output.write_all(text.as_bytes()).await?;
+                    output.flush().await?;
+                    out.push_str(&text);
                 }
-                output_token(&text);
-                output.write_all(text.as_bytes()).await?;
-                output.flush().await?;
-                out.push_str(&text);
             }
             Err(_) => break,
         }

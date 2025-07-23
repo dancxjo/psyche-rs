@@ -18,7 +18,7 @@ async fn pulls_missing_model() {
             Ok::<_, hyper::Error>(service_fn(move |req: Request<Body>| {
                 let hits = hits.clone();
                 async move {
-                    if req.method() == Method::POST && req.uri().path() == "/api/chat" {
+                    if req.method() == Method::POST && req.uri().path() == "/api/generate" {
                         let mut h = hits.lock().unwrap();
                         *h += 1;
                         if *h == 1 {
@@ -28,7 +28,7 @@ async fn pulls_missing_model() {
                                 .body(Body::from("{\"error\":\"model \\\"phi4\\\" not found, try pulling it first\"}"))
                                 .unwrap());
                         }
-                        let body = "{\"model\":\"phi4\",\"created_at\":\"0\",\"message\":{\"role\":\"assistant\",\"content\":\"ok\"},\"done\":true}\n";
+                        let body = "{\"model\":\"phi4\",\"created_at\":\"0\",\"response\":\"ok\",\"done\":true}\n";
                         return Ok(Response::builder()
                             .header("Content-Type", "application/json")
                             .body(Body::from(body))
@@ -68,6 +68,6 @@ async fn pulls_missing_model() {
     r.read_to_string(&mut out).await.unwrap();
     assert_eq!(out, "ok\n\n");
 
-    assert_eq!(*hits.lock().unwrap(), 2); // two chat calls
+    assert_eq!(*hits.lock().unwrap(), 2); // two generate calls
     handle.abort();
 }

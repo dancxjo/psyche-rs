@@ -8,12 +8,12 @@ use tokio::io::BufReader;
 async fn run_streams_output() {
     let server = MockServer::start_async().await;
     let body = concat!(
-        "{\"created_at\":\"now\",\"model\":\"llama3\",\"message\":{\"role\":\"assistant\",\"content\":\"foo\"},\"done\":false}\n",
-        "{\"created_at\":\"now\",\"model\":\"llama3\",\"message\":{\"role\":\"assistant\",\"content\":\"bar\"},\"done\":true}\n"
+        "{\"model\":\"llama3\",\"created_at\":\"now\",\"response\":\"foo\",\"done\":false}\n",
+        "{\"model\":\"llama3\",\"created_at\":\"now\",\"response\":\"bar\",\"done\":true}\n"
     );
     server
         .mock_async(|when, then| {
-            when.method(Method::POST).path("/api/chat");
+            when.method(Method::POST).path("/api/generate");
             then.status(200)
                 .header("content-type", "application/json")
                 .body(body);
