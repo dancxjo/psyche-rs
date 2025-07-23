@@ -38,6 +38,10 @@ struct Cli {
     /// Model name
     #[arg(long, default_value = "phi4")]
     model: String,
+
+    /// Delimiter printed after each response
+    #[arg(long, default_value = "\n")]
+    terminal: String,
 }
 
 #[tokio::main]
@@ -61,6 +65,7 @@ async fn main() -> anyhow::Result<()> {
         lines: cli.lines,
         prompt,
         model: cli.model.clone(),
+        terminal: cli.terminal.clone(),
     };
 
     let ollama = Ollama::try_new(&cli.llm_url)?;

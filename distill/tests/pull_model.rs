@@ -55,6 +55,7 @@ async fn pulls_missing_model() {
         lines: 1,
         prompt: "Summarize: {{current}}".into(),
         model: "phi4".into(),
+        terminal: "\n".into(),
     };
     let ollama = Ollama::try_new(format!("http://{}", addr)).unwrap();
     let input = BufReader::new("hello".as_bytes());
@@ -65,7 +66,7 @@ async fn pulls_missing_model() {
 
     let mut out = String::new();
     r.read_to_string(&mut out).await.unwrap();
-    assert_eq!(out.trim(), "ok");
+    assert_eq!(out, "ok\n\n");
 
     assert_eq!(*hits.lock().unwrap(), 2); // two chat calls
     handle.abort();

@@ -26,9 +26,10 @@ async fn run_streams_output() {
         lines: 1,
         prompt: "Summarize: {{current}}".into(),
         model: "llama3".into(),
+        terminal: "\n".into(),
     };
     let input = BufReader::new("hi".as_bytes());
     let mut out = Vec::new();
     run(cfg, ollama, input, &mut out).await.unwrap();
-    assert_eq!(std::str::from_utf8(&out).unwrap(), "foobar\n");
+    assert_eq!(std::str::from_utf8(&out).unwrap(), "foobar\n\n");
 }
