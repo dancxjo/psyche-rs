@@ -36,7 +36,7 @@ struct Cli {
     llm_url: String,
 
     /// Model name
-    #[arg(long, default_value = "llama3")]
+    #[arg(long, default_value = "phi4")]
     model: String,
 }
 
