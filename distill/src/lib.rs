@@ -12,6 +12,7 @@
 //!     lines: 1,
 //!     prompt: "Summarize: {{current}}".into(),
 //!     model: "llama3".into(),
+//!     terminal: "\n".into(),
 //! };
 //! let ollama = ollama_rs::Ollama::try_new("http://localhost:11434")?;
 //! distill::run(cfg, ollama, tokio::io::BufReader::new(stdin()), stdout()).await?;
@@ -38,6 +39,8 @@ pub struct Config {
     pub prompt: String,
     /// Model name for the Ollama API.
     pub model: String,
+    /// Delimiter printed after each response
+    pub terminal: String,
 }
 
 /// Processes the input stream and writes summaries to the output stream.
@@ -56,6 +59,7 @@ where
             let current = batch.join("\n");
             batch.clear();
             let summary = summarize_into(&ollama, &cfg, &previous, &current, &mut output).await?;
+            output.write_all(cfg.terminal.as_bytes()).await?;
             output.write_all(b"\n").await?;
             if cfg.continuous {
                 previous = summary;
@@ -66,6 +70,7 @@ where
     if !batch.is_empty() {
         let current = batch.join("\n");
         let _ = summarize_into(&ollama, &cfg, &previous, &current, &mut output).await?;
+        output.write_all(cfg.terminal.as_bytes()).await?;
         output.write_all(b"\n").await?;
     }
 
