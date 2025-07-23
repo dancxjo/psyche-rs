@@ -11,7 +11,7 @@ tera = "1.20.0"
 tokio = { version = "1.46.1", features = ["full"] }
 tokio-stream = "0.1.17"
 tracing = "0.1.41"
-tracing-subscriber = "0.3.19"
+tracing-subscriber = { version = "0.3.19", features = ["env-filter"] }
 
 [dev-dependencies]
 assert_cmd = "2.0.17"
