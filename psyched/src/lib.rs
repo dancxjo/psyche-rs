@@ -19,11 +19,19 @@ pub mod llm_config;
 mod wit;
 
 /// Identity information loaded from `soul/identity.toml`.
+fn default_name() -> String {
+    "Unknown".into()
+}
+
 #[derive(Deserialize)]
 pub struct Identity {
+    #[serde(default = "default_name")]
     pub name: String,
     pub role: Option<String>,
     pub purpose: Option<String>,
+    /// Wits available to this identity.
+    #[serde(default)]
+    pub wit: IndexMap<String, wit::WitConfig>,
 }
 
 /// Read a sensation from a Unix stream until a line containing `---` is found.
@@ -50,53 +58,43 @@ async fn read_sensation(stream: UnixStream) -> Result<Sensation> {
     })
 }
 
-#[derive(Deserialize, Clone)]
-struct PipelineWitConfig {
-    input_kinds: Vec<String>,
-    output_kind: String,
-    #[allow(dead_code)]
-    prompt_template: Option<String>,
-    beat_mod: usize,
-    #[serde(default)]
-    postprocess: Option<String>,
-}
-
-#[derive(Deserialize)]
-struct Config {
-    pipeline: IndexMap<String, PipelineWitConfig>,
-    #[serde(default)]
-    wit: IndexMap<String, wit::WitConfig>,
-}
-
-async fn load_config(path: &Path) -> Result<Config> {
+async fn load_identity(path: &Path) -> Result<Identity> {
     if path.exists() {
         let text = tokio::fs::read_to_string(path).await?;
         Ok(toml::from_str(&text)?)
     } else {
-        let mut map = IndexMap::new();
-        map.insert(
+        let mut wit = IndexMap::new();
+        wit.insert(
             "combobulator".into(),
-            PipelineWitConfig {
-                input_kinds: vec!["sensation/chat".into()],
-                output_kind: "instant".into(),
-                prompt_template: None,
+            wit::WitConfig {
+                input: "sensation/chat".into(),
+                output: "instant".into(),
+                prompt: "{input}".into(),
+                priority: 0,
                 beat_mod: 1,
+                feedback: None,
+                llm: None,
                 postprocess: None,
             },
         );
-        map.insert(
+        wit.insert(
             "memory".into(),
-            PipelineWitConfig {
-                input_kinds: vec!["instant".into()],
-                output_kind: "situation".into(),
-                prompt_template: None,
+            wit::WitConfig {
+                input: "instant".into(),
+                output: "situation".into(),
+                prompt: "{input}".into(),
+                priority: 0,
                 beat_mod: 4,
+                feedback: None,
+                llm: None,
                 postprocess: Some("flatten_links".into()),
             },
         );
-        Ok(Config {
-            pipeline: map,
-            wit: IndexMap::new(),
+        Ok(Identity {
+            name: "Unknown".into(),
+            role: None,
+            purpose: None,
+            wit,
         })
     }
 }
@@ -104,7 +102,7 @@ async fn load_config(path: &Path) -> Result<Config> {
 struct LoadedPipelineWit {
     #[allow(dead_code)]
     name: String,
-    cfg: PipelineWitConfig,
+    cfg: wit::WitConfig,
     wit: PipelineWit,
     llm: std::sync::Arc<psyche::llm::LlmInstance>,
     offsets: HashMap<String, usize>,
@@ -167,13 +165,10 @@ impl LoadedWit {
 impl LoadedPipelineWit {
     fn new(
         name: String,
-        cfg: PipelineWitConfig,
+        cfg: wit::WitConfig,
         llm: std::sync::Arc<psyche::llm::LlmInstance>,
     ) -> Self {
-        let prompt_template = cfg
-            .prompt_template
-            .clone()
-            .unwrap_or_else(|| "{input}".to_string());
+        let prompt_template = cfg.prompt.clone();
         let pp: Option<
             fn(&[psyche::models::MemoryEntry], &str) -> anyhow::Result<serde_json::Value>,
         > = match name.as_str() {
@@ -188,8 +183,8 @@ impl LoadedPipelineWit {
         let wit = PipelineWit {
             config: psyche::wit::WitConfig {
                 name: name.clone(),
-                input_kind: cfg.input_kinds.first().cloned().unwrap_or_default(),
-                output_kind: cfg.output_kind.clone(),
+                input_kind: cfg.input.clone(),
+                output_kind: cfg.output.clone(),
                 prompt_template,
                 post_process: pp,
             },
@@ -208,13 +203,12 @@ impl LoadedPipelineWit {
     async fn collect(&mut self, store: &impl db_memory::QueryMemory) -> Result<Vec<MemoryEntry>> {
         trace!(wit = %self.name, "collecting inputs");
         let mut out = Vec::new();
-        for kind in &self.cfg.input_kinds {
-            let entries = store.query_by_kind(kind).await?;
-            let offset = self.offsets.entry(kind.clone()).or_insert(0);
-            if *offset < entries.len() {
-                out.extend_from_slice(&entries[*offset..]);
-                *offset = entries.len();
-            }
+        let kind = &self.cfg.input;
+        let entries = store.query_by_kind(kind).await?;
+        let offset = self.offsets.entry(kind.clone()).or_insert(0);
+        if *offset < entries.len() {
+            out.extend_from_slice(&entries[*offset..]);
+            *offset = entries.len();
         }
         if !out.is_empty() {
             debug!(wit = %self.name, count = out.len(), "input entries collected");
@@ -259,7 +253,7 @@ async fn fire_and_forget_recall(socket: &Path, query: &str) -> std::io::Result<(
 pub async fn run(
     socket: PathBuf,
     soul: PathBuf,
-    pipeline: PathBuf,
+    identity: PathBuf,
     beat_duration: std::time::Duration,
     registry: std::sync::Arc<psyche::llm::LlmRegistry>,
     profile: std::sync::Arc<psyche::llm::LlmProfile>,
@@ -274,17 +268,18 @@ pub async fn run(
     let memory_dir = soul.join("memory");
     tokio::fs::create_dir_all(&memory_dir).await?;
 
-    let cfg_path = pipeline;
-    let cfg = load_config(&cfg_path).await?;
-    debug!(pipeline = %cfg_path.display(), "loaded pipeline configuration");
+    let cfg_path = identity;
+    let identity = load_identity(&cfg_path).await?;
+    debug!(identity = %cfg_path.display(), "loaded identity configuration");
     let mut llm_rr = 0usize;
-    let mut pipeline: Vec<LoadedPipelineWit> = cfg
-        .pipeline
-        .into_iter()
+    let mut pipeline: Vec<LoadedPipelineWit> = identity
+        .wit
+        .iter()
+        .filter(|(_, c)| c.priority == 0)
         .map(|(n, c)| {
             let llm = llms[llm_rr % llms.len()].clone();
             llm_rr += 1;
-            LoadedPipelineWit::new(n, c, llm)
+            LoadedPipelineWit::new(n.clone(), c.clone(), llm)
         })
         .collect();
 
@@ -322,9 +317,10 @@ pub async fn run(
     let memory_store =
         db_memory::DbMemory::new(memory_dir.clone(), backend, &*registry.embed, &*profile);
     let mut wit_round_robin = 1usize.min(llms.len());
-    let mut wits: Vec<LoadedWit> = cfg
+    let mut wits: Vec<LoadedWit> = identity
         .wit
         .into_iter()
+        .filter(|(_, c)| c.priority > 0)
         .enumerate()
         .map(|(i, (n, c))| {
             let llm = if let Some(ref name) = c.llm {
@@ -393,7 +389,7 @@ pub async fn run(
                         if input.is_empty() { continue; }
                         let mut output = d.wit.distill(input).await?;
                         for entry in &mut output {
-                            entry.kind = d.cfg.output_kind.clone();
+                            entry.kind = d.cfg.output.clone();
                             if let Some(ref post) = d.cfg.postprocess {
                                 if post == "flatten_links" {
                                     entry.what = flatten_links(&entry.what);

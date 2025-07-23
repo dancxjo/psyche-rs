@@ -1,12 +1,12 @@
-[pipeline.combobulator]
-input_kinds = ["sensation/chat"]
-output_kind = "instant"
-prompt_template = "prompts/combobulator.txt"
+[wit.combobulator]
+input = "sensation/chat"
+output = "instant"
+prompt = "prompts/combobulator.txt"
 beat_mod = 1
 
-[pipeline.memory]
-input_kinds = ["instant"]
-output_kind = "situation"
-prompt_template = "prompts/memory.txt"
+[wit.memory]
+input = "instant"
+output = "situation"
+prompt = "prompts/memory.txt"
 beat_mod = 4
 postprocess = "flatten_links"

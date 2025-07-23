@@ -25,9 +25,9 @@ pub struct Cli {
     #[arg(long, default_value = "soul")]
     pub soul: PathBuf,
 
-    /// Path to TOML pipeline config. If relative, resolved against soul/config/.
-    #[arg(long, default_value = "pipeline.toml")]
-    pub pipeline: PathBuf,
+    /// Path to identity file containing Wit configuration.
+    #[arg(long, default_value = "identity.toml")]
+    pub identity: PathBuf,
 
     /// Path to LLM config. If relative, resolved against soul/config/.
     #[arg(long, default_value = "llm.toml")]
@@ -72,11 +72,11 @@ async fn main() -> anyhow::Result<()> {
         PathBuf::from("/etc/soul")
     };
 
-    // Resolve pipeline path
-    let pipeline = if cli.pipeline.is_relative() {
-        soul.join("config").join(&cli.pipeline)
+    // Resolve identity path
+    let identity = if cli.identity.is_relative() {
+        soul.join(&cli.identity)
     } else {
-        cli.pipeline.clone()
+        cli.identity.clone()
     };
 
     // Resolve llm config path
@@ -110,7 +110,7 @@ async fn main() -> anyhow::Result<()> {
     let profile = first.profile.clone();
     let llms: Vec<_> = llms.into_iter().map(std::sync::Arc::new).collect();
 
-    debug!("\u{1F4C1}  Loading pipeline from {}", pipeline.display());
+    debug!("\u{1F4C1}  Loading identity from {}", identity.display());
 
     std::env::set_var("QDRANT_URL", &cli.qdrant_url);
     std::env::set_var("NEO4J_URL", &cli.neo4j_url);
@@ -123,7 +123,7 @@ async fn main() -> anyhow::Result<()> {
         .run_until(psyched::run(
             cli.socket,
             soul,
-            pipeline,
+            identity,
             std::time::Duration::from_millis(cli.beat_ms),
             registry,
             profile,
