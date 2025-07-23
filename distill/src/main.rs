@@ -36,7 +36,7 @@ struct Cli {
     llm_url: String,
 
     /// Model name
-    #[arg(long, default_value = "phi4")]
+    #[arg(long, default_value = "gemma3n")]
     model: String,
 
     /// Delimiter printed after each response
