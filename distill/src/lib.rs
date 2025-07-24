@@ -81,11 +81,13 @@ where
                 history.iter().cloned().collect::<Vec<_>>().join("\n\n")
             };
             let summary = summarize_into(&ollama, &cfg, &previous, &current, &mut output).await?;
-            output.write_all(cfg.terminal.as_bytes()).await?;
-            if cfg.continuous && cfg.history_depth > 0 {
-                history.push_back(summary);
-                while history.len() > cfg.history_depth {
-                    history.pop_front();
+            if !summary.is_empty() || !cfg.trim_newlines {
+                output.write_all(cfg.terminal.as_bytes()).await?;
+                if cfg.continuous && cfg.history_depth > 0 {
+                    history.push_back(summary);
+                    while history.len() > cfg.history_depth {
+                        history.pop_front();
+                    }
                 }
             }
             if cfg.beat > 0 {
@@ -102,11 +104,13 @@ where
             history.iter().cloned().collect::<Vec<_>>().join("\n\n")
         };
         let summary = summarize_into(&ollama, &cfg, &previous, &current, &mut output).await?;
-        output.write_all(cfg.terminal.as_bytes()).await?;
-        if cfg.continuous && cfg.history_depth > 0 {
-            history.push_back(summary);
-            while history.len() > cfg.history_depth {
-                history.pop_front();
+        if !summary.is_empty() || !cfg.trim_newlines {
+            output.write_all(cfg.terminal.as_bytes()).await?;
+            if cfg.continuous && cfg.history_depth > 0 {
+                history.push_back(summary);
+                while history.len() > cfg.history_depth {
+                    history.pop_front();
+                }
             }
         }
     }
@@ -172,8 +176,10 @@ where
         out.clone()
     };
 
-    output.write_all(processed.as_bytes()).await?;
-    output.flush().await?;
+    if !(cfg.trim_newlines && processed.is_empty()) {
+        output.write_all(processed.as_bytes()).await?;
+        output.flush().await?;
+    }
 
     debug!(response = %processed, "llm response");
     Ok(processed)
