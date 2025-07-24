@@ -205,3 +205,36 @@ async fn run_no_trim_preserves_blank_lines() {
     run(cfg, ollama, input, &mut out).await.unwrap();
     assert_eq!(std::str::from_utf8(&out).unwrap(), "foo\n\nbar\n");
 }
+
+#[tokio::test]
+async fn run_skips_empty_summaries() {
+    let server = MockServer::start_async().await;
+    let body = concat!(
+        "{\"model\":\"llama3\",\"created_at\":\"now\",\"response\":\"\\n\",\"done\":false}\n",
+        "{\"model\":\"llama3\",\"created_at\":\"now\",\"response\":\"\\n\",\"done\":true}\n",
+    );
+    server
+        .mock_async(|when, then| {
+            when.method(Method::POST).path("/api/generate");
+            then.status(200)
+                .header("content-type", "application/json")
+                .body(body);
+        })
+        .await;
+
+    let ollama = Ollama::try_new(&server.base_url()).unwrap();
+    let cfg = Config {
+        continuous: false,
+        lines: 1,
+        prompt: "Summarize: {{current}}".into(),
+        model: "llama3".into(),
+        terminal: "\n".into(),
+        history_depth: 1,
+        beat: 0,
+        trim_newlines: true,
+    };
+    let input = BufReader::new("hi".as_bytes());
+    let mut out = Vec::new();
+    run(cfg, ollama, input, &mut out).await.unwrap();
+    assert!(std::str::from_utf8(&out).unwrap().is_empty());
+}
