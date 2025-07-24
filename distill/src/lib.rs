@@ -68,6 +68,9 @@ where
     let mut history: VecDeque<String> = VecDeque::new();
 
     while let Some(line) = reader.next_line().await? {
+        if cfg.trim_newlines && line.trim().is_empty() {
+            continue;
+        }
         batch.push(line);
         if batch.len() >= cfg.lines {
             let current = batch.join("\n");
@@ -153,16 +156,27 @@ where
                         continue;
                     }
                     output_token(&text);
-                    output.write_all(text.as_bytes()).await?;
-                    output.flush().await?;
                     out.push_str(&text);
                 }
             }
             Err(_) => break,
         }
     }
-    debug!(response = %out, "llm response");
-    Ok(out)
+
+    let processed = if cfg.trim_newlines {
+        out.lines()
+            .filter(|l| !l.trim().is_empty())
+            .collect::<Vec<_>>()
+            .join("\n")
+    } else {
+        out.clone()
+    };
+
+    output.write_all(processed.as_bytes()).await?;
+    output.flush().await?;
+
+    debug!(response = %processed, "llm response");
+    Ok(processed)
 }
 
 fn output_token(token: &str) {
