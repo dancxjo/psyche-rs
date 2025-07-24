@@ -68,7 +68,7 @@ async fn pulls_missing_model() {
 
     let mut out = String::new();
     r.read_to_string(&mut out).await.unwrap();
-    assert_eq!(out, "ok\n\n");
+    assert_eq!(out, "ok\n");
 
     assert_eq!(*hits.lock().unwrap(), 2); // two generate calls
     handle.abort();

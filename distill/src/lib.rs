@@ -43,7 +43,10 @@ pub struct Config {
     pub prompt: String,
     /// Model name for the Ollama API.
     pub model: String,
-    /// Delimiter printed after each response
+    /// Delimiter printed after each response.
+    ///
+    /// The delimiter itself is written without an extra newline, so using
+    /// `"\n"` results in a single trailing newline per summary.
     pub terminal: String,
     /// How many prior summaries to include in {{previous}}
     pub history_depth: usize,
@@ -73,7 +76,6 @@ where
             };
             let summary = summarize_into(&ollama, &cfg, &previous, &current, &mut output).await?;
             output.write_all(cfg.terminal.as_bytes()).await?;
-            output.write_all(b"\n").await?;
             if cfg.continuous && cfg.history_depth > 0 {
                 history.push_back(summary);
                 while history.len() > cfg.history_depth {
@@ -95,7 +97,6 @@ where
         };
         let summary = summarize_into(&ollama, &cfg, &previous, &current, &mut output).await?;
         output.write_all(cfg.terminal.as_bytes()).await?;
-        output.write_all(b"\n").await?;
         if cfg.continuous && cfg.history_depth > 0 {
             history.push_back(summary);
             while history.len() > cfg.history_depth {
