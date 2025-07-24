@@ -51,6 +51,10 @@ struct Cli {
     /// Delimiter printed after each response
     #[arg(long, default_value = "\n")]
     terminal: String,
+
+    /// Do not trim newline tokens from the LLM output
+    #[arg(long)]
+    no_trim: bool,
 }
 
 #[tokio::main]
@@ -77,6 +81,7 @@ async fn main() -> anyhow::Result<()> {
         terminal: cli.terminal.clone(),
         history_depth: cli.history_depth,
         beat: cli.beat,
+        trim_newlines: !cli.no_trim,
     };
 
     let ollama = Ollama::try_new(&cli.llm_url)?;
