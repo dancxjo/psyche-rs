@@ -58,6 +58,7 @@ async fn pulls_missing_model() {
         terminal: "\n".into(),
         history_depth: 1,
         beat: 0,
+        trim_newlines: true,
     };
     let ollama = Ollama::try_new(format!("http://{}", addr)).unwrap();
     let input = BufReader::new("hello".as_bytes());

@@ -15,6 +15,7 @@
 //!     terminal: "\n".into(),
 //!     history_depth: 1,
 //!     beat: 0,
+//!     trim_newlines: true,
 //! };
 //! let ollama = ollama_rs::Ollama::try_new("http://localhost:11434")?;
 //! distill::run(cfg, ollama, tokio::io::BufReader::new(stdin()), stdout()).await?;
@@ -52,6 +53,8 @@ pub struct Config {
     pub history_depth: usize,
     /// Delay between batches in milliseconds
     pub beat: u64,
+    /// Trim newline tokens emitted by the LLM
+    pub trim_newlines: bool,
 }
 
 /// Processes the input stream and writes summaries to the output stream.
@@ -145,6 +148,9 @@ where
                     let mut text = resp.response;
                     if let Some(t) = text.strip_prefix('\u{FEFF}') {
                         text = t.to_string();
+                    }
+                    if cfg.trim_newlines && text == "\n" {
+                        continue;
                     }
                     output_token(&text);
                     output.write_all(text.as_bytes()).await?;
