@@ -81,7 +81,7 @@ where
                 history.iter().cloned().collect::<Vec<_>>().join("\n\n")
             };
             let summary = summarize_into(&ollama, &cfg, &previous, &current, &mut output).await?;
-            if !summary.is_empty() || !cfg.trim_newlines {
+            if !summary.is_empty() {
                 output.write_all(cfg.terminal.as_bytes()).await?;
                 if cfg.continuous && cfg.history_depth > 0 {
                     history.push_back(summary);
@@ -104,7 +104,7 @@ where
             history.iter().cloned().collect::<Vec<_>>().join("\n\n")
         };
         let summary = summarize_into(&ollama, &cfg, &previous, &current, &mut output).await?;
-        if !summary.is_empty() || !cfg.trim_newlines {
+        if !summary.is_empty() {
             output.write_all(cfg.terminal.as_bytes()).await?;
             if cfg.continuous && cfg.history_depth > 0 {
                 history.push_back(summary);
@@ -167,6 +167,7 @@ where
         }
     }
 
+    let text_empty = out.trim().is_empty();
     let processed = if cfg.trim_newlines {
         out.lines()
             .filter(|l| !l.trim().is_empty())
@@ -176,13 +177,17 @@ where
         out.clone()
     };
 
-    if !(cfg.trim_newlines && processed.is_empty()) {
+    if !text_empty {
         output.write_all(processed.as_bytes()).await?;
         output.flush().await?;
     }
 
     debug!(response = %processed, "llm response");
-    Ok(processed)
+    if text_empty {
+        Ok(String::new())
+    } else {
+        Ok(processed)
+    }
 }
 
 fn output_token(token: &str) {
