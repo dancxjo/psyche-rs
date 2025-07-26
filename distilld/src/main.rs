@@ -60,6 +60,10 @@ struct Cli {
     /// Do not trim newline tokens from the LLM output
     #[arg(long)]
     no_trim: bool,
+
+    /// Run diagnostics and exit
+    #[arg(long)]
+    test: bool,
 }
 
 #[tokio::main]
@@ -68,6 +72,11 @@ async fn main() -> anyhow::Result<()> {
     tracing_subscriber::fmt()
         .with_env_filter(EnvFilter::from_default_env())
         .init();
+
+    if cli.test {
+        println!("ok");
+        return Ok(());
+    }
 
     maybe_daemonize(cli.daemon)?;
 

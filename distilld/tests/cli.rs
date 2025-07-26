@@ -8,3 +8,13 @@ fn show_help() {
         .assert()
         .success();
 }
+
+#[test]
+fn test_flag_exits() {
+    Command::cargo_bin("distilld")
+        .unwrap()
+        .arg("--test")
+        .assert()
+        .success()
+        .stdout("ok\n");
+}
