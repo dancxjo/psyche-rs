@@ -37,6 +37,8 @@ async fn wit_produces_output() {
         semaphore: std::sync::Arc::new(tokio::sync::Semaphore::new(1)),
     });
     let local = LocalSet::new();
+    let mem_store = rememberd::FileStore::new(soul_dir.join("memory"));
+    let _mem_task = local.spawn_local(rememberd::run(memory_sock.clone(), mem_store));
     let server = local.spawn_local(psyched::run(
         socket.clone(),
         soul_dir.clone(),
@@ -66,6 +68,8 @@ async fn wit_produces_output() {
             tokio::time::sleep(std::time::Duration::from_millis(300)).await;
             tx.send(()).unwrap();
             server.await.unwrap().unwrap();
+            _mem_task.abort();
+            _mem_task.abort();
 
             let path = soul_dir.join("memory/reply.jsonl");
             let content = tokio::fs::read_to_string(&path).await.unwrap();
@@ -110,6 +114,8 @@ async fn feedback_forwards_output() {
         semaphore: std::sync::Arc::new(tokio::sync::Semaphore::new(1)),
     });
     let local = LocalSet::new();
+    let mem_store = rememberd::FileStore::new(soul_dir.join("memory"));
+    let _mem_task = local.spawn_local(rememberd::run(memory_sock.clone(), mem_store));
     let server = local.spawn_local(psyched::run(
         socket.clone(),
         soul_dir.clone(),

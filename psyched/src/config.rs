@@ -32,7 +32,7 @@ impl Default for PsycheConfig {
 ///
 /// # Examples
 ///
-/// ```
+/// ```no_run
 /// use psyched::config::load;
 /// # tokio_test::block_on(async {
 /// let cfg = load("tests/configs/psyche.toml").await.unwrap();

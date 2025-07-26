@@ -23,6 +23,8 @@ async fn sensation_results_in_instant() {
 
     let (tx, rx) = tokio::sync::oneshot::channel();
     let local = LocalSet::new();
+    let mem_store = rememberd::FileStore::new(soul_dir.join("memory"));
+    let mem_task = local.spawn_local(rememberd::run(memory_sock.clone(), mem_store));
     let registry = std::sync::Arc::new(psyche::llm::LlmRegistry {
         chat: Box::new(psyche::llm::mock_chat::MockChat::default()),
         embed: Box::new(psyche::llm::mock_embed::MockEmbed::default()),
@@ -69,6 +71,7 @@ async fn sensation_results_in_instant() {
             tokio::time::sleep(std::time::Duration::from_millis(300)).await;
             let _ = tx.send(());
             server.await.unwrap().unwrap();
+            mem_task.abort();
 
             let sensation_path = memory_path.clone();
             let content = tokio::fs::read_to_string(&sensation_path).await.unwrap();
