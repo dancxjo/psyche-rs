@@ -1,5 +1,5 @@
 use clap::Parser;
-use daemon_common::LogLevel;
+use daemon_common::{maybe_daemonize, LogLevel};
 use std::path::PathBuf;
 use tokio::fs;
 use toml;
@@ -56,6 +56,10 @@ pub struct Cli {
     /// Neo4j password
     #[arg(long, default_value = "password")]
     pub neo4j_pass: String,
+
+    /// Run as a background daemon
+    #[arg(short = 'd', long)]
+    pub daemon: bool,
 }
 
 #[tokio::main]
@@ -64,6 +68,8 @@ async fn main() -> anyhow::Result<()> {
     tracing_subscriber::fmt()
         .with_max_level(tracing_subscriber::filter::LevelFilter::from(cli.log_level))
         .init();
+
+    maybe_daemonize(cli.daemon)?;
 
     // Canonicalize soul path
     let soul = if cli.soul.exists() {

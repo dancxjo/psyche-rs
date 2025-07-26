@@ -14,7 +14,7 @@ cat /var/log/dmesg \
 
 # 🧠 Quick — factual distillation @ localhost (slow)
 (
-  distill -n 25 --continuous \
+  distilld -n 25 --continuous \
     --model gemma3:27b \
     --llm-url http://10.0.0.180:11434 \
     --prompt "Summarize the most important facts from the following system logs.\n\n{{current}}\n\nPrevious:\n{{previous}}\n\nRespond with one concise, factual sentence. Do not speculate." \
@@ -24,7 +24,7 @@ cat /var/log/dmesg \
 
 # 🌀 Combobulator — narrative building
 (
-  distill -n 25 --continuous \
+  distilld -n 25 --continuous \
     --model gemma3:27b \
     --llm-url http://192.168.1.123:11434 \
     --prompt "Summarize the following system state summaries into a coherent description of what is going on. Stay grounded and do not speculate.\n\n{{current}}\n\nPrior summaries:\n\n{{previous}}\n\nRespond with one sentence." \
@@ -34,7 +34,7 @@ cat /var/log/dmesg \
 
 # 🔬 Reflector — self-thought 
 (
-  distill -n 25 --continuous \
+  distilld -n 25 --continuous \
     --model gemma3n \
     --llm-url http://localhost:11434 \
     --prompt "Read the following logs and summarize what I—the system—am experiencing, as if I were thinking to myself.\n\n{{current}}\n\nPrevious:\n\n{{previous}}\n\nRespond with a first-person sentence. Be factual but introspective." \

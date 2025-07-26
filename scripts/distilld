@@ -1,0 +1,4 @@
+#!/bin/sh
+
+# Run the distilld daemon in development mode
+cargo run -p distilld -- "$@"

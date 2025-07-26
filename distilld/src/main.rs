@@ -1,5 +1,6 @@
 use clap::Parser;
-use distill::{run, Config};
+use daemon_common::maybe_daemonize;
+use distilld::{run, Config};
 use ollama_rs::Ollama;
 use std::path::PathBuf;
 use tokio::fs::File;
@@ -10,7 +11,7 @@ const CONT_PROMPT: &str = "This was the previous situation: {{previous}}\n\nThen
 const SIMPLE_PROMPT: &str = "These things happened: {{current}}\n\nMake a one sentence summary that explains the entire story.";
 
 #[derive(Parser, Debug)]
-#[command(name = "distill", version)]
+#[command(name = "distilld", version)]
 struct Cli {
     /// Run continuously, reusing each summary as {{previous}}
     #[arg(short = 'c', long)]
@@ -33,8 +34,12 @@ struct Cli {
     output: Option<std::path::PathBuf>,
 
     /// Number of previous summaries to include in {{previous}}
-    #[arg(short = 'd', long, default_value_t = 1)]
+    #[arg(short = 'H', long, default_value_t = 1)]
     history_depth: usize,
+
+    /// Run as a background daemon
+    #[arg(short = 'd', long)]
+    daemon: bool,
 
     /// Milliseconds to wait between batches
     #[arg(short = 'b', long, default_value_t = 0)]
@@ -63,6 +68,8 @@ async fn main() -> anyhow::Result<()> {
     tracing_subscriber::fmt()
         .with_env_filter(EnvFilter::from_default_env())
         .init();
+
+    maybe_daemonize(cli.daemon)?;
 
     let prompt = cli.prompt.unwrap_or_else(|| {
         if cli.continuous {

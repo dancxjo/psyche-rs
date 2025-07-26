@@ -6,7 +6,7 @@
 //!           --neo4j-user neo4j --neo4j-pass password
 //! ```
 use clap::Parser;
-use daemon_common::LogLevel;
+use daemon_common::{maybe_daemonize, LogLevel};
 use std::path::PathBuf;
 
 use neo4rs::Graph;
@@ -51,6 +51,10 @@ struct Cli {
     /// Neo4j password
     #[arg(long, default_value = "password")]
     neo4j_pass: String,
+
+    /// Run as a background daemon
+    #[arg(short = 'd', long)]
+    daemon: bool,
 }
 
 #[tokio::main]
@@ -59,6 +63,8 @@ async fn main() -> anyhow::Result<()> {
     tracing_subscriber::fmt()
         .with_max_level(tracing_subscriber::filter::LevelFilter::from(cli.log_level))
         .init();
+
+    maybe_daemonize(cli.daemon)?;
 
     let (embed, profile): (Box<dyn psyche::llm::CanEmbed>, psyche::llm::LlmProfile) =
         if let Some(path) = cli.llm_profile.as_deref() {

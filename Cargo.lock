@@ -882,8 +882,19 @@ dependencies = [
 name = "daemon-common"
 version = "0.1.0"
 dependencies = [
+ "anyhow",
  "clap",
+ "daemonize",
  "tracing-subscriber",
+]
+
+[[package]]
+name = "daemonize"
+version = "0.5.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "ab8bfdaacb3c887a54d41bdf48d3af8873b3f5566469f8ba21b92057509f116e"
+dependencies = [
+ "libc",
 ]
 
 [[package]]
@@ -1049,12 +1060,13 @@ dependencies = [
 ]
 
 [[package]]
-name = "distill"
+name = "distilld"
 version = "0.1.0"
 dependencies = [
  "anyhow",
  "assert_cmd",
  "clap",
+ "daemon-common",
  "httpmock 0.7.0",
  "hyper 0.14.32",
  "indicatif",

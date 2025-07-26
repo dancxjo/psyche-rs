@@ -6,4 +6,4 @@ whisper-base.en.bin
 all_souls/layka/tts/tts/tts_models--en--vctk--vits/config.json
 all_souls/layka/tts/tts/tts_models--en--vctk--vits/model_file.pth
 all_souls/layka/tts/tts/tts_models--en--vctk--vits/speaker_ids.json
-distill/dmesg.txt
+distilld/dmesg.txt

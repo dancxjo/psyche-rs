@@ -1,5 +1,5 @@
 use clap::Parser;
-use daemon_common::LogLevel;
+use daemon_common::{LogLevel, maybe_daemonize};
 use std::path::PathBuf;
 
 #[derive(Parser, Debug)]
@@ -20,6 +20,10 @@ struct Cli {
     /// Logging verbosity level
     #[arg(long, default_value = "info")]
     log_level: LogLevel,
+
+    /// Run as a background daemon
+    #[arg(short = 'd', long)]
+    daemon: bool,
 }
 
 #[tokio::main]
@@ -29,6 +33,7 @@ async fn main() -> anyhow::Result<()> {
         // .with_env_filter(tracing_subscriber::EnvFilter::from_default_env())
         .with_max_level(tracing_subscriber::filter::LevelFilter::from(cli.log_level))
         .init();
+    maybe_daemonize(cli.daemon)?;
     heard::run(cli.socket, cli.listen, cli.whisper_model).await
 }
 
