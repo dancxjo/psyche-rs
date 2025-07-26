@@ -24,6 +24,9 @@ async-trait = "0.1"
 
 [dev-dependencies]
 tempfile = "3"
+rememberd = { path = "../rememberd" }
+tokio = { version = "1", features = ["macros"] }
+tokio-test = "0.4"
 
 [lib]
 path = "src/lib.rs"

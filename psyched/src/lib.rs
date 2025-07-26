@@ -20,6 +20,7 @@ mod db_memory;
 pub mod distillers;
 mod file_memory;
 pub mod llm_config;
+mod memory_client;
 pub mod router;
 mod wit;
 
@@ -349,8 +350,13 @@ pub async fn run(
 
     trace!("using memory backend");
 
-    let memory_store =
-        db_memory::DbMemory::new(memory_dir.clone(), backend, &*registry.embed, &*profile);
+    let memory_store = db_memory::DbMemory::new(
+        memory_dir.clone(),
+        backend,
+        &*registry.embed,
+        &*profile,
+        memory_sock.clone(),
+    );
     let mut wit_round_robin = 1usize.min(llms.len());
     let mut wits: Vec<LoadedWit> = identity
         .wit

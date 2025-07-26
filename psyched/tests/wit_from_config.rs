@@ -37,6 +37,8 @@ async fn wit_from_config_runs() {
         semaphore: std::sync::Arc::new(tokio::sync::Semaphore::new(1)),
     });
     let local = LocalSet::new();
+    let mem_store = rememberd::FileStore::new(soul_dir.join("memory"));
+    let mem_task = local.spawn_local(rememberd::run(memory_sock.clone(), mem_store));
     let server = local.spawn_local(psyched::run(
         socket.clone(),
         soul_dir.clone(),
@@ -65,6 +67,7 @@ async fn wit_from_config_runs() {
             tokio::time::sleep(std::time::Duration::from_millis(250)).await;
             tx.send(()).unwrap();
             server.await.unwrap().unwrap();
+            mem_task.abort();
 
             let path = soul_dir.join("memory/reply.jsonl");
             let content = tokio::fs::read_to_string(&path).await.unwrap();

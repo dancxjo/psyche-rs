@@ -9,10 +9,11 @@ use serde_json::Value;
 use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::Arc;
-use tokio::io::AsyncWriteExt;
 use tokio::sync::Mutex;
 use tracing::{debug, trace};
 use uuid::Uuid;
+
+use crate::memory_client::MemoryClient;
 
 use async_trait::async_trait;
 
@@ -30,6 +31,7 @@ pub struct DbMemory<'a> {
     embed: &'a dyn CanEmbed,
     profile: &'a LlmProfile,
     db_offsets: Arc<Mutex<HashMap<String, String>>>,
+    client: MemoryClient,
 }
 
 impl<'a> Clone for DbMemory<'a> {
@@ -41,6 +43,7 @@ impl<'a> Clone for DbMemory<'a> {
             embed: self.embed,
             profile: self.profile,
             db_offsets: self.db_offsets.clone(),
+            client: self.client.clone(),
         }
     }
 }
@@ -51,6 +54,7 @@ impl<'a> DbMemory<'a> {
         backend: Option<Arc<QdrantNeo4j>>,
         embed: &'a dyn CanEmbed,
         profile: &'a LlmProfile,
+        socket: PathBuf,
     ) -> Self {
         debug!(dir = %dir.display(), "initializing DbMemory");
         Self {
@@ -60,6 +64,7 @@ impl<'a> DbMemory<'a> {
             embed,
             profile,
             db_offsets: Arc::new(Mutex::new(HashMap::new())),
+            client: MemoryClient::new(socket),
         }
     }
 
@@ -179,59 +184,24 @@ RETURN e.how AS how, e.what AS what, e.when AS when, e.tags AS tags ORDER BY e.w
             return Ok(Vec::new());
         }
         debug!(count = entries.len(), "appending entries");
-        let mut file = if self.backend.is_none() {
-            let path = self.dir.join(format!(
-                "{}.jsonl",
-                entries[0].kind.split('/').next().unwrap()
-            ));
-            Some(
-                tokio::fs::OpenOptions::new()
-                    .append(true)
-                    .create(true)
-                    .open(&path)
-                    .await?,
-            )
-        } else {
-            None
-        };
         let mut out = Vec::new();
         for entry in entries {
-            let line = serde_json::to_string(entry)?;
-            if let Some(f) = file.as_mut() {
-                f.write_all(line.as_bytes()).await?;
-                f.write_all(b"\n").await?;
-            }
-            let id = self.persist(entry).await?;
-            out.push(id);
+            self.client
+                .memorize(&entry.kind, serde_json::to_value(entry)?)
+                .await?;
+            out.push(entry.id.to_string());
         }
         Ok(out)
     }
 
     pub async fn store_sensation(&self, sens: &Sensation) -> Result<String> {
-        if self.backend.is_none() {
-            let path = self.dir.join("sensation.jsonl");
-            let mut file = tokio::fs::OpenOptions::new()
-                .append(true)
-                .create(true)
-                .open(&path)
-                .await?;
-            let line = serde_json::to_string(sens)?;
-            file.write_all(line.as_bytes()).await?;
-            file.write_all(b"\n").await?;
-            trace!("stored sensation to file");
-        }
-        if let Some(backend) = &self.backend {
-            let vector = self.embed.embed(self.profile, &sens.text).await?;
-            let exp = Experience {
-                how: first_sentence(&sens.text),
-                what: parse_json_or_string(&sens.text),
-                when: Utc::now(),
-                tags: vec![sens.path.clone()],
-            };
-            let id = backend.store(&exp, &vector).await?;
-            return Ok(id);
-        }
-        Ok(String::new())
+        self.client
+            .memorize(
+                &format!("sensation{}", sens.path),
+                serde_json::to_value(sens)?,
+            )
+            .await?;
+        Ok(sens.id.clone())
     }
 
     async fn persist(&self, entry: &MemoryEntry) -> Result<String> {

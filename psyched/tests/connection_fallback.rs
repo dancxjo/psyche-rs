@@ -37,6 +37,8 @@ async fn run_without_backends() {
     });
 
     let local = LocalSet::new();
+    let mem_store = rememberd::FileStore::new(soul_dir.join("memory"));
+    let mem_task = local.spawn_local(rememberd::run(memory_sock.clone(), mem_store));
     let (tx, rx) = tokio::sync::oneshot::channel();
     let server = local.spawn_local(psyched::run(
         socket.clone(),
@@ -57,6 +59,7 @@ async fn run_without_backends() {
             tokio::time::sleep(std::time::Duration::from_millis(50)).await;
             tx.send(()).unwrap();
             server.await.unwrap().unwrap();
+            mem_task.abort();
         })
         .await;
 }
