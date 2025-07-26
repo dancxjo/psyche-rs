@@ -11,11 +11,16 @@ use std::path::{Path, PathBuf};
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
 use tokio::net::{UnixListener, UnixStream};
 use tracing::{debug, info, trace};
+
+pub use config::*;
 use uuid::Uuid;
 
+pub mod config;
 mod db_memory;
+pub mod distillers;
 mod file_memory;
 pub mod llm_config;
+pub mod router;
 mod wit;
 
 /// Identity information loaded from `soul/identity.toml`.
@@ -234,6 +239,16 @@ fn flatten_links(val: &serde_json::Value) -> serde_json::Value {
     }
 }
 
+async fn notify_router(router: &router::Router, entry: &MemoryEntry) {
+    if let Some(sock) = router.socket_for(&entry.kind) {
+        if let Ok(mut stream) = UnixStream::connect(sock).await {
+            if let Ok(line) = serde_json::to_string(entry) {
+                let _ = stream.write_all(line.as_bytes()).await;
+            }
+        }
+    }
+}
+
 async fn fire_and_forget_recall(socket: &Path, query: &str) -> std::io::Result<()> {
     if !socket.exists() {
         return Err(std::io::Error::new(
@@ -267,6 +282,26 @@ pub async fn run(
 
     let memory_dir = soul.join("memory");
     tokio::fs::create_dir_all(&memory_dir).await?;
+
+    // load distillation pipeline configuration and spawn distilld processes
+    let psyche_cfg_path = soul.join("psyche.toml");
+    let psyche_cfg = match config::load(&psyche_cfg_path).await {
+        Ok(cfg) => cfg,
+        Err(e) => {
+            tracing::debug!(error = %e, path = %psyche_cfg_path.display(), "no psyche config");
+            config::PsycheConfig::default()
+        }
+    };
+    let mut distillers: Vec<distillers::Distiller> = psyche_cfg
+        .distillers
+        .iter()
+        .cloned()
+        .map(distillers::Distiller::new)
+        .collect();
+    for d in &mut distillers {
+        let _ = d.spawn().await;
+    }
+    let router = router::Router::from_configs(&psyche_cfg.distillers);
 
     let cfg_path = identity;
     let identity = load_identity(&cfg_path).await?;
@@ -397,6 +432,9 @@ pub async fn run(
                             }
                         }
                         memory_store.append_entries(&output).await?;
+                        for entry in &output {
+                            notify_router(&router, entry).await;
+                        }
                     }
                 }
                 for w in &mut wits {
@@ -421,6 +459,16 @@ pub async fn run(
                         drop(permit);
                         let how = psyche::utils::first_sentence(&response);
                         let out_id = memory_store.store(&w.cfg.output, &response).await?;
+                        if let Ok(uuid) = Uuid::parse_str(&out_id) {
+                            let entry = MemoryEntry {
+                                id: uuid,
+                                when: Utc::now(),
+                                kind: w.cfg.output.clone(),
+                                what: json!(response),
+                                how: how.clone(),
+                            };
+                            notify_router(&router, &entry).await;
+                        }
                         if w.cfg.postprocess.as_deref() == Some("recall") {
                             if let Err(e) = fire_and_forget_recall(&memory_sock, &how).await {
                                 tracing::trace!(error = %e, "recall send failed");
