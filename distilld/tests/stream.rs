@@ -1,4 +1,4 @@
-use distill::{run, Config};
+use distilld::{run, Config};
 use httpmock::prelude::*;
 use httpmock::Method;
 use ollama_rs::Ollama;

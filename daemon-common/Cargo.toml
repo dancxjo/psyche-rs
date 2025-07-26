@@ -6,3 +6,5 @@ edition = "2021"
 [dependencies]
 clap = { version = "4", features = ["derive"] }
 tracing-subscriber = "0.3"
+daemonize = "0.5"
+anyhow = "1"

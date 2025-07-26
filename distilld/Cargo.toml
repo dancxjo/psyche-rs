@@ -1,5 +1,5 @@
 [package]
-name = "distill"
+name = "distilld"
 version = "0.1.0"
 edition = "2021"
 
@@ -13,6 +13,7 @@ tokio-stream = "0.1.17"
 tracing = "0.1.41"
 tracing-subscriber = { version = "0.3.19", features = ["env-filter"] }
 indicatif = "0.17"
+daemon-common = { path = "../daemon-common" }
 
 [dev-dependencies]
 assert_cmd = "2.0.17"

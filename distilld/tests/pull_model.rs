@@ -1,4 +1,4 @@
-use distill::{run, Config};
+use distilld::{run, Config};
 use hyper::{
     service::{make_service_fn, service_fn},
     Body, Method, Request, Response, Server,

@@ -1,10 +1,10 @@
-//! Streaming summarization engine used by the `distill` CLI.
+//! Streaming summarization engine used by the `distilld` CLI.
 //!
 //! The [`run`] function orchestrates reading batched input, rendering a prompt
 //! template, and streaming the summary from an Ollama instance.
 //!
 //! ```no_run
-//! use distill::Config;
+//! use distilld::Config;
 //! use tokio::io::{stdin, stdout};
 //! # async fn example() -> anyhow::Result<()> {
 //! let cfg = Config {
@@ -18,7 +18,7 @@
 //!     trim_newlines: true,
 //! };
 //! let ollama = ollama_rs::Ollama::try_new("http://localhost:11434")?;
-//! distill::run(cfg, ollama, tokio::io::BufReader::new(stdin()), stdout()).await?;
+//! distilld::run(cfg, ollama, tokio::io::BufReader::new(stdin()), stdout()).await?;
 //! # Ok(()) }
 //! ```
 use indicatif::{ProgressBar, ProgressDrawTarget, ProgressStyle};
