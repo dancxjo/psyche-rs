@@ -116,7 +116,7 @@ impl Stt for WhisperStt {
 
 /// Run the daemon.
 pub async fn run(socket: PathBuf, listen: PathBuf, model: PathBuf) -> anyhow::Result<()> {
-    info!(?socket, ?listen, "starting heard");
+    info!(?socket, ?listen, "starting whisperd");
     if listen.exists() {
         tokio::fs::remove_file(&listen).await.ok();
     }
@@ -202,7 +202,7 @@ pub(crate) async fn send_transcription(
     let mut stream = UnixStream::connect(socket).await?;
     let text = serde_json::to_string(result)?;
     stream
-        .write_all(format!("/heard/asr\n{}\n---\n", text).as_bytes())
+        .write_all(format!("/whisper/asr\n{}\n---\n", text).as_bytes())
         .await?;
     debug!(text = %result.text, "sent transcription");
     Ok(())
@@ -271,7 +271,7 @@ mod tests {
                 drop(s);
 
                 let received = server.await.unwrap();
-                assert!(received.contains("/heard/asr"));
+                assert!(received.contains("/whisper/asr"));
                 assert!(received.contains("\"hello\""));
             })
             .await;

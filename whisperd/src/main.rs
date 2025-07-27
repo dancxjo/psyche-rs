@@ -3,7 +3,7 @@ use daemon_common::{LogLevel, maybe_daemonize};
 use std::path::PathBuf;
 
 #[derive(Parser, Debug)]
-#[command(name = "heard", about = "Audio ingestion and transcription daemon")]
+#[command(name = "whisperd", about = "Audio ingestion and transcription daemon")]
 struct Cli {
     /// Path to the output socket
     #[arg(long, default_value = "/run/quick.sock")]
@@ -34,7 +34,7 @@ async fn main() -> anyhow::Result<()> {
         .with_max_level(tracing_subscriber::filter::LevelFilter::from(cli.log_level))
         .init();
     maybe_daemonize(cli.daemon)?;
-    heard::run(cli.socket, cli.listen, cli.whisper_model).await
+    whisperd::run(cli.socket, cli.listen, cli.whisper_model).await
 }
 
 #[cfg(test)]
@@ -44,7 +44,7 @@ mod tests {
     #[test]
     fn cli_defaults_to_info_log_level() {
         let cli = Cli::try_parse_from([
-            "heard",
+            "whisperd",
             "--listen",
             "in.sock",
             "--whisper-model",
@@ -57,7 +57,7 @@ mod tests {
     #[test]
     fn parses_debug_log_level() {
         let cli = Cli::try_parse_from([
-            "heard",
+            "whisperd",
             "--listen",
             "in.sock",
             "--whisper-model",

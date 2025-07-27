@@ -6,7 +6,7 @@ use tokio::net::UnixListener;
 use tokio::sync::mpsc;
 use tracing::debug;
 
-/// Helper to run the heard loop with a custom STT implementation.
+/// Helper to run the whisperd loop with a custom STT implementation.
 pub async fn run_with_stt<S: Stt + 'static>(
     socket: PathBuf,
     listen: PathBuf,

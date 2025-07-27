@@ -5,7 +5,8 @@ if [ -z "$1" ]; then
 fi
 
 ./scripts/psyched "$1" &
-./scripts/heard "$1" &
+./scripts/whisperd "$1" &
 ./scripts/rememberd "$1" &
 
 wait
+
