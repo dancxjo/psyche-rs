@@ -175,8 +175,6 @@ pub(crate) async fn handle_connection(
         }
     }
 
-    stream.shutdown().await.ok();
-
     Ok(())
 }
 
