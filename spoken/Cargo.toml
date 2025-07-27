@@ -12,6 +12,7 @@ reqwest = { version = "0.12", features = ["json", "stream"] }
 anyhow = "1"
 daemon-common = { path = "../daemon-common" }
 urlencoding = "2"
+tokio-util = "0.7"
 
 [dev-dependencies]
 tokio = { version = "1", features = ["macros", "rt"] }
