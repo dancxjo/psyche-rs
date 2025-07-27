@@ -3,6 +3,7 @@ use tokio::io::{AsyncReadExt, AsyncWriteExt, BufReader};
 use tokio::net::{UnixListener, UnixStream};
 use tracing::{error, info};
 
+mod policy;
 mod rpc;
 mod store;
 
