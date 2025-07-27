@@ -68,3 +68,4 @@
   executable scripts in `scripts/` without the `.sh` extension.
 - When showing long download progress in CLI tools, direct `indicatif`
   progress bars to stderr to avoid polluting captured stdout in tests.
+- Maintain project documentation under the `docs/` directory.
