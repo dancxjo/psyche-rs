@@ -13,7 +13,11 @@ fn wav_to_pcm(bytes: &[u8]) -> anyhow::Result<&[u8]> {
 }
 
 async fn synthesize(tts_url: &str, text: &str) -> anyhow::Result<Vec<u8>> {
-    let url = format!("{}/api/tts?text={}", tts_url, urlencoding::encode(text));
+    let url = format!(
+        "{}/api/tts?text={}&speaker_id=p336&style_wav=&language_id=",
+        tts_url,
+        urlencoding::encode(text)
+    );
     let resp = reqwest::get(&url).await?.error_for_status()?;
     let wav = resp.bytes().await?;
     Ok(wav_to_pcm(&wav)?.to_vec())
