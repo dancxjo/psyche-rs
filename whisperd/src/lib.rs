@@ -4,7 +4,7 @@ use async_trait::async_trait;
 use serde::Serialize;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::{UnixListener, UnixStream};
-use tokio::sync::{Mutex, mpsc};
+use tokio::sync::Mutex;
 use tracing::{debug, error, info, trace};
 mod audio_segmenter;
 use audio_segmenter::AudioSegmenter;
@@ -115,64 +115,47 @@ impl Stt for WhisperStt {
 }
 
 /// Run the daemon.
-pub async fn run(socket: PathBuf, listen: PathBuf, model: PathBuf) -> anyhow::Result<()> {
-    info!(?socket, ?listen, "starting whisperd");
-    if listen.exists() {
-        tokio::fs::remove_file(&listen).await.ok();
+pub async fn run(socket: PathBuf, model: PathBuf) -> anyhow::Result<()> {
+    info!(?socket, "starting whisperd");
+    if socket.exists() {
+        tokio::fs::remove_file(&socket).await.ok();
     }
-    let listener = UnixListener::bind(&listen)?;
-    info!(?listen, "listening for PCM input");
+    let listener = UnixListener::bind(&socket)?;
+    info!(?socket, "listening for PCM input");
 
-    let stt = WhisperStt::new(model)?;
+    let stt = std::sync::Arc::new(WhisperStt::new(model)?);
 
-    let (tx, mut rx) = mpsc::channel::<Vec<i16>>(8);
-
-    // Accept loop
-    tokio::spawn(async move {
-        loop {
-            match listener.accept().await {
-                Ok((mut stream, _addr)) => {
-                    debug!("accepted connection");
-                    let tx = tx.clone();
-                    tokio::spawn(async move {
-                        let mut buf = [0u8; 4096];
-                        loop {
-                            match stream.read(&mut buf).await {
-                                Ok(0) => break,
-                                Ok(n) => {
-                                    let mut frames = Vec::with_capacity(n / 2);
-                                    for chunk in buf[..n].chunks_exact(2) {
-                                        frames.push(i16::from_le_bytes([chunk[0], chunk[1]]));
-                                    }
-                                    trace!(frames = frames.len(), "received audio frames");
-                                    if tx.send(frames).await.is_err() {
-                                        break;
-                                    }
-                                }
-                                Err(e) => {
-                                    error!(?e, "read error");
-                                    break;
-                                }
-                            }
-                        }
-                    });
-                }
-                Err(e) => {
-                    error!(?e, "accept failed");
-                    break;
-                }
-            }
+    loop {
+        let (stream, _) = listener.accept().await?;
+        let stt = stt.clone();
+        if let Err(e) = handle_connection(stream, stt).await {
+            error!(?e, "connection error");
         }
-    });
+    }
+}
 
+pub(crate) async fn handle_connection(
+    mut stream: UnixStream,
+    stt: std::sync::Arc<dyn Stt + Send + Sync>,
+) -> anyhow::Result<()> {
+    let mut buf = [0u8; 4096];
     let mut segmenter = AudioSegmenter::new();
     let mut last_discard = 0usize;
-    while let Some(chunk) = rx.recv().await {
-        if let Some(spoken) = segmenter.push_frames(&chunk) {
+    loop {
+        let n = stream.read(&mut buf).await?;
+        if n == 0 {
+            break;
+        }
+        let mut frames = Vec::with_capacity(n / 2);
+        for chunk in buf[..n].chunks_exact(2) {
+            frames.push(i16::from_le_bytes([chunk[0], chunk[1]]));
+        }
+        trace!(frames = frames.len(), "received audio frames");
+        if let Some(spoken) = segmenter.push_frames(&frames) {
             debug!(samples = spoken.len(), "transcribing audio");
             if let Ok(trans) = stt.transcribe(&spoken).await {
                 debug!(text = %trans.text, "transcription done");
-                send_transcription(&socket, &trans).await.ok();
+                send_transcription(&mut stream, &trans).await?;
             }
         }
         if segmenter.discarded() != last_discard {
@@ -188,18 +171,19 @@ pub async fn run(socket: PathBuf, listen: PathBuf, model: PathBuf) -> anyhow::Re
         debug!(samples = spoken.len(), "transcribing audio");
         if let Ok(trans) = stt.transcribe(&spoken).await {
             debug!(text = %trans.text, "transcription done");
-            send_transcription(&socket, &trans).await.ok();
+            send_transcription(&mut stream, &trans).await?;
         }
     }
+
+    stream.shutdown().await.ok();
 
     Ok(())
 }
 
 pub(crate) async fn send_transcription(
-    socket: &PathBuf,
+    stream: &mut UnixStream,
     result: &Transcription,
 ) -> anyhow::Result<()> {
-    let mut stream = UnixStream::connect(socket).await?;
     let text = serde_json::to_string(result)?;
     stream
         .write_all(format!("/whisper/asr\n{}\n---\n", text).as_bytes())
@@ -211,7 +195,7 @@ pub(crate) async fn send_transcription(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::test_helpers::run_with_stt;
+    use crate::test_helpers::run_with_stt_no_vad;
     use tempfile::tempdir;
     use tokio::io::{AsyncReadExt, AsyncWriteExt};
     use tokio::net::UnixStream;
@@ -234,71 +218,51 @@ mod tests {
     }
 
     #[tokio::test(flavor = "current_thread")]
-    #[ignore]
-    async fn sends_transcription_over_socket() {
+    async fn transcribes_audio_on_same_socket() {
         let dir = tempdir().unwrap();
-        let out = dir.path().join("out.sock");
-        let listen = dir.path().join("in.sock");
+        let sock = dir.path().join("ear.sock");
 
-        // Create listener for output to capture messages
-        let listener = UnixListener::bind(&out).unwrap();
-        let server = tokio::spawn(async move {
-            let (mut stream, _) = listener.accept().await.unwrap();
-            let mut buf = String::new();
-            stream.read_to_string(&mut buf).await.unwrap();
-            buf
-        });
-
-        // Run daemon with mocked STT
         let stt = MockStt;
         let local = tokio::task::LocalSet::new();
-        let out_clone = out.clone();
-        let listen_clone = listen.clone();
+        let sock_clone = sock.clone();
         let handle = local.spawn_local(async move {
-            run_with_stt(out_clone, listen_clone, stt).await.unwrap();
+            run_with_stt_no_vad(sock_clone, stt).await.unwrap();
         });
 
-        let listen_client = listen.clone();
-
         local
-            .run_until(async move {
+            .run_until(async {
                 tokio::time::sleep(std::time::Duration::from_millis(50)).await;
-                let mut s = UnixStream::connect(&listen_client).await.unwrap();
+                let mut s = UnixStream::connect(&sock).await.unwrap();
                 let mut samples: Vec<i16> = vec![1000; 16000];
-                samples.extend(vec![0; 16000]);
+                samples.extend(vec![0; 17000]);
                 let bytes: Vec<u8> = samples.iter().flat_map(|s| s.to_le_bytes()).collect();
                 s.write_all(&bytes).await.unwrap();
-                drop(s);
-
-                let received = server.await.unwrap();
-                assert!(received.contains("/whisper/asr"));
-                assert!(received.contains("\"hello\""));
+                tokio::io::AsyncWriteExt::shutdown(&mut s).await.unwrap();
+                let mut buf = String::new();
+                s.read_to_string(&mut buf).await.unwrap();
+                assert!(buf.contains("/whisper/asr"));
+                assert!(buf.contains("\"hello\""));
             })
             .await;
         handle.abort();
     }
 
     #[tokio::test(flavor = "current_thread")]
-    async fn send_transcription_writes_to_specified_socket() {
-        let dir = tempdir().unwrap();
-        let sock = dir.path().join("out.sock");
-        let listener = UnixListener::bind(&sock).unwrap();
-
+    async fn send_transcription_writes_to_stream() {
+        let (mut a, mut b) = UnixStream::pair().unwrap();
         let result = Transcription {
             text: "test".into(),
             words: vec![],
             raw: None,
         };
-
-        let server = tokio::spawn(async move {
-            let (mut stream, _) = listener.accept().await.unwrap();
+        let recv = tokio::spawn(async move {
             let mut buf = String::new();
-            stream.read_to_string(&mut buf).await.unwrap();
+            b.read_to_string(&mut buf).await.unwrap();
             buf
         });
-
-        send_transcription(&sock, &result).await.unwrap();
-        let received = server.await.unwrap();
+        send_transcription(&mut a, &result).await.unwrap();
+        tokio::io::AsyncWriteExt::shutdown(&mut a).await.unwrap();
+        let received = recv.await.unwrap();
         assert!(received.contains("/whisper/asr"));
         assert!(received.contains("\"test\""));
     }

@@ -1,55 +1,64 @@
 use std::path::PathBuf;
 
-use crate::{Stt, audio_segmenter::AudioSegmenter, send_transcription};
-use tokio::io::AsyncReadExt;
+use crate::{Stt, handle_connection};
+use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::UnixListener;
-use tokio::sync::mpsc;
-use tracing::debug;
+use tracing::error;
 
 /// Helper to run the whisperd loop with a custom STT implementation.
-pub async fn run_with_stt<S: Stt + 'static>(
+pub async fn run_with_stt<S: Stt + Send + Sync + 'static>(
     socket: PathBuf,
-    listen: PathBuf,
     stt: S,
 ) -> anyhow::Result<()> {
-    if listen.exists() {
-        tokio::fs::remove_file(&listen).await.ok();
+    if socket.exists() {
+        tokio::fs::remove_file(&socket).await.ok();
     }
-    let listener = UnixListener::bind(&listen)?;
-    let (tx, mut rx) = mpsc::channel::<Vec<i16>>(8);
-    tokio::spawn(async move {
-        loop {
-            let (mut stream, _) = listener.accept().await.unwrap();
-            let tx = tx.clone();
-            tokio::spawn(async move {
-                let mut buf = [0u8; 4096];
-                loop {
-                    let n = stream.read(&mut buf).await.unwrap();
-                    if n == 0 {
-                        break;
-                    }
-                    let mut frames = Vec::with_capacity(n / 2);
-                    for chunk in buf[..n].chunks_exact(2) {
-                        frames.push(i16::from_le_bytes([chunk[0], chunk[1]]));
-                    }
-                    tx.send(frames).await.unwrap();
-                }
-            });
+    let listener = UnixListener::bind(&socket)?;
+    let stt = std::sync::Arc::new(stt);
+    loop {
+        let (stream, _) = listener.accept().await?;
+        let stt = stt.clone();
+        if let Err(e) = handle_connection(stream, stt).await {
+            error!(?e, "connection error");
         }
-    });
-    let mut seg = AudioSegmenter::new();
-    while let Some(chunk) = rx.recv().await {
-        if let Some(spoken) = seg.push_frames(&chunk) {
-            if let Ok(trans) = stt.transcribe(&spoken).await {
-                send_transcription(&socket, &trans).await.unwrap();
+    }
+}
+
+/// Variant of [`run_with_stt`] without VAD for deterministic testing.
+pub async fn run_with_stt_no_vad<S: Stt + Send + Sync + 'static>(
+    socket: PathBuf,
+    stt: S,
+) -> anyhow::Result<()> {
+    if socket.exists() {
+        tokio::fs::remove_file(&socket).await.ok();
+    }
+    let listener = UnixListener::bind(&socket)?;
+    let stt = std::sync::Arc::new(stt);
+    loop {
+        let (mut stream, _) = listener.accept().await?;
+        let stt = stt.clone();
+        let mut buf = [0u8; 4096];
+        let mut segmenter = crate::audio_segmenter::AudioSegmenter::new_without_vad();
+        loop {
+            let n = stream.read(&mut buf).await?;
+            if n == 0 {
+                break;
+            }
+            let mut frames = Vec::with_capacity(n / 2);
+            for chunk in buf[..n].chunks_exact(2) {
+                frames.push(i16::from_le_bytes([chunk[0], chunk[1]]));
+            }
+            if let Some(spoken) = segmenter.push_frames(&frames) {
+                if let Ok(trans) = stt.transcribe(&spoken).await {
+                    crate::send_transcription(&mut stream, &trans).await?;
+                }
             }
         }
-    }
-    if let Some(spoken) = seg.finish() {
-        if let Ok(trans) = stt.transcribe(&spoken).await {
-            send_transcription(&socket, &trans).await.unwrap();
+        if let Some(spoken) = segmenter.finish() {
+            if let Ok(trans) = stt.transcribe(&spoken).await {
+                crate::send_transcription(&mut stream, &trans).await?;
+            }
         }
+        stream.shutdown().await.ok();
     }
-    debug!(discarded = seg.discarded(), "total discarded frames");
-    Ok(())
 }
