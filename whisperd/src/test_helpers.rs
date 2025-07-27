@@ -1,7 +1,7 @@
 use std::path::PathBuf;
 
 use crate::{Stt, handle_connection};
-use tokio::io::{AsyncReadExt, AsyncWriteExt};
+use tokio::io::AsyncReadExt;
 use tokio::net::UnixListener;
 use tracing::error;
 
@@ -59,6 +59,5 @@ pub async fn run_with_stt_no_vad<S: Stt + Send + Sync + 'static>(
                 crate::send_transcription(&mut stream, &trans).await?;
             }
         }
-        stream.shutdown().await.ok();
     }
 }
