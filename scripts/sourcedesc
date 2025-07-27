@@ -11,12 +11,14 @@ mkfifo "$PIPE_QUICK" "$PIPE_COMBO" "$PIPE_REFLECT"
 # Git log stream (with empty lines removed)
 git log --reverse --patch --no-color \
   --pretty=format:"---%ncommit: %H%nAuthor: %an <%ae>%nDate: %ad%nSubject: %s%n" --date=iso \
-  | tee "$PIPE_QUICK" "$PIPE_COMBO" "$PIPE_REFLECT" >/dev/null &
+  | tee "$PIPE_QUICK" "$PIPE_COMBO" >/dev/null &
+  # | tee "$PIPE_QUICK" "$PIPE_COMBO" "$PIPE_REFLECT" >/dev/null &
 
 # 🧠 Quick — factual commit summarizer
 (
-  distilld -n 50 --continuous \
-    -H 3 \
+  distill -n 100 --continuous \
+    -d 3 \
+    --terminal "" \
     --model gemma3n \
     --llm-url http://10.0.0.180:11434 \
     --prompt "Summarize the most important facts from these Git commit lines.\n\n{{current}}\n\nIf prior summaries exist:\n{{previous}}\n\nRespond with a concise, factual sentence. Do not speculate. Do not repeat any of the prompt. Just say the sentence." \
@@ -24,27 +26,33 @@ git log --reverse --patch --no-color \
   | tee ~/.cache/git_quick.log
 ) &
 
+
+    # --llm-url http://192.168.1.123:11434 \
+
+
 # 🧩 Combobulator — project evolution storyline
 (
-  distilld -n 25 --continuous \
-    -H 3 \
+  distill -n 25 --continuous \
+    -d 3 \
+    --terminal "" \
     --model gemma3n \
-    --llm-url http://192.168.1.123:11434 \
+    --llm-url http://10.0.0.180:11434 \
     --prompt "Summarize these Git commit summaries into a coherent project development narrative. Describe the flow of work without speculating about motivations.\n\n{{current}}\n\nEarlier context:\n{{previous}}\n\nRespond with one sentence describing the project's direction. Do not repeat the prompt. Return only the sentence." \
     < "$PIPE_COMBO" \
   | tee ~/.cache/git_combo.log
 ) &
 
-# 💭 Reflector — system thinking about its own code
-(
-  distilld -n 50 --continuous \
-    -H 3 \
-    --model gemma3n \
-    --llm-url http://localhost:11434 \
-    --prompt "Think about the following Git commits as if I were the repository reflecting on myself. What am I becoming? What am I focused on?\n\n{{current}}\n\nPrevious context:\n{{previous}}\n\nRespond with one first-person sentence of internal reflection. Do not speculate beyond the commits." \
-    < "$PIPE_REFLECT" \
-  | tee ~/.cache/git_reflect.log
-) &
+# # 💭 Reflector — system thinking about its own code
+# (
+#   distill -n 50 --continuous \
+#     -d 3 \
+#     --terminal "" \
+#     --model gemma3n \
+#     --llm-url http://localhost:11434 \
+#     --prompt "Think about the following Git commits as if I were the repository reflecting on myself. What am I becoming? What am I focused on?\n\n{{current}}\n\nPrevious context:\n{{previous}}\n\nRespond with one first-person sentence of internal reflection. Do not speculate beyond the commits." \
+#     < "$PIPE_REFLECT" \
+#   | tee ~/.cache/git_reflect.log
+# ) &
 
 # Wait and cleanup
 wait
