@@ -14,7 +14,7 @@ fn wav_to_pcm(bytes: &[u8]) -> anyhow::Result<&[u8]> {
 
 async fn synthesize(tts_url: &str, text: &str) -> anyhow::Result<Vec<u8>> {
     let url = format!(
-        "{}/api/tts?text={}&speaker_id=p336&style_wav=&language_id=",
+        "{}/api/tts?text={}&speaker_id=p330&style_wav=&language_id=",
         tts_url,
         urlencoding::encode(text)
     );
