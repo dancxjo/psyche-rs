@@ -5,13 +5,9 @@ use std::path::PathBuf;
 #[derive(Parser, Debug)]
 #[command(name = "whisperd", about = "Audio ingestion and transcription daemon")]
 struct Cli {
-    /// Path to the output socket
-    #[arg(long, default_value = "/run/quick.sock")]
+    /// Path to the Unix socket used for audio input and transcript output
+    #[arg(long, default_value = "/run/psyched/ear.sock")]
     socket: PathBuf,
-
-    /// Path to the input socket to listen for PCM audio
-    #[arg(long)]
-    listen: PathBuf,
 
     /// Path to whisper model
     #[arg(long, env = "WHISPER_MODEL")]
@@ -34,7 +30,7 @@ async fn main() -> anyhow::Result<()> {
         .with_max_level(tracing_subscriber::filter::LevelFilter::from(cli.log_level))
         .init();
     maybe_daemonize(cli.daemon)?;
-    whisperd::run(cli.socket, cli.listen, cli.whisper_model).await
+    whisperd::run(cli.socket, cli.whisper_model).await
 }
 
 #[cfg(test)]
@@ -43,14 +39,7 @@ mod tests {
 
     #[test]
     fn cli_defaults_to_info_log_level() {
-        let cli = Cli::try_parse_from([
-            "whisperd",
-            "--listen",
-            "in.sock",
-            "--whisper-model",
-            "model.bin",
-        ])
-        .unwrap();
+        let cli = Cli::try_parse_from(["whisperd", "--whisper-model", "model.bin"]).unwrap();
         assert!(matches!(cli.log_level, LogLevel::Info));
     }
 
@@ -58,8 +47,6 @@ mod tests {
     fn parses_debug_log_level() {
         let cli = Cli::try_parse_from([
             "whisperd",
-            "--listen",
-            "in.sock",
             "--whisper-model",
             "model.bin",
             "--log-level",
