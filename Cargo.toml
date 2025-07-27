@@ -1,3 +1,11 @@
 [workspace]
-members = ["psyche", "psyched", "whisperd", "rememberd", "daemon-common", "distilld"]
+members = [
+    "psyche",
+    "psyched",
+    "whisperd",
+    "rememberd",
+    "daemon-common",
+    "distilld",
+    "spoken",
+]
 resolver = "2"

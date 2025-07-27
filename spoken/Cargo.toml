@@ -1,0 +1,20 @@
+[package]
+name = "spoken"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+tokio = { version = "1", features = ["full"] }
+clap = { version = "4", features = ["derive", "env"] }
+tracing = "0.1"
+tracing-subscriber = "0.3"
+reqwest = { version = "0.12", features = ["json", "stream"] }
+anyhow = "1"
+daemon-common = { path = "../daemon-common" }
+urlencoding = "2"
+
+[dev-dependencies]
+tokio = { version = "1", features = ["macros", "rt"] }
+httpmock = "0.7"
+hound = "3"
+tempfile = "3"
