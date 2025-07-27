@@ -13,6 +13,14 @@ struct Cli {
     #[arg(long, default_value = "http://localhost:5002")]
     tts_url: String,
 
+    /// Speaker id to use for synthesis
+    #[arg(long, default_value = "p330")]
+    speaker_id: String,
+
+    /// Language id for synthesis
+    #[arg(long, default_value = "")]
+    language_id: String,
+
     /// Logging verbosity level
     #[arg(long, default_value = "info")]
     log_level: LogLevel,
@@ -29,7 +37,7 @@ async fn main() -> anyhow::Result<()> {
         .with_max_level(tracing_subscriber::filter::LevelFilter::from(cli.log_level))
         .init();
     maybe_daemonize(cli.daemon)?;
-    spoken::run(cli.socket, cli.tts_url).await
+    spoken::run(cli.socket, cli.tts_url, cli.speaker_id, cli.language_id).await
 }
 
 #[cfg(test)]
@@ -41,5 +49,7 @@ mod tests {
         let cli = Cli::try_parse_from(["spoken"]).unwrap();
         assert!(matches!(cli.log_level, LogLevel::Info));
         assert_eq!(cli.tts_url, "http://localhost:5002");
+        assert_eq!(cli.speaker_id, "p330");
+        assert_eq!(cli.language_id, "");
     }
 }

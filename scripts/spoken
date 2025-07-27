@@ -1,4 +1,9 @@
 #!/bin/sh
 
 # Run the spoken text-to-speech daemon
-cargo run -p spoken -- --socket ./voice.sock --tts-url http://localhost:5002 --log-level debug
+cargo run -p spoken -- \
+  --socket ./voice.sock \
+  --tts-url http://localhost:5002 \
+  --speaker-id p330 \
+  --language-id "" \
+  --log-level debug
