@@ -277,4 +277,29 @@ mod tests {
             .await;
         handle.abort();
     }
+
+    #[tokio::test(flavor = "current_thread")]
+    async fn send_transcription_writes_to_specified_socket() {
+        let dir = tempdir().unwrap();
+        let sock = dir.path().join("out.sock");
+        let listener = UnixListener::bind(&sock).unwrap();
+
+        let result = Transcription {
+            text: "test".into(),
+            words: vec![],
+            raw: None,
+        };
+
+        let server = tokio::spawn(async move {
+            let (mut stream, _) = listener.accept().await.unwrap();
+            let mut buf = String::new();
+            stream.read_to_string(&mut buf).await.unwrap();
+            buf
+        });
+
+        send_transcription(&sock, &result).await.unwrap();
+        let received = server.await.unwrap();
+        assert!(received.contains("/whisper/asr"));
+        assert!(received.contains("\"test\""));
+    }
 }
