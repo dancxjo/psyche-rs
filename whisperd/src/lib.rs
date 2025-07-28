@@ -6,6 +6,8 @@ use tokio::io::{AsyncReadExt, AsyncWrite, AsyncWriteExt};
 use tokio::net::{UnixListener, UnixStream};
 use tokio::sync::Mutex;
 use tracing::{debug, error, info, trace};
+
+const SEGMENTS_ENV: &str = "WHISPER_SEGMENTS_DIR";
 mod audio_segmenter;
 use audio_segmenter::AudioSegmenter;
 
@@ -197,6 +199,9 @@ fn queue_transcription(
     let stt = stt.clone();
     tokio::spawn(async move {
         debug!(samples = spoken.len(), "transcribing audio");
+        if let Err(e) = save_segment(&spoken).await {
+            error!(?e, "failed to save segment");
+        }
         if let Ok(trans) = stt.transcribe(&spoken).await {
             debug!(text = %trans.text, "transcription done");
             let mut w = w.lock().await;
@@ -218,6 +223,36 @@ where
         .write_all(format!("{}\n", result.text).as_bytes())
         .await?;
     debug!(text = %result.text, "sent transcription");
+    Ok(())
+}
+
+pub(crate) async fn save_segment(pcm: &[i16]) -> anyhow::Result<()> {
+    let dir = match std::env::var(SEGMENTS_ENV) {
+        Ok(d) => d,
+        Err(_) => return Ok(()),
+    };
+    let dir = std::path::PathBuf::from(dir);
+    tokio::fs::create_dir_all(&dir).await.ok();
+    let ts = chrono::Utc::now().timestamp_millis();
+    let path = dir.join(format!("segment_{ts}.wav"));
+    let pcm = pcm.to_vec();
+    let p = path.clone();
+    tokio::task::spawn_blocking(move || -> anyhow::Result<()> {
+        let spec = hound::WavSpec {
+            channels: 1,
+            sample_rate: 16_000,
+            bits_per_sample: 16,
+            sample_format: hound::SampleFormat::Int,
+        };
+        let mut writer = hound::WavWriter::create(&p, spec)?;
+        for sample in pcm {
+            writer.write_sample(sample)?;
+        }
+        writer.finalize()?;
+        Ok(())
+    })
+    .await??;
+    debug!(?path, "segment saved");
     Ok(())
 }
 
@@ -273,6 +308,33 @@ mod tests {
             })
             .await;
         handle.abort();
+    }
+
+    #[tokio::test(flavor = "current_thread")]
+    async fn saves_segments_when_env_set() {
+        let seg_dir = tempdir().unwrap();
+        unsafe {
+            std::env::set_var(SEGMENTS_ENV, seg_dir.path());
+        }
+
+        let samples: Vec<i16> = vec![1000; 16000];
+        save_segment(&samples).await.unwrap();
+
+        let count = std::fs::read_dir(seg_dir.path())
+            .unwrap()
+            .filter(|e| {
+                e.as_ref()
+                    .unwrap()
+                    .path()
+                    .extension()
+                    .map(|ext| ext == "wav")
+                    .unwrap_or(false)
+            })
+            .count();
+        unsafe {
+            std::env::remove_var(SEGMENTS_ENV);
+        }
+        assert_eq!(count, 1);
     }
 
     #[tokio::test(flavor = "current_thread")]
