@@ -206,9 +206,8 @@ pub(crate) async fn send_transcription<W>(
 where
     W: AsyncWrite + Unpin,
 {
-    let text = serde_json::to_string(result)?;
     stream
-        .write_all(format!("/whisper/asr\n{}\n---\n", text).as_bytes())
+        .write_all(format!("{}\n", result.text).as_bytes())
         .await?;
     debug!(text = %result.text, "sent transcription");
     Ok(())
@@ -262,8 +261,7 @@ mod tests {
                 tokio::io::AsyncWriteExt::shutdown(&mut s).await.unwrap();
                 let mut buf = String::new();
                 s.read_to_string(&mut buf).await.unwrap();
-                assert!(buf.contains("/whisper/asr"));
-                assert!(buf.contains("\"hello\""));
+                assert!(buf.contains("hello"));
             })
             .await;
         handle.abort();
@@ -285,7 +283,6 @@ mod tests {
         send_transcription(&mut a, &result).await.unwrap();
         tokio::io::AsyncWriteExt::shutdown(&mut a).await.unwrap();
         let received = recv.await.unwrap();
-        assert!(received.contains("/whisper/asr"));
-        assert!(received.contains("\"test\""));
+        assert!(received.contains("test"));
     }
 }
