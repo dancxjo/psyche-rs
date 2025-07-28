@@ -3401,6 +3401,30 @@ dependencies = [
 ]
 
 [[package]]
+name = "seen"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "async-stream",
+ "async-trait",
+ "base64 0.21.7",
+ "chrono",
+ "clap",
+ "daemon-common",
+ "futures-util",
+ "httpmock 0.7.0",
+ "ollama-rs",
+ "psyche",
+ "serde_json",
+ "tempfile",
+ "tokio",
+ "tokio-stream",
+ "tracing",
+ "tracing-subscriber",
+ "uuid",
+]
+
+[[package]]
 name = "semver"
 version = "1.0.26"
 source = "registry+https://github.com/rust-lang/crates.io-index"

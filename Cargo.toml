@@ -7,5 +7,6 @@ members = [
     "daemon-common",
     "distilld",
     "spoken",
+    "seen",
 ]
 resolver = "2"
