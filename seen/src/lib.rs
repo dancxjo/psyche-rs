@@ -1,105 +1,113 @@
+use std::collections::VecDeque;
 use std::path::PathBuf;
-use tokio::io::{AsyncReadExt, AsyncWriteExt};
-use tokio::net::{UnixListener, UnixStream};
-use tracing::{error, info};
+use std::sync::Arc;
 
-use async_trait::async_trait;
 use base64::{engine::general_purpose, Engine};
-use chrono::Utc;
-use futures_util::StreamExt;
 use ollama_rs::generation::completion::request::GenerationRequest;
 use ollama_rs::generation::images::Image;
 use ollama_rs::Ollama;
-use psyche::llm::{CanChat, LlmCapability, LlmProfile};
-use psyche::models::MemoryEntry;
-use psyche::wit::{Wit, WitConfig};
-use tokio_stream::Stream;
+use tokio::io::{AsyncReadExt, AsyncWriteExt};
+use tokio::net::{UnixListener, UnixStream};
+use tokio::sync::{broadcast, Mutex, Notify};
+use tracing::{debug, error, info};
 
 const PROMPT: &str = "This is what you are currently seeing. It is from your perspective, so whomever you see isn't you, unless you're looking at a mirror or something. Narrate to yourself what you are seeing in one and only one sentence.";
 
 #[derive(Clone)]
-struct OllamaImageChat {
-    base_url: String,
-    model: String,
-    images: Vec<Image>,
+struct ImageQueue {
+    inner: Arc<Mutex<VecDeque<Vec<u8>>>>,
+    notify: Arc<Notify>,
 }
 
-impl OllamaImageChat {
-    fn new(base_url: String, model: String, images: Vec<Image>) -> Self {
+impl ImageQueue {
+    fn new() -> Self {
         Self {
-            base_url,
-            model,
-            images,
+            inner: Arc::new(Mutex::new(VecDeque::new())),
+            notify: Arc::new(Notify::new()),
+        }
+    }
+
+    async fn push(&self, img: Vec<u8>) {
+        let mut q = self.inner.lock().await;
+        q.push_back(img);
+        self.notify.notify_one();
+    }
+
+    async fn pop(&self) -> Option<Vec<u8>> {
+        self.inner.lock().await.pop_front()
+    }
+
+    async fn wait(&self) {
+        self.notify.notified().await;
+    }
+}
+
+async fn describe_image(base_url: &str, model: &str, img: &[u8]) -> anyhow::Result<String> {
+    let ollama = Ollama::try_new(base_url)?;
+    let b64 = general_purpose::STANDARD.encode(img);
+    let req = GenerationRequest::new(model.to_string(), String::new())
+        .system(PROMPT.to_string())
+        .images(vec![Image::from_base64(b64)]);
+    let resp = ollama.generate(req).await?;
+    Ok(resp.response.trim().to_string())
+}
+
+async fn caption_loop(
+    base_url: String,
+    model: String,
+    queue: ImageQueue,
+    tx: broadcast::Sender<String>,
+) {
+    loop {
+        let img = loop {
+            if let Some(i) = queue.pop().await {
+                break i;
+            }
+            queue.wait().await;
+        };
+        match describe_image(&base_url, &model, &img).await {
+            Ok(desc) => {
+                debug!(%desc, "caption ready");
+                let _ = tx.send(desc);
+            }
+            Err(e) => error!(?e, "failed to caption image"),
         }
     }
 }
 
-#[async_trait(?Send)]
-impl CanChat for OllamaImageChat {
-    async fn chat_stream(
-        &self,
-        _profile: &LlmProfile,
-        system: &str,
-        user: &str,
-    ) -> anyhow::Result<Box<dyn Stream<Item = String> + Unpin>> {
-        let ollama = Ollama::try_new(&self.base_url)?;
-        let req = GenerationRequest::new(self.model.clone(), user.to_string())
-            .system(system.to_string())
-            .images(self.images.clone());
-        let mut stream = ollama.generate_stream(req).await?;
-        let out = async_stream::stream! {
-            while let Some(chunk) = stream.next().await {
-                match chunk {
-                    Ok(resps) => for r in resps { yield r.response },
-                    Err(_) => break,
-                }
-            }
-        };
-        Ok(Box::new(Box::pin(out)) as Box<dyn Stream<Item = String> + Unpin>)
-    }
-}
-
 async fn handle_connection(
-    mut stream: UnixStream,
-    base_url: String,
-    model: String,
+    stream: UnixStream,
+    queue: ImageQueue,
+    tx: broadcast::Sender<String>,
 ) -> anyhow::Result<()> {
-    let mut buf = Vec::new();
-    stream.read_to_end(&mut buf).await?;
-    if buf.is_empty() {
-        return Ok(());
+    let (mut reader, mut writer) = stream.into_split();
+    let mut rx = tx.subscribe();
+
+    let q = queue.clone();
+    let mut read_task = tokio::spawn(async move {
+        let mut buf = Vec::new();
+        reader.read_to_end(&mut buf).await.ok();
+        if !buf.is_empty() {
+            q.push(buf).await;
+        }
+    });
+
+    loop {
+        tokio::select! {
+            _ = &mut read_task => {
+                break;
+            }
+            msg = rx.recv() => match msg {
+                Ok(desc) => {
+                    if writer.write_all(desc.as_bytes()).await.is_err() { break; }
+                    if writer.write_all(b"\n").await.is_err() { break; }
+                }
+                Err(broadcast::error::RecvError::Closed) => break,
+                Err(broadcast::error::RecvError::Lagged(_)) => continue,
+            }
+        }
     }
-    let b64 = general_purpose::STANDARD.encode(&buf);
-    let images = vec![Image::from_base64(b64)];
-    let llm = OllamaImageChat::new(base_url.clone(), model.clone(), images);
-    let cfg = WitConfig {
-        name: "seen".into(),
-        input_kind: "sensation/image".into(),
-        output_kind: "instant".into(),
-        prompt_template: PROMPT.into(),
-        post_process: None,
-    };
-    let profile = LlmProfile {
-        provider: "ollama".into(),
-        model: model.clone(),
-        capabilities: vec![LlmCapability::Chat, LlmCapability::Image],
-    };
-    let mut wit = Wit {
-        config: cfg,
-        llm: Box::new(llm),
-        profile,
-    };
-    let entry = MemoryEntry {
-        id: uuid::Uuid::new_v4(),
-        kind: "sensation/image".into(),
-        when: Utc::now(),
-        what: serde_json::Value::Null,
-        how: String::new(),
-    };
-    let out = wit.distill(vec![entry]).await?;
-    let text = out.first().map(|e| e.how.clone()).unwrap_or_default();
-    stream.write_all(text.as_bytes()).await?;
-    stream.shutdown().await?;
+
     Ok(())
 }
 
@@ -110,11 +118,26 @@ pub async fn run(socket: PathBuf, base_url: String, model: String) -> anyhow::Re
     }
     let listener = UnixListener::bind(&socket)?;
     info!(?socket, "seen listening");
+
+    let queue = ImageQueue::new();
+    let (tx, _) = broadcast::channel(8);
+
+    tokio::spawn(caption_loop(
+        base_url.clone(),
+        model.clone(),
+        queue.clone(),
+        tx.clone(),
+    ));
+
     loop {
         let (stream, _) = listener.accept().await?;
-        if let Err(e) = handle_connection(stream, base_url.clone(), model.clone()).await {
-            error!(?e, "connection failed");
-        }
+        let q = queue.clone();
+        let t = tx.clone();
+        tokio::spawn(async move {
+            if let Err(e) = handle_connection(stream, q, t).await {
+                error!(?e, "connection error");
+            }
+        });
     }
 }
 
@@ -123,10 +146,12 @@ mod tests {
     use super::*;
     use httpmock::prelude::*;
     use tempfile::tempdir;
+    use tokio::io::AsyncBufReadExt;
     use tokio::net::UnixStream;
+    use tokio::task::LocalSet;
 
     #[tokio::test]
-    async fn image_chat_streams_text() {
+    async fn describe_image_sends_request() {
         let server = MockServer::start_async().await;
         let body =
             "{\"model\":\"gemma3n\",\"created_at\":\"now\",\"response\":\"desc\",\"done\":true}\n";
@@ -140,27 +165,15 @@ mod tests {
                     .body(body);
             })
             .await;
-        let chat = OllamaImageChat::new(
-            server.base_url(),
-            "gemma3n".into(),
-            vec![Image::from_base64("abcd")],
-        );
-        let profile = LlmProfile {
-            provider: "ollama".into(),
-            model: "gemma3n".into(),
-            capabilities: vec![LlmCapability::Chat, LlmCapability::Image],
-        };
-        let mut stream = chat.chat_stream(&profile, "", "hi").await.unwrap();
-        let mut out = String::new();
-        while let Some(tok) = stream.next().await {
-            out.push_str(&tok);
-        }
+        let out = describe_image(&server.base_url(), "gemma3n", b"data")
+            .await
+            .unwrap();
         assert_eq!(out, "desc");
         mock.assert_async().await;
     }
 
     #[tokio::test]
-    async fn run_processes_image() {
+    async fn run_broadcasts_caption() {
         let server = MockServer::start_async().await;
         let body =
             "{\"model\":\"gemma3n\",\"created_at\":\"now\",\"response\":\"a cat\",\"done\":true}\n";
@@ -175,17 +188,28 @@ mod tests {
         let dir = tempdir().unwrap();
         let sock = dir.path().join("eye.sock");
         let url = server.base_url();
-        let local = tokio::task::LocalSet::new();
+        let local = LocalSet::new();
         let run_fut = local.spawn_local(run(sock.clone(), url, "gemma3n".into()));
         local
             .run_until(async {
                 tokio::time::sleep(std::time::Duration::from_millis(50)).await;
-                let mut client = UnixStream::connect(&sock).await.unwrap();
-                client.write_all(b"PNGdata").await.unwrap();
-                client.shutdown().await.unwrap();
-                let mut buf = String::new();
-                client.read_to_string(&mut buf).await.unwrap();
-                assert_eq!(buf, "a cat");
+                // watcher
+                let watcher = UnixStream::connect(&sock).await.unwrap();
+                let read = tokio::spawn(async move {
+                    let mut reader = tokio::io::BufReader::new(watcher);
+                    let mut buf = String::new();
+                    reader.read_line(&mut buf).await.unwrap();
+                    buf
+                });
+                // sender
+                let mut sender = UnixStream::connect(&sock).await.unwrap();
+                sender.write_all(b"PNGdata").await.unwrap();
+                sender.shutdown().await.unwrap();
+                let caption = tokio::time::timeout(std::time::Duration::from_millis(200), read)
+                    .await
+                    .unwrap()
+                    .unwrap();
+                assert_eq!(caption.trim(), "a cat");
             })
             .await;
         run_fut.abort();
