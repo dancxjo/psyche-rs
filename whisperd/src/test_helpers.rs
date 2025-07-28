@@ -26,6 +26,9 @@ pub async fn run_with_stt<S: Stt + Send + Sync + 'static>(
 }
 
 /// Variant of [`run_with_stt`] without VAD for deterministic testing.
+///
+/// Like [`handle_connection`], a short read timeout injects silence frames so
+/// tests remain deterministic when no audio arrives.
 pub async fn run_with_stt_no_vad<S: Stt + Send + Sync + 'static>(
     socket: PathBuf,
     stt: S,
@@ -45,10 +48,31 @@ pub async fn run_with_stt_no_vad<S: Stt + Send + Sync + 'static>(
             let (mut reader, writer) = stream.into_split();
             let writer = std::sync::Arc::new(tokio::sync::Mutex::new(writer));
             let mut buf = [0u8; 4096];
+            let mut silence_buf = vec![0i16; crate::audio_segmenter::FRAME_SIZE];
             let mut segmenter =
                 crate::audio_segmenter::AudioSegmenter::new_without_vad(silence_samples);
             loop {
-                let n = reader.read(&mut buf).await.unwrap();
+                let n = match tokio::time::timeout(
+                    std::time::Duration::from_millis(30),
+                    reader.read(&mut buf),
+                )
+                .await
+                {
+                    Ok(res) => res.unwrap(),
+                    Err(_) => {
+                        if let Some(spoken) = segmenter.push_frames(&silence_buf) {
+                            let w = writer.clone();
+                            let stt = stt.clone();
+                            tokio::task::spawn_local(async move {
+                                if let Ok(trans) = stt.transcribe(&spoken).await {
+                                    let mut w = w.lock().await;
+                                    crate::send_transcription(&mut *w, &trans).await.unwrap();
+                                }
+                            });
+                        }
+                        continue;
+                    }
+                };
                 if n == 0 {
                     break;
                 }
