@@ -134,6 +134,10 @@ pub async fn run(socket: PathBuf, model: PathBuf, silence_ms: u64) -> anyhow::Re
     }
 }
 
+/// Handle an incoming PCM stream.
+///
+/// If no data is received within 30&nbsp;ms a silence frame is injected to
+/// prevent premature termination when the capture source underruns.
 pub(crate) async fn handle_connection(
     stream: UnixStream,
     stt: std::sync::Arc<dyn Stt + Send + Sync>,
@@ -142,12 +146,43 @@ pub(crate) async fn handle_connection(
     let (mut reader, writer) = stream.into_split();
     let writer = std::sync::Arc::new(Mutex::new(writer));
     let mut buf = [0u8; 4096];
+    let mut silence_buf = vec![0i16; audio_segmenter::FRAME_SIZE];
     let samples_per_ms = audio_segmenter::FRAME_SIZE / 30;
     let silence_samples = (silence_ms as usize * samples_per_ms).max(audio_segmenter::FRAME_SIZE);
     let mut segmenter = AudioSegmenter::new(silence_samples);
     let mut last_discard = 0usize;
     loop {
-        let n = reader.read(&mut buf).await?;
+        let n =
+            match tokio::time::timeout(std::time::Duration::from_millis(30), reader.read(&mut buf))
+                .await
+            {
+                Ok(res) => res?,
+                Err(_) => {
+                    trace!("read underrun; injecting silence");
+                    if let Some(spoken) = segmenter.push_frames(&silence_buf) {
+                        debug!(samples = spoken.len(), "transcribing audio");
+                        let w = writer.clone();
+                        let stt = stt.clone();
+                        tokio::spawn(async move {
+                            if let Ok(trans) = stt.transcribe(&spoken).await {
+                                debug!(text = %trans.text, "transcription done");
+                                let mut w = w.lock().await;
+                                if let Err(e) = send_transcription(&mut *w, &trans).await {
+                                    error!(?e, "failed to send transcription");
+                                }
+                            }
+                        });
+                    }
+                    if segmenter.discarded() != last_discard {
+                        debug!(
+                            discarded = segmenter.discarded() - last_discard,
+                            "discarded short audio"
+                        );
+                        last_discard = segmenter.discarded();
+                    }
+                    continue;
+                }
+            };
         if n == 0 {
             break;
         }
