@@ -3,15 +3,16 @@ use webrtc_vad::{SampleRate, Vad, VadMode};
 
 /// Number of samples per VAD frame (30ms @ 16kHz).
 pub const FRAME_SIZE: usize = 480;
-/// Amount of accumulated silence before yielding a segment (approximately 1s @ 16kHz).
-pub const SILENCE_FRAMES: usize = FRAME_SIZE * 34;
+/// Default amount of accumulated silence before yielding a segment
+/// (approximately 1s at 16&nbsp;kHz).
+pub const DEFAULT_SILENCE_FRAMES: usize = FRAME_SIZE * 34;
 /// Minimum required voiced frames before accepting a segment (approximately 0.5s @ 16kHz).
 pub const MIN_VOICE_FRAMES: usize = FRAME_SIZE * 16;
 
 /// Splits incoming PCM frames using VAD and emits complete voice segments.
 ///
 /// Audio is processed in `FRAME_SIZE` chunks which equate to 30&nbsp;ms of
-/// 16&nbsp;kHz samples. Once `SILENCE_FRAMES` worth of silence is observed after
+/// 16&nbsp;kHz samples. Once the configured amount of silence is observed after
 /// speech exceeding `MIN_VOICE_FRAMES`, the voiced portion is returned for
 /// transcription. Shorter voiced snippets are discarded to avoid false triggers.
 pub struct AudioSegmenter {
@@ -21,11 +22,13 @@ pub struct AudioSegmenter {
     silence: usize,
     voiced: usize,
     discarded: usize,
+    silence_frames: usize,
 }
 
 impl AudioSegmenter {
-    /// Create a new instance configured for 16kHz audio.
-    pub fn new() -> Self {
+    /// Create a new instance configured for 16kHz audio with the provided
+    /// silence threshold in frames.
+    pub fn new(silence_frames: usize) -> Self {
         let mut vad = Vad::new_with_rate(SampleRate::Rate16kHz);
         vad.set_mode(VadMode::Quality);
         Self {
@@ -35,11 +38,12 @@ impl AudioSegmenter {
             silence: 0,
             voiced: 0,
             discarded: 0,
+            silence_frames,
         }
     }
 
     #[cfg(test)]
-    pub fn new_without_vad() -> Self {
+    pub fn new_without_vad(silence_frames: usize) -> Self {
         Self {
             vad: None,
             buffer: Vec::new(),
@@ -47,6 +51,7 @@ impl AudioSegmenter {
             silence: 0,
             voiced: 0,
             discarded: 0,
+            silence_frames,
         }
     }
 
@@ -71,7 +76,7 @@ impl AudioSegmenter {
                 self.silence += FRAME_SIZE;
                 trace!(silence = self.silence, "silence increasing");
             }
-            if self.silence >= SILENCE_FRAMES {
+            if self.silence >= self.silence_frames {
                 let segment = self.buffer.split_off(self.idx - self.silence);
                 let spoken = std::mem::take(&mut self.buffer);
                 self.buffer = segment;
@@ -123,9 +128,9 @@ mod tests {
     #[test]
     #[ignore]
     fn emits_segment_after_voice_and_silence() {
-        let mut seg = AudioSegmenter::new_without_vad();
+        let mut seg = AudioSegmenter::new_without_vad(DEFAULT_SILENCE_FRAMES);
         let voiced = vec![20_000i16; MIN_VOICE_FRAMES];
-        let silence = vec![0i16; SILENCE_FRAMES];
+        let silence = vec![0i16; DEFAULT_SILENCE_FRAMES];
         assert!(seg.push_frames(&voiced).is_none());
         assert!(seg.push_frames(&silence).is_some());
     }
@@ -134,9 +139,9 @@ mod tests {
     #[test]
     #[ignore]
     fn discards_short_segments() {
-        let mut seg = AudioSegmenter::new_without_vad();
+        let mut seg = AudioSegmenter::new_without_vad(DEFAULT_SILENCE_FRAMES);
         let voiced = vec![20_000i16; MIN_VOICE_FRAMES / 2];
-        let silence = vec![0i16; SILENCE_FRAMES];
+        let silence = vec![0i16; DEFAULT_SILENCE_FRAMES];
         assert!(seg.push_frames(&voiced).is_none());
         assert!(seg.push_frames(&silence).is_none());
         assert_eq!(seg.discarded(), voiced.len());
