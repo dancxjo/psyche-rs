@@ -71,3 +71,5 @@
 - Maintain project documentation under the `docs/` directory.
 - When working with `webrtc_vad` in async tests, use `spawn_local` since its
   context isn't `Send`.
+- Set `WHISPER_SEGMENTS_DIR` to dump each PCM segment as a WAV file during tests
+  or debugging.

@@ -4544,8 +4544,10 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "async-trait",
+ "chrono",
  "clap",
  "daemon-common",
+ "hound",
  "serde",
  "serde_json",
  "tempfile",
