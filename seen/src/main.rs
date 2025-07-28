@@ -14,7 +14,7 @@ struct Cli {
     llm_url: String,
 
     /// Model name
-    #[arg(long, default_value = "llava")]
+    #[arg(long, default_value = "gemma3n")]
     model: String,
 
     /// Logging verbosity level

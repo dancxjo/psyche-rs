@@ -129,7 +129,7 @@ mod tests {
     async fn image_chat_streams_text() {
         let server = MockServer::start_async().await;
         let body =
-            "{\"model\":\"llava\",\"created_at\":\"now\",\"response\":\"desc\",\"done\":true}\n";
+            "{\"model\":\"gemma3n\",\"created_at\":\"now\",\"response\":\"desc\",\"done\":true}\n";
         let mock = server
             .mock_async(|when, then| {
                 when.method(POST)
@@ -142,12 +142,12 @@ mod tests {
             .await;
         let chat = OllamaImageChat::new(
             server.base_url(),
-            "llava".into(),
+            "gemma3n".into(),
             vec![Image::from_base64("abcd")],
         );
         let profile = LlmProfile {
             provider: "ollama".into(),
-            model: "llava".into(),
+            model: "gemma3n".into(),
             capabilities: vec![LlmCapability::Chat, LlmCapability::Image],
         };
         let mut stream = chat.chat_stream(&profile, "", "hi").await.unwrap();
@@ -163,7 +163,7 @@ mod tests {
     async fn run_processes_image() {
         let server = MockServer::start_async().await;
         let body =
-            "{\"model\":\"llava\",\"created_at\":\"now\",\"response\":\"a cat\",\"done\":true}\n";
+            "{\"model\":\"gemma3n\",\"created_at\":\"now\",\"response\":\"a cat\",\"done\":true}\n";
         server
             .mock_async(|when, then| {
                 when.method(POST).path("/api/generate");
@@ -176,7 +176,7 @@ mod tests {
         let sock = dir.path().join("eye.sock");
         let url = server.base_url();
         let local = tokio::task::LocalSet::new();
-        let run_fut = local.spawn_local(run(sock.clone(), url, "llava".into()));
+        let run_fut = local.spawn_local(run(sock.clone(), url, "gemma3n".into()));
         local
             .run_until(async {
                 tokio::time::sleep(std::time::Duration::from_millis(50)).await;
