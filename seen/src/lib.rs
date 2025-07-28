@@ -42,6 +42,13 @@ impl ImageQueue {
     }
 }
 
+/// Return the byte index just after the JPEG end-of-image marker if present.
+fn find_jpeg_eoi(buf: &[u8]) -> Option<usize> {
+    buf.windows(2)
+        .position(|w| w == [0xFF, 0xD9])
+        .map(|pos| pos + 2)
+}
+
 async fn describe_image(base_url: &str, model: &str, img: &[u8]) -> anyhow::Result<String> {
     let ollama = Ollama::try_new(base_url)?;
     let b64 = general_purpose::STANDARD.encode(img);
@@ -86,9 +93,24 @@ async fn handle_connection(
     let q = queue.clone();
     let mut read_task = tokio::spawn(async move {
         let mut buf = Vec::new();
-        reader.read_to_end(&mut buf).await.ok();
-        if !buf.is_empty() {
-            q.push(buf).await;
+        let mut chunk = [0u8; 8192];
+        loop {
+            match reader.read(&mut chunk).await {
+                Ok(0) => {
+                    if !buf.is_empty() {
+                        q.push(buf).await;
+                    }
+                    break;
+                }
+                Ok(n) => {
+                    buf.extend_from_slice(&chunk[..n]);
+                    while let Some(end) = find_jpeg_eoi(&buf) {
+                        let img = buf.drain(..end).collect();
+                        q.push(img).await;
+                    }
+                }
+                Err(_) => break,
+            }
         }
     });
 
@@ -210,6 +232,47 @@ mod tests {
                     .unwrap()
                     .unwrap();
                 assert_eq!(caption.trim(), "a cat");
+            })
+            .await;
+        run_fut.abort();
+    }
+
+    #[tokio::test]
+    async fn processes_on_jpeg_eoi() {
+        let server = MockServer::start_async().await;
+        let body =
+            "{\"model\":\"gemma3n\",\"created_at\":\"now\",\"response\":\"a cat\",\"done\":true}\n";
+        server
+            .mock_async(|when, then| {
+                when.method(POST).path("/api/generate");
+                then.status(200)
+                    .header("content-type", "application/json")
+                    .body(body);
+            })
+            .await;
+        let dir = tempdir().unwrap();
+        let sock = dir.path().join("eye.sock");
+        let url = server.base_url();
+        let local = LocalSet::new();
+        let run_fut = local.spawn_local(run(sock.clone(), url, "gemma3n".into()));
+        local
+            .run_until(async {
+                tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+                let watcher = UnixStream::connect(&sock).await.unwrap();
+                let read = tokio::spawn(async move {
+                    let mut reader = tokio::io::BufReader::new(watcher);
+                    let mut buf = String::new();
+                    reader.read_line(&mut buf).await.unwrap();
+                    buf
+                });
+                let mut sender = UnixStream::connect(&sock).await.unwrap();
+                sender.write_all(b"JPEGDATA\xFF\xD9").await.unwrap();
+                let caption = tokio::time::timeout(std::time::Duration::from_millis(200), read)
+                    .await
+                    .unwrap()
+                    .unwrap();
+                assert_eq!(caption.trim(), "a cat");
+                drop(sender);
             })
             .await;
         run_fut.abort();
