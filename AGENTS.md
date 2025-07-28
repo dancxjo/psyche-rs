@@ -69,3 +69,5 @@
 - When showing long download progress in CLI tools, direct `indicatif`
   progress bars to stderr to avoid polluting captured stdout in tests.
 - Maintain project documentation under the `docs/` directory.
+- When working with `webrtc_vad` in async tests, use `spawn_local` since its
+  context isn't `Send`.

@@ -37,32 +37,42 @@ pub async fn run_with_stt_no_vad<S: Stt + Send + Sync + 'static>(
     let listener = UnixListener::bind(&socket)?;
     let stt = std::sync::Arc::new(stt);
     loop {
-        let (mut stream, _) = listener.accept().await?;
+        let (stream, _) = listener.accept().await?;
         let stt = stt.clone();
-        let mut buf = [0u8; 4096];
         let silence_samples = (silence_ms as usize * crate::audio_segmenter::FRAME_SIZE / 30)
             .max(crate::audio_segmenter::FRAME_SIZE);
-        let mut segmenter =
-            crate::audio_segmenter::AudioSegmenter::new_without_vad(silence_samples);
-        loop {
-            let n = stream.read(&mut buf).await?;
-            if n == 0 {
-                break;
-            }
-            let mut frames = Vec::with_capacity(n / 2);
-            for chunk in buf[..n].chunks_exact(2) {
-                frames.push(i16::from_le_bytes([chunk[0], chunk[1]]));
-            }
-            if let Some(spoken) = segmenter.push_frames(&frames) {
-                if let Ok(trans) = stt.transcribe(&spoken).await {
-                    crate::send_transcription(&mut stream, &trans).await?;
+        tokio::task::spawn_local(async move {
+            let (mut reader, writer) = stream.into_split();
+            let writer = std::sync::Arc::new(tokio::sync::Mutex::new(writer));
+            let mut buf = [0u8; 4096];
+            let mut segmenter =
+                crate::audio_segmenter::AudioSegmenter::new_without_vad(silence_samples);
+            loop {
+                let n = reader.read(&mut buf).await.unwrap();
+                if n == 0 {
+                    break;
+                }
+                let mut frames = Vec::with_capacity(n / 2);
+                for chunk in buf[..n].chunks_exact(2) {
+                    frames.push(i16::from_le_bytes([chunk[0], chunk[1]]));
+                }
+                if let Some(spoken) = segmenter.push_frames(&frames) {
+                    let w = writer.clone();
+                    let stt = stt.clone();
+                    tokio::task::spawn_local(async move {
+                        if let Ok(trans) = stt.transcribe(&spoken).await {
+                            let mut w = w.lock().await;
+                            crate::send_transcription(&mut *w, &trans).await.unwrap();
+                        }
+                    });
                 }
             }
-        }
-        if let Some(spoken) = segmenter.finish() {
-            if let Ok(trans) = stt.transcribe(&spoken).await {
-                crate::send_transcription(&mut stream, &trans).await?;
+            if let Some(spoken) = segmenter.finish() {
+                if let Ok(trans) = stt.transcribe(&spoken).await {
+                    let mut w = writer.lock().await;
+                    crate::send_transcription(&mut *w, &trans).await.unwrap();
+                }
             }
-        }
+        });
     }
 }
