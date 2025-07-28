@@ -2,7 +2,7 @@ use std::path::PathBuf;
 
 use async_trait::async_trait;
 use serde::Serialize;
-use tokio::io::{AsyncReadExt, AsyncWriteExt};
+use tokio::io::{AsyncReadExt, AsyncWrite, AsyncWriteExt};
 use tokio::net::{UnixListener, UnixStream};
 use tokio::sync::Mutex;
 use tracing::{debug, error, info, trace};
@@ -135,17 +135,19 @@ pub async fn run(socket: PathBuf, model: PathBuf, silence_ms: u64) -> anyhow::Re
 }
 
 pub(crate) async fn handle_connection(
-    mut stream: UnixStream,
+    stream: UnixStream,
     stt: std::sync::Arc<dyn Stt + Send + Sync>,
     silence_ms: u64,
 ) -> anyhow::Result<()> {
+    let (mut reader, writer) = stream.into_split();
+    let writer = std::sync::Arc::new(Mutex::new(writer));
     let mut buf = [0u8; 4096];
     let samples_per_ms = audio_segmenter::FRAME_SIZE / 30;
     let silence_samples = (silence_ms as usize * samples_per_ms).max(audio_segmenter::FRAME_SIZE);
     let mut segmenter = AudioSegmenter::new(silence_samples);
     let mut last_discard = 0usize;
     loop {
-        let n = stream.read(&mut buf).await?;
+        let n = reader.read(&mut buf).await?;
         if n == 0 {
             break;
         }
@@ -156,10 +158,17 @@ pub(crate) async fn handle_connection(
         trace!(frames = frames.len(), "received audio frames");
         if let Some(spoken) = segmenter.push_frames(&frames) {
             debug!(samples = spoken.len(), "transcribing audio");
-            if let Ok(trans) = stt.transcribe(&spoken).await {
-                debug!(text = %trans.text, "transcription done");
-                send_transcription(&mut stream, &trans).await?;
-            }
+            let w = writer.clone();
+            let stt = stt.clone();
+            tokio::spawn(async move {
+                if let Ok(trans) = stt.transcribe(&spoken).await {
+                    debug!(text = %trans.text, "transcription done");
+                    let mut w = w.lock().await;
+                    if let Err(e) = send_transcription(&mut *w, &trans).await {
+                        error!(?e, "failed to send transcription");
+                    }
+                }
+            });
         }
         if segmenter.discarded() != last_discard {
             debug!(
@@ -172,19 +181,31 @@ pub(crate) async fn handle_connection(
 
     if let Some(spoken) = segmenter.finish() {
         debug!(samples = spoken.len(), "transcribing audio");
-        if let Ok(trans) = stt.transcribe(&spoken).await {
-            debug!(text = %trans.text, "transcription done");
-            send_transcription(&mut stream, &trans).await?;
-        }
+        let stt = stt.clone();
+        let w = writer.clone();
+        tokio::spawn(async move {
+            if let Ok(trans) = stt.transcribe(&spoken).await {
+                debug!(text = %trans.text, "transcription done");
+                let mut w = w.lock().await;
+                if let Err(e) = send_transcription(&mut *w, &trans).await {
+                    error!(?e, "failed to send transcription");
+                }
+            }
+        })
+        .await
+        .map_err(|e| anyhow::anyhow!(e))?;
     }
 
     Ok(())
 }
 
-pub(crate) async fn send_transcription(
-    stream: &mut UnixStream,
+pub(crate) async fn send_transcription<W>(
+    stream: &mut W,
     result: &Transcription,
-) -> anyhow::Result<()> {
+) -> anyhow::Result<()>
+where
+    W: AsyncWrite + Unpin,
+{
     let text = serde_json::to_string(result)?;
     stream
         .write_all(format!("/whisper/asr\n{}\n---\n", text).as_bytes())
