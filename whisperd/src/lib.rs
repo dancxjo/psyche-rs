@@ -156,19 +156,8 @@ pub(crate) async fn handle_connection(
             frames.push(i16::from_le_bytes([chunk[0], chunk[1]]));
         }
         trace!(frames = frames.len(), "received audio frames");
-        if let Some(spoken) = segmenter.push_frames(&frames) {
-            debug!(samples = spoken.len(), "transcribing audio");
-            let w = writer.clone();
-            let stt = stt.clone();
-            tokio::spawn(async move {
-                if let Ok(trans) = stt.transcribe(&spoken).await {
-                    debug!(text = %trans.text, "transcription done");
-                    let mut w = w.lock().await;
-                    if let Err(e) = send_transcription(&mut *w, &trans).await {
-                        error!(?e, "failed to send transcription");
-                    }
-                }
-            });
+        while let Some(spoken) = segmenter.push_frames(&frames) {
+            queue_transcription(spoken, &writer, &stt);
         }
         if segmenter.discarded() != last_discard {
             debug!(
@@ -197,6 +186,25 @@ pub(crate) async fn handle_connection(
     }
 
     Ok(())
+}
+
+fn queue_transcription(
+    spoken: Vec<i16>,
+    writer: &std::sync::Arc<Mutex<tokio::net::unix::OwnedWriteHalf>>,
+    stt: &std::sync::Arc<dyn Stt + Send + Sync>,
+) {
+    let w = writer.clone();
+    let stt = stt.clone();
+    tokio::spawn(async move {
+        debug!(samples = spoken.len(), "transcribing audio");
+        if let Ok(trans) = stt.transcribe(&spoken).await {
+            debug!(text = %trans.text, "transcription done");
+            let mut w = w.lock().await;
+            if let Err(e) = send_transcription(&mut *w, &trans).await {
+                error!(?e, "failed to send transcription");
+            }
+        }
+    });
 }
 
 pub(crate) async fn send_transcription<W>(
