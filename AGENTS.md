@@ -73,3 +73,5 @@
   context isn't `Send`.
 - Set `WHISPER_SEGMENTS_DIR` to dump each PCM segment as a WAV file during tests
   or debugging.
+- For daemon tests expecting streamed output, use `BufReader::read_line` to
+  avoid hanging when connections stay open.
