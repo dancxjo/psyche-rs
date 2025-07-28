@@ -21,6 +21,10 @@ struct Cli {
     #[arg(long, default_value = "1000")]
     silence_ms: u64,
 
+    /// Maximum milliseconds for a single segment
+    #[arg(long, default_value = "20000")]
+    timeout_ms: u64,
+
     /// Run as a background daemon
     #[arg(short = 'd', long)]
     daemon: bool,
@@ -34,7 +38,13 @@ async fn main() -> anyhow::Result<()> {
         .with_max_level(tracing_subscriber::filter::LevelFilter::from(cli.log_level))
         .init();
     maybe_daemonize(cli.daemon)?;
-    whisperd::run(cli.socket, cli.whisper_model, cli.silence_ms).await
+    whisperd::run(
+        cli.socket,
+        cli.whisper_model,
+        cli.silence_ms,
+        cli.timeout_ms,
+    )
+    .await
 }
 
 #[cfg(test)]
@@ -46,6 +56,7 @@ mod tests {
         let cli = Cli::try_parse_from(["whisperd", "--whisper-model", "model.bin"]).unwrap();
         assert!(matches!(cli.log_level, LogLevel::Info));
         assert_eq!(cli.silence_ms, 1000);
+        assert_eq!(cli.timeout_ms, 20000);
     }
 
     #[test]
@@ -58,9 +69,12 @@ mod tests {
             "debug",
             "--silence-ms",
             "1500",
+            "--timeout-ms",
+            "5000",
         ])
         .unwrap();
         assert!(matches!(cli.log_level, LogLevel::Debug));
         assert_eq!(cli.silence_ms, 1500);
+        assert_eq!(cli.timeout_ms, 5000);
     }
 }

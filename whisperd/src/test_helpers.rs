@@ -10,6 +10,7 @@ pub async fn run_with_stt<S: Stt + Send + Sync + 'static>(
     socket: PathBuf,
     stt: S,
     silence_ms: u64,
+    timeout_ms: u64,
 ) -> anyhow::Result<()> {
     if socket.exists() {
         tokio::fs::remove_file(&socket).await.ok();
@@ -19,7 +20,7 @@ pub async fn run_with_stt<S: Stt + Send + Sync + 'static>(
     loop {
         let (stream, _) = listener.accept().await?;
         let stt = stt.clone();
-        if let Err(e) = handle_connection(stream, stt, silence_ms).await {
+        if let Err(e) = handle_connection(stream, stt, silence_ms, timeout_ms).await {
             error!(?e, "connection error");
         }
     }
@@ -30,6 +31,7 @@ pub async fn run_with_stt_no_vad<S: Stt + Send + Sync + 'static>(
     socket: PathBuf,
     stt: S,
     silence_ms: u64,
+    timeout_ms: u64,
 ) -> anyhow::Result<()> {
     if socket.exists() {
         tokio::fs::remove_file(&socket).await.ok();
@@ -41,12 +43,16 @@ pub async fn run_with_stt_no_vad<S: Stt + Send + Sync + 'static>(
         let stt = stt.clone();
         let silence_samples = (silence_ms as usize * crate::audio_segmenter::FRAME_SIZE / 30)
             .max(crate::audio_segmenter::FRAME_SIZE);
+        let timeout_samples = (timeout_ms as usize * crate::audio_segmenter::FRAME_SIZE / 30)
+            .max(crate::audio_segmenter::FRAME_SIZE);
         tokio::task::spawn_local(async move {
             let (mut reader, writer) = stream.into_split();
             let writer = std::sync::Arc::new(tokio::sync::Mutex::new(writer));
             let mut buf = [0u8; 4096];
-            let mut segmenter =
-                crate::audio_segmenter::AudioSegmenter::new_without_vad(silence_samples);
+            let mut segmenter = crate::audio_segmenter::AudioSegmenter::without_vad_with_timeout(
+                silence_samples,
+                timeout_samples,
+            );
             loop {
                 let n = reader.read(&mut buf).await.unwrap();
                 if n == 0 {

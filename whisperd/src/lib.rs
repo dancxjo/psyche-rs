@@ -117,7 +117,12 @@ impl Stt for WhisperStt {
 }
 
 /// Run the daemon.
-pub async fn run(socket: PathBuf, model: PathBuf, silence_ms: u64) -> anyhow::Result<()> {
+pub async fn run(
+    socket: PathBuf,
+    model: PathBuf,
+    silence_ms: u64,
+    timeout_ms: u64,
+) -> anyhow::Result<()> {
     info!(?socket, "starting whisperd");
     if socket.exists() {
         tokio::fs::remove_file(&socket).await.ok();
@@ -130,7 +135,7 @@ pub async fn run(socket: PathBuf, model: PathBuf, silence_ms: u64) -> anyhow::Re
     loop {
         let (stream, _) = listener.accept().await?;
         let stt = stt.clone();
-        if let Err(e) = handle_connection(stream, stt, silence_ms).await {
+        if let Err(e) = handle_connection(stream, stt, silence_ms, timeout_ms).await {
             error!(?e, "connection error");
         }
     }
@@ -140,13 +145,15 @@ pub(crate) async fn handle_connection(
     stream: UnixStream,
     stt: std::sync::Arc<dyn Stt + Send + Sync>,
     silence_ms: u64,
+    timeout_ms: u64,
 ) -> anyhow::Result<()> {
     let (mut reader, writer) = stream.into_split();
     let writer = std::sync::Arc::new(Mutex::new(writer));
     let mut buf = [0u8; 4096];
     let samples_per_ms = audio_segmenter::FRAME_SIZE / 30;
     let silence_samples = (silence_ms as usize * samples_per_ms).max(audio_segmenter::FRAME_SIZE);
-    let mut segmenter = AudioSegmenter::new(silence_samples);
+    let timeout_samples = (timeout_ms as usize * samples_per_ms).max(audio_segmenter::FRAME_SIZE);
+    let mut segmenter = AudioSegmenter::with_timeout(silence_samples, timeout_samples);
     let mut last_discard = 0usize;
     loop {
         let n = reader.read(&mut buf).await?;
@@ -290,7 +297,9 @@ mod tests {
         let local = tokio::task::LocalSet::new();
         let sock_clone = sock.clone();
         let handle = local.spawn_local(async move {
-            run_with_stt_no_vad(sock_clone, stt, 1000).await.unwrap();
+            run_with_stt_no_vad(sock_clone, stt, 1000, 20000)
+                .await
+                .unwrap();
         });
 
         local

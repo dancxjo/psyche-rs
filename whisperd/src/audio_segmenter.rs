@@ -8,6 +8,8 @@ pub const FRAME_SIZE: usize = 480;
 pub const DEFAULT_SILENCE_FRAMES: usize = FRAME_SIZE * 34;
 /// Minimum required voiced frames before accepting a segment (approximately 0.5s @ 16kHz).
 pub const MIN_VOICE_FRAMES: usize = FRAME_SIZE * 16;
+/// Default maximum frames for a single segment (~20s).
+pub const DEFAULT_MAX_FRAMES: usize = FRAME_SIZE * 667;
 
 /// Splits incoming PCM frames using VAD and emits complete voice segments.
 ///
@@ -23,12 +25,18 @@ pub struct AudioSegmenter {
     voiced: usize,
     discarded: usize,
     silence_frames: usize,
+    max_frames: usize,
 }
 
 impl AudioSegmenter {
     /// Create a new instance configured for 16kHz audio with the provided
     /// silence threshold in frames.
     pub fn new(silence_frames: usize) -> Self {
+        Self::with_timeout(silence_frames, DEFAULT_MAX_FRAMES)
+    }
+
+    /// Create a new instance with a custom maximum segment length.
+    pub fn with_timeout(silence_frames: usize, max_frames: usize) -> Self {
         let mut vad = Vad::new_with_rate(SampleRate::Rate16kHz);
         vad.set_mode(VadMode::Quality);
         Self {
@@ -39,11 +47,17 @@ impl AudioSegmenter {
             voiced: 0,
             discarded: 0,
             silence_frames,
+            max_frames,
         }
     }
 
     #[cfg(test)]
     pub fn new_without_vad(silence_frames: usize) -> Self {
+        Self::without_vad_with_timeout(silence_frames, DEFAULT_MAX_FRAMES)
+    }
+
+    #[cfg(test)]
+    pub fn without_vad_with_timeout(silence_frames: usize, max_frames: usize) -> Self {
         Self {
             vad: None,
             buffer: Vec::new(),
@@ -52,6 +66,7 @@ impl AudioSegmenter {
             voiced: 0,
             discarded: 0,
             silence_frames,
+            max_frames,
         }
     }
 
@@ -76,11 +91,21 @@ impl AudioSegmenter {
                 self.silence += FRAME_SIZE;
                 trace!(silence = self.silence, "silence increasing");
             }
-            if self.silence >= self.silence_frames {
-                let segment = self.buffer.split_off(self.idx - self.silence);
+            if self.silence >= self.silence_frames || self.buffer.len() >= self.max_frames {
+                let timeout = self.buffer.len() >= self.max_frames;
+                let cut_idx = if timeout {
+                    self.max_frames
+                } else {
+                    self.idx - self.silence
+                };
+                let segment = self.buffer.split_off(cut_idx);
                 let spoken = std::mem::take(&mut self.buffer);
                 self.buffer = segment;
-                self.idx = 0;
+                self.idx = if self.idx > cut_idx {
+                    self.idx - cut_idx
+                } else {
+                    0
+                };
                 self.silence = 0;
                 let voiced = std::mem::replace(&mut self.voiced, 0);
                 if voiced >= MIN_VOICE_FRAMES {
@@ -89,7 +114,7 @@ impl AudioSegmenter {
                 } else {
                     self.discarded += spoken.len();
                     if !spoken.is_empty() {
-                        debug!(samples = spoken.len(), "discarding short segment");
+                        debug!(samples = spoken.len(), timeout, "discarding short segment");
                     }
                 }
             }
@@ -145,5 +170,18 @@ mod tests {
         assert!(seg.push_frames(&voiced).is_none());
         assert!(seg.push_frames(&silence).is_none());
         assert_eq!(seg.discarded(), voiced.len());
+    }
+
+    #[traced_test]
+    #[test]
+    #[ignore]
+    fn emits_segment_after_timeout() {
+        let mut seg = AudioSegmenter::without_vad_with_timeout(
+            DEFAULT_SILENCE_FRAMES * 10,
+            MIN_VOICE_FRAMES + FRAME_SIZE,
+        );
+        let voiced = vec![20_000i16; MIN_VOICE_FRAMES + FRAME_SIZE];
+        assert!(seg.push_frames(&voiced).is_none());
+        assert!(seg.finish().is_some());
     }
 }
