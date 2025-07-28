@@ -17,6 +17,10 @@ struct Cli {
     #[arg(long, default_value = "info")]
     log_level: LogLevel,
 
+    /// Milliseconds of silence before transcribing
+    #[arg(long, default_value = "1000")]
+    silence_ms: u64,
+
     /// Run as a background daemon
     #[arg(short = 'd', long)]
     daemon: bool,
@@ -30,7 +34,7 @@ async fn main() -> anyhow::Result<()> {
         .with_max_level(tracing_subscriber::filter::LevelFilter::from(cli.log_level))
         .init();
     maybe_daemonize(cli.daemon)?;
-    whisperd::run(cli.socket, cli.whisper_model).await
+    whisperd::run(cli.socket, cli.whisper_model, cli.silence_ms).await
 }
 
 #[cfg(test)]
@@ -41,6 +45,7 @@ mod tests {
     fn cli_defaults_to_info_log_level() {
         let cli = Cli::try_parse_from(["whisperd", "--whisper-model", "model.bin"]).unwrap();
         assert!(matches!(cli.log_level, LogLevel::Info));
+        assert_eq!(cli.silence_ms, 1000);
     }
 
     #[test]
@@ -51,8 +56,11 @@ mod tests {
             "model.bin",
             "--log-level",
             "debug",
+            "--silence-ms",
+            "1500",
         ])
         .unwrap();
         assert!(matches!(cli.log_level, LogLevel::Debug));
+        assert_eq!(cli.silence_ms, 1500);
     }
 }

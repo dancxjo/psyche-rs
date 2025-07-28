@@ -115,7 +115,7 @@ impl Stt for WhisperStt {
 }
 
 /// Run the daemon.
-pub async fn run(socket: PathBuf, model: PathBuf) -> anyhow::Result<()> {
+pub async fn run(socket: PathBuf, model: PathBuf, silence_ms: u64) -> anyhow::Result<()> {
     info!(?socket, "starting whisperd");
     if socket.exists() {
         tokio::fs::remove_file(&socket).await.ok();
@@ -128,7 +128,7 @@ pub async fn run(socket: PathBuf, model: PathBuf) -> anyhow::Result<()> {
     loop {
         let (stream, _) = listener.accept().await?;
         let stt = stt.clone();
-        if let Err(e) = handle_connection(stream, stt).await {
+        if let Err(e) = handle_connection(stream, stt, silence_ms).await {
             error!(?e, "connection error");
         }
     }
@@ -137,9 +137,12 @@ pub async fn run(socket: PathBuf, model: PathBuf) -> anyhow::Result<()> {
 pub(crate) async fn handle_connection(
     mut stream: UnixStream,
     stt: std::sync::Arc<dyn Stt + Send + Sync>,
+    silence_ms: u64,
 ) -> anyhow::Result<()> {
     let mut buf = [0u8; 4096];
-    let mut segmenter = AudioSegmenter::new();
+    let samples_per_ms = audio_segmenter::FRAME_SIZE / 30;
+    let silence_samples = (silence_ms as usize * samples_per_ms).max(audio_segmenter::FRAME_SIZE);
+    let mut segmenter = AudioSegmenter::new(silence_samples);
     let mut last_discard = 0usize;
     loop {
         let n = stream.read(&mut buf).await?;
@@ -224,7 +227,7 @@ mod tests {
         let local = tokio::task::LocalSet::new();
         let sock_clone = sock.clone();
         let handle = local.spawn_local(async move {
-            run_with_stt_no_vad(sock_clone, stt).await.unwrap();
+            run_with_stt_no_vad(sock_clone, stt, 1000).await.unwrap();
         });
 
         local

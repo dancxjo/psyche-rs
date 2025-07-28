@@ -4,5 +4,5 @@ if [ -z "$1" ]; then
     set -- "layka"
 fi
 
-cargo run -p whisperd -- --socket ./quick.sock --listen ./ear.sock --whisper-model whisper-base.en.bin --log-level debug
+cargo run -p whisperd -- --socket ./quick.sock --listen ./ear.sock --whisper-model whisper-base.en.bin --log-level debug --silence-ms 1000
 
