@@ -33,10 +33,6 @@ pub struct Cli {
     #[arg(long, default_value = "llm.toml")]
     pub llm: PathBuf,
 
-    /// Beat interval (in milliseconds)
-    #[arg(long, default_value_t = 50)]
-    pub beat_ms: u64,
-
     /// Logging verbosity level
     #[arg(long, default_value = "info")]
     pub log_level: LogLevel,
@@ -130,10 +126,8 @@ async fn main() -> anyhow::Result<()> {
             cli.socket,
             soul,
             identity,
-            std::time::Duration::from_millis(cli.beat_ms),
             registry,
             profile,
-            llms,
             cli.memory_sock,
             shutdown_signal(),
         ))

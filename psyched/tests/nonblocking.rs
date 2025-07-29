@@ -31,21 +31,13 @@ async fn injection_returns_immediately() {
     });
 
     let (tx, rx) = tokio::sync::oneshot::channel();
-    let instance = std::sync::Arc::new(psyche::llm::LlmInstance {
-        name: "mock".into(),
-        chat: std::sync::Arc::new(psyche::llm::mock_chat::MockChat::default()),
-        profile: profile.clone(),
-        semaphore: std::sync::Arc::new(tokio::sync::Semaphore::new(1)),
-    });
     let local = LocalSet::new();
     let server = local.spawn_local(psyched::run(
         socket.clone(),
         soul_dir.clone(),
         soul_dir.join("identity.toml"),
-        std::time::Duration::from_millis(50),
         registry.clone(),
         profile.clone(),
-        vec![instance.clone()],
         memory_sock.clone(),
         async move {
             let _ = rx.await;
