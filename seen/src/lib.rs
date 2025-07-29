@@ -4,12 +4,14 @@ use std::sync::Arc;
 
 use base64::{engine::general_purpose, Engine};
 use ollama_rs::generation::completion::request::GenerationRequest;
+use ollama_rs::generation::completion::GenerationResponseStream;
 use ollama_rs::generation::images::Image;
 use ollama_rs::Ollama;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::{UnixListener, UnixStream};
 use tokio::sync::{broadcast, Mutex, Notify};
-use tracing::{debug, error, info};
+use tokio_stream::StreamExt;
+use tracing::{debug, error, info, trace};
 
 const PROMPT: &str = "This is what you are currently seeing. It is from your perspective, so whomever you see isn't you, unless you're looking at a mirror or something. Narrate to yourself what you are seeing in one and only one sentence.";
 
@@ -55,8 +57,26 @@ async fn describe_image(base_url: &str, model: &str, img: &[u8]) -> anyhow::Resu
     let req = GenerationRequest::new(model.to_string(), String::new())
         .system(PROMPT.to_string())
         .images(vec![Image::from_base64(b64)]);
-    let resp = ollama.generate(req).await?;
-    Ok(resp.response.trim().to_string())
+    trace!(prompt = %PROMPT, "llm prompt");
+    let mut stream: GenerationResponseStream = ollama.generate_stream(req).await?;
+    let mut out = String::new();
+    while let Some(chunk) = stream.next().await {
+        match chunk {
+            Ok(responses) => {
+                for resp in responses {
+                    trace!(token = %resp.response, "stream token");
+                    out.push_str(&resp.response);
+                }
+            }
+            Err(e) => {
+                error!(?e, "stream error");
+                break;
+            }
+        }
+    }
+    let trimmed = out.trim().to_string();
+    debug!(response = %trimmed, "llm response");
+    Ok(trimmed)
 }
 
 async fn caption_loop(
@@ -177,11 +197,13 @@ mod tests {
         let server = MockServer::start_async().await;
         let body =
             "{\"model\":\"gemma3n\",\"created_at\":\"now\",\"response\":\"desc\",\"done\":true}\n";
+        let expected = base64::engine::general_purpose::STANDARD.encode(b"data");
         let mock = server
-            .mock_async(|when, then| {
+            .mock_async(move |when, then| {
                 when.method(POST)
                     .path("/api/generate")
-                    .body_contains("\"images\"");
+                    .body_contains("\"images\"")
+                    .body_contains(&expected);
                 then.status(200)
                     .header("content-type", "application/json")
                     .body(body);
