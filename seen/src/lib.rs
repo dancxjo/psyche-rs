@@ -54,8 +54,7 @@ fn find_jpeg_eoi(buf: &[u8]) -> Option<usize> {
 async fn describe_image(base_url: &str, model: &str, img: &[u8]) -> anyhow::Result<String> {
     let ollama = Ollama::try_new(base_url)?;
     let b64 = general_purpose::STANDARD.encode(img);
-    let req = GenerationRequest::new(model.to_string(), String::new())
-        .system(PROMPT.to_string())
+    let req = GenerationRequest::new(model.to_string(), PROMPT.to_string())
         .images(vec![Image::from_base64(b64)]);
     trace!(prompt = %PROMPT, "llm prompt");
     let mut stream: GenerationResponseStream = ollama.generate_stream(req).await?;
