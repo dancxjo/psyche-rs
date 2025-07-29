@@ -52,10 +52,8 @@ async fn wit_recall_postprocess_sends_query() {
         socket.clone(),
         soul_dir.clone(),
         config_path,
-        std::time::Duration::from_millis(50),
         registry.clone(),
         profile.clone(),
-        vec![instance.clone()],
         memory_sock.clone(),
         async move {
             let _ = rx.await;
