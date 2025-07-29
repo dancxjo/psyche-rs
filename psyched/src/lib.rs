@@ -11,11 +11,13 @@ use std::path::{Path, PathBuf};
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
 use tokio::net::{UnixListener, UnixStream};
 use tracing::{debug, info, trace};
+use would::WouldConfig;
 
 pub use config::*;
 use uuid::Uuid;
 
 pub mod config;
+pub mod daemon;
 mod db_memory;
 pub mod distillers;
 mod file_memory;
@@ -285,6 +287,12 @@ pub async fn run(
     let memory_dir = soul.join("memory");
     tokio::fs::create_dir_all(&memory_dir).await?;
 
+    // spawn core daemons
+    let mut daemon_children = Vec::new();
+    if let Ok(child) = daemon::spawn_rememberd(&memory_sock, &memory_dir).await {
+        daemon_children.push(child);
+    }
+
     // load daemon configuration and spawn child processes from the identity file
     let psyche_cfg_path = identity.clone();
     let psyche_cfg = match config::load(&psyche_cfg_path).await {
@@ -302,6 +310,16 @@ pub async fn run(
         match sensor::launch_sensor(name, cfg).await {
             Ok(child) => sensor_children.push(child),
             Err(e) => tracing::warn!(sensor = %name, error = %e, "failed to launch sensor"),
+        }
+    }
+
+    if let Ok(wcfg) = would::WouldConfig::load(&psyche_cfg_path).await {
+        if !wcfg.motors.is_empty() {
+            if let Ok(child) =
+                daemon::spawn_would(Path::new("/run/would.sock"), &psyche_cfg_path).await
+            {
+                daemon_children.push(child);
+            }
         }
     }
     let wit_cfgs: Vec<_> = psyche_cfg
@@ -524,5 +542,11 @@ pub async fn run(
     }
     server.abort();
     let _ = server.await;
+    for mut child in sensor_children {
+        let _ = child.kill().await;
+    }
+    for mut child in daemon_children {
+        let _ = child.kill().await;
+    }
     Ok(())
 }

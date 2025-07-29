@@ -38,8 +38,6 @@ async fn injection_returns_immediately() {
         semaphore: std::sync::Arc::new(tokio::sync::Semaphore::new(1)),
     });
     let local = LocalSet::new();
-    let mem_store = rememberd::FileStore::new(soul_dir.join("memory"));
-    let mem_task = local.spawn_local(rememberd::run(memory_sock.clone(), mem_store));
     let server = local.spawn_local(psyched::run(
         socket.clone(),
         soul_dir.clone(),
@@ -75,7 +73,6 @@ async fn injection_returns_immediately() {
 
             tx.send(()).unwrap();
             server.await.unwrap().unwrap();
-            mem_task.abort();
         })
         .await;
 }

@@ -41,8 +41,6 @@ async fn quick_to_combobulator_generates_situation() {
         semaphore: std::sync::Arc::new(tokio::sync::Semaphore::new(1)),
     });
     let local = LocalSet::new();
-    let mem_store = rememberd::FileStore::new(soul_dir.join("memory"));
-    let mem_task = local.spawn_local(rememberd::run(memory_sock.clone(), mem_store));
     let server = local.spawn_local(psyched::run(
         socket.clone(),
         soul_dir.clone(),
@@ -73,7 +71,6 @@ async fn quick_to_combobulator_generates_situation() {
             tokio::time::sleep(std::time::Duration::from_millis(400)).await;
             tx.send(()).unwrap();
             server.await.unwrap().unwrap();
-            mem_task.abort();
 
             let instant_path = soul_dir.join("memory/instant.jsonl");
             let icontent = tokio::fs::read_to_string(&instant_path).await.unwrap();
