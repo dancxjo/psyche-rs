@@ -14,7 +14,7 @@ impl Router {
         let mut map = HashMap::new();
         for c in cfgs {
             let sock = PathBuf::from(format!("/run/psyche/{}.sock", c.name));
-            map.insert(c.output_kind.clone(), sock);
+            map.insert(c.output.clone(), sock);
         }
         Self { map }
     }
