@@ -8,5 +8,6 @@ members = [
     "distilld",
     "spoken",
     "seen",
+    "would",
 ]
 resolver = "2"
