@@ -23,14 +23,16 @@ impl Distiller {
 
     /// Spawn the `distilld` process.
     pub async fn spawn(&mut self) -> anyhow::Result<()> {
-        let mut cmd = Command::new("distilld");
-        cmd.arg("--input-kind").arg(&self.cfg.input_kind);
-        cmd.arg("--output-kind").arg(&self.cfg.output_kind);
-        if let Some(ref t) = self.cfg.prompt_template {
-            cmd.arg("--prompt-template").arg(t);
-        }
-        if let Some(ref c) = self.cfg.config {
-            cmd.arg("--config").arg(c);
+        let exe = std::env::var("CARGO_BIN_EXE_distilld").unwrap_or_else(|_| {
+            let mut p = std::env::current_exe().expect("exe");
+            p.pop();
+            p.pop();
+            p.push("distilld");
+            p.to_string_lossy().into_owned()
+        });
+        let mut cmd = Command::new(exe);
+        if let Some(ref t) = self.cfg.prompt {
+            cmd.arg("--prompt").arg(t);
         }
         cmd.arg("--daemon");
         let child = cmd.spawn()?;

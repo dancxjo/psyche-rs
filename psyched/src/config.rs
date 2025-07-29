@@ -6,12 +6,12 @@ use std::path::Path;
 pub struct DistillerConfig {
     #[serde(default)]
     pub name: String,
-    #[serde(rename = "input")] // for config readability
-    pub input_kind: String,
-    #[serde(rename = "output")]
-    pub output_kind: String,
-    #[serde(default)]
-    pub prompt_template: Option<String>,
+    #[serde(default, rename = "input")]
+    pub input: String,
+    #[serde(default, rename = "output")]
+    pub output: String,
+    #[serde(default, rename = "prompt")]
+    pub prompt: Option<String>,
     #[serde(default)]
     pub config: Option<String>,
 }

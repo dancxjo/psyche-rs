@@ -7,7 +7,7 @@ async fn load_config_parses_distillers() {
         [wit.instant]
         input = "sensation/chat"
         output = "instant"
-        prompt_template = "Summarize {{current}}"
+        prompt = "Summarize {{current}}"
     "#;
     let dir = tempdir().unwrap();
     let path = dir.path().join("config.toml");
