@@ -2856,7 +2856,6 @@ dependencies = [
  "neo4rs",
  "psyche",
  "qdrant-client",
- "rememberd",
  "serde",
  "serde_json",
  "tempfile",
@@ -2867,6 +2866,7 @@ dependencies = [
  "tracing",
  "tracing-subscriber",
  "uuid",
+ "would",
 ]
 
 [[package]]
