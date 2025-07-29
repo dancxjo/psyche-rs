@@ -75,3 +75,5 @@
   or debugging.
 - For daemon tests expecting streamed output, use `BufReader::read_line` to
   avoid hanging when connections stay open.
+- Store soul configuration in a single `identity.toml` that includes sensor and
+  motor settings; update scripts and loaders accordingly.
