@@ -22,6 +22,7 @@ mod file_memory;
 pub mod llm_config;
 mod memory_client;
 pub mod router;
+pub mod sensor;
 mod wit;
 
 /// Identity information loaded from `soul/identity.toml`.
@@ -284,8 +285,8 @@ pub async fn run(
     let memory_dir = soul.join("memory");
     tokio::fs::create_dir_all(&memory_dir).await?;
 
-    // load distillation pipeline configuration and spawn distilld processes
-    let psyche_cfg_path = soul.join("psyche.toml");
+    // load daemon configuration and spawn child processes
+    let psyche_cfg_path = soul.join("config.toml");
     let psyche_cfg = match config::load(&psyche_cfg_path).await {
         Ok(cfg) => cfg,
         Err(e) => {
@@ -293,8 +294,28 @@ pub async fn run(
             config::PsycheConfig::default()
         }
     };
-    let mut distillers: Vec<distillers::Distiller> = psyche_cfg
-        .distillers
+    let mut sensor_children = Vec::new();
+    for (name, cfg) in &psyche_cfg.sensor {
+        if !cfg.enabled {
+            continue;
+        }
+        match sensor::launch_sensor(name, cfg).await {
+            Ok(child) => sensor_children.push(child),
+            Err(e) => tracing::warn!(sensor = %name, error = %e, "failed to launch sensor"),
+        }
+    }
+    let wit_cfgs: Vec<_> = psyche_cfg
+        .wit
+        .iter()
+        .map(|(n, c)| {
+            let mut cfg = c.clone();
+            if cfg.name.is_empty() {
+                cfg.name = n.clone();
+            }
+            cfg
+        })
+        .collect();
+    let mut distillers: Vec<distillers::Distiller> = wit_cfgs
         .iter()
         .cloned()
         .map(distillers::Distiller::new)
@@ -302,7 +323,7 @@ pub async fn run(
     for d in &mut distillers {
         let _ = d.spawn().await;
     }
-    let router = router::Router::from_configs(&psyche_cfg.distillers);
+    let router = router::Router::from_configs(&wit_cfgs);
 
     let cfg_path = identity;
     let identity = load_identity(&cfg_path).await?;

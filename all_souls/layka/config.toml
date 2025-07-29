@@ -1,0 +1,11 @@
+[sensor.seen]
+enabled = true
+socket = "eye.sock"
+args = []
+log_level = "info"
+
+[sensor.whisperd]
+enabled = true
+socket = "ear.sock"
+args = []
+log_level = "info"
