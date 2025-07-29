@@ -1,4 +1,4 @@
 #!/bin/sh
 
 # Run the would daemon
-cargo run -p would -- --socket ./would.sock --config all_souls/layka/config.toml --log-level debug "$@"
+cargo run -p would -- --socket ./would.sock --config all_souls/layka/identity.toml --log-level debug "$@"

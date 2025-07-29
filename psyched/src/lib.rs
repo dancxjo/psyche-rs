@@ -285,8 +285,8 @@ pub async fn run(
     let memory_dir = soul.join("memory");
     tokio::fs::create_dir_all(&memory_dir).await?;
 
-    // load daemon configuration and spawn child processes
-    let psyche_cfg_path = soul.join("config.toml");
+    // load daemon configuration and spawn child processes from the identity file
+    let psyche_cfg_path = identity.clone();
     let psyche_cfg = match config::load(&psyche_cfg_path).await {
         Ok(cfg) => cfg,
         Err(e) => {

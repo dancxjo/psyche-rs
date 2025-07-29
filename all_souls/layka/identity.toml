@@ -15,3 +15,20 @@ output = "situation"
 prompt = "Combine recent instants into a coherent summary of the current situation, as if explaining to yourself what is happening now. Generate a brief summary, emphasizing what is important and omitting what isn't. Use the first person perspective from your point of view. Be terse and concise.  Use the information provided in the context to guide your responses, without inventing new details (this is real life, not fiction). Do not attempt to speak to the user here directly; these are your internal thoughts. Limit it to one sentence."
 beat_mod = 1
 postprocess = "recall"
+
+[sensor.seen]
+enabled = true
+socket = "eye.sock"
+args = []
+log_level = "info"
+
+[would.motors]
+charge = "/usr/local/lib/psyche/motors/charge"
+move_towards = "/usr/local/lib/psyche/motors/move_towards"
+say = "/usr/local/lib/psyche/motors/say"
+
+[sensor.whisperd]
+enabled = true
+socket = "ear.sock"
+args = []
+log_level = "info"
