@@ -20,6 +20,12 @@ postprocess = "recall"
 enabled = true
 socket = "eye.sock"
 args = []
+log_level = "trace"
+
+[sensor.whisperd]
+enabled = false
+socket = "ear.sock"
+args = []
 log_level = "info"
 
 [would.motors]
@@ -27,8 +33,3 @@ charge = "/usr/local/lib/psyche/motors/charge"
 move_towards = "/usr/local/lib/psyche/motors/move_towards"
 say = "/usr/local/lib/psyche/motors/say"
 
-[sensor.whisperd]
-enabled = true
-socket = "ear.sock"
-args = []
-log_level = "info"
