@@ -3,7 +3,7 @@ use daemon_common::{maybe_daemonize, LogLevel};
 use std::path::PathBuf;
 use tokio::fs;
 use toml;
-use tracing::{debug, trace};
+use tracing::debug;
 
 /// `psyched` — the orchestrator for psycheOS
 #[derive(Parser, Debug)]
@@ -29,33 +29,9 @@ pub struct Cli {
     #[arg(long, default_value = "identity.toml")]
     pub identity: PathBuf,
 
-    /// Path to LLM config. If relative, resolved against soul/config/.
-    #[arg(long, default_value = "llm.toml")]
-    pub llm: PathBuf,
-
-    /// Beat interval (in milliseconds)
-    #[arg(long, default_value_t = 50)]
-    pub beat_ms: u64,
-
     /// Logging verbosity level
     #[arg(long, default_value = "info")]
     pub log_level: LogLevel,
-
-    /// Qdrant service URL
-    #[arg(long, default_value = "http://localhost:6334")]
-    pub qdrant_url: String,
-
-    /// Neo4j service URL
-    #[arg(long, default_value = "bolt://localhost:7687")]
-    pub neo4j_url: String,
-
-    /// Neo4j username
-    #[arg(long, default_value = "neo4j")]
-    pub neo4j_user: String,
-
-    /// Neo4j password
-    #[arg(long, default_value = "password")]
-    pub neo4j_pass: String,
 
     /// Run as a background daemon
     #[arg(short = 'd', long)]
@@ -85,13 +61,6 @@ async fn main() -> anyhow::Result<()> {
         cli.identity.clone()
     };
 
-    // Resolve llm config path
-    let llm_cfg = if cli.llm.is_relative() {
-        soul.join("config").join(&cli.llm)
-    } else {
-        cli.llm.clone()
-    };
-
     // Load identity if present
     let identity_path = soul.join("identity.toml");
     if let Ok(text) = fs::read_to_string(&identity_path).await {
@@ -100,28 +69,7 @@ async fn main() -> anyhow::Result<()> {
         }
     }
 
-    // Construct LLM registry from configuration
-    let llms = psyched::llm_config::load_llms(&llm_cfg).await?;
-    let first = llms
-        .first()
-        .cloned()
-        .ok_or_else(|| anyhow::anyhow!("no llm"))?;
-    let registry = std::sync::Arc::new(psyche::llm::LlmRegistry {
-        chat: Box::new(psyche::llm::limited::LimitedChat::new(
-            first.chat.clone(),
-            first.semaphore.clone(),
-        )),
-        embed: Box::new(psyche::llm::mock_embed::MockEmbed::default()),
-    });
-    let profile = first.profile.clone();
-    let llms: Vec<_> = llms.into_iter().map(std::sync::Arc::new).collect();
-
     debug!("\u{1F4C1}  Loading identity from {}", identity.display());
-
-    std::env::set_var("QDRANT_URL", &cli.qdrant_url);
-    std::env::set_var("NEO4J_URL", &cli.neo4j_url);
-    std::env::set_var("NEO4J_USER", &cli.neo4j_user);
-    std::env::set_var("NEO4J_PASS", &cli.neo4j_pass);
 
     // Kick off orchestrator
     let local = tokio::task::LocalSet::new();
@@ -130,10 +78,6 @@ async fn main() -> anyhow::Result<()> {
             cli.socket,
             soul,
             identity,
-            std::time::Duration::from_millis(cli.beat_ms),
-            registry,
-            profile,
-            llms,
             cli.memory_sock,
             shutdown_signal(),
         ))
