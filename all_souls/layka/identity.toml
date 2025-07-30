@@ -23,7 +23,7 @@ args = []
 log_level = "trace"
 
 [sensor.whisperd]
-enabled = false
+enabled = true
 socket = "ear.sock"
 whisper_model = "whisper-base.en.bin"
 args = []
