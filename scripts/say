@@ -11,4 +11,4 @@ else
     TEXT=$(cat)
 fi
 
-echo "$TEXT" | nc -U "$SOCK" | aplay -q -D "$DEVICE" -f S16_LE -r 24000
+echo "$TEXT" | nc -U "$SOCK" | aplay -q -D "$DEVICE" -f S16_LE -r 22050
