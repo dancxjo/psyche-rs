@@ -30,6 +30,9 @@ pub struct SensorConfig {
     pub enabled: bool,
     #[serde(default)]
     pub socket: Option<String>,
+    /// Path to a model file passed to the sensor when applicable.
+    #[serde(default)]
+    pub whisper_model: Option<String>,
     #[serde(default)]
     pub args: Vec<String>,
     #[serde(default = "default_log_level")]

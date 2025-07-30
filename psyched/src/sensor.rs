@@ -11,6 +11,11 @@ pub async fn launch_sensor(name: &str, cfg: &SensorConfig) -> anyhow::Result<Chi
         .arg(&socket)
         .arg("--log-level")
         .arg(&cfg.log_level);
+    if name == "whisperd" {
+        if let Some(model) = &cfg.whisper_model {
+            cmd.arg("--whisper-model").arg(model);
+        }
+    }
     for arg in &cfg.args {
         cmd.arg(arg);
     }
