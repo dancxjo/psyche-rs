@@ -15,7 +15,7 @@ async fn wit_from_config_runs() {
     let config_path = soul_dir.join("identity.toml");
     tokio::fs::write(
         &config_path,
-        "[wit.echo]\ninput = \"sensation/chat\"\noutput = \"reply\"\nprompt = \"Respond\"\npriority = 1\nfeedback = \"\"\n",
+        "[wit.echo]\nprompt = \"Respond\"\npriority = 1\nfeedback = \"\"\n",
     )
     .await
     .unwrap();

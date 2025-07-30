@@ -6,14 +6,14 @@ use std::path::Path;
 pub struct DistillerConfig {
     #[serde(default)]
     pub name: String,
-    #[serde(default, rename = "input")]
-    pub input: String,
-    #[serde(default, rename = "output")]
-    pub output: String,
     #[serde(default, rename = "prompt")]
     pub prompt: Option<String>,
     #[serde(default)]
     pub config: Option<String>,
+    #[serde(default)]
+    pub input: Option<String>,
+    #[serde(default)]
+    pub output: Option<String>,
 }
 
 fn default_sensor_enabled() -> bool {

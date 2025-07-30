@@ -1,12 +1,6 @@
 [wit.combobulator]
-input = "sensation/chat"
-output = "instant"
 prompt = "prompts/combobulator.txt"
-beat_mod = 1
 
 [wit.memory]
-input = "instant"
-output = "situation"
 prompt = "prompts/memory.txt"
-beat_mod = 4
 postprocess = "flatten_links"

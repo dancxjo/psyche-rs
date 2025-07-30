@@ -5,8 +5,6 @@ use tempfile::tempdir;
 async fn load_config_parses_distillers() {
     let toml = r#"
         [wit.instant]
-        input = "sensation/chat"
-        output = "instant"
         prompt = "Summarize {{current}}"
     "#;
     let dir = tempdir().unwrap();
