@@ -2,7 +2,7 @@
 # Send text to voice.sock and play the synthesized audio.
 # Usage: say [TEXT]
 
-SOCK=${VOICE_SOCK:-/run/psyched/voice.sock}
+SOCK=${VOICE_SOCK:-voice.sock}
 DEVICE=${AUDIO_DEV:-default}
 
 if [ $# -gt 0 ]; then
