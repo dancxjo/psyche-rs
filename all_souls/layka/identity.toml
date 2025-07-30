@@ -25,6 +25,7 @@ log_level = "trace"
 [sensor.whisperd]
 enabled = false
 socket = "ear.sock"
+whisper_model = "whisper-base.en.bin"
 args = []
 log_level = "info"
 
