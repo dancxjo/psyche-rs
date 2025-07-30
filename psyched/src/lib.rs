@@ -77,11 +77,11 @@ async fn load_identity(path: &Path) -> Result<Identity> {
         wit.insert(
             "combobulator".into(),
             wit::WitConfig {
-                input: "sensation/chat".into(),
-                output: "instant".into(),
+                input: Some("sensation/chat".into()),
+                output: Some("instant".into()),
                 prompt: "{input}".into(),
                 priority: 0,
-                beat_mod: 1,
+                beat_mod: None,
                 feedback: None,
                 llm: None,
                 postprocess: None,
@@ -90,11 +90,11 @@ async fn load_identity(path: &Path) -> Result<Identity> {
         wit.insert(
             "memory".into(),
             wit::WitConfig {
-                input: "instant".into(),
-                output: "situation".into(),
+                input: Some("instant".into()),
+                output: Some("situation".into()),
                 prompt: "{input}".into(),
                 priority: 0,
-                beat_mod: 4,
+                beat_mod: None,
                 feedback: None,
                 llm: None,
                 postprocess: Some("flatten_links".into()),

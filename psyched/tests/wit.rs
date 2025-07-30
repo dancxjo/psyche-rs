@@ -15,7 +15,7 @@ async fn wit_produces_output() {
     let config_path = soul_dir.join("identity.toml");
     tokio::fs::write(
         &config_path,
-        "[wit.echo]\ninput = \"sensation/chat\"\noutput = \"reply\"\nprompt = \"Respond\"\npriority = 0\nfeedback = \"\"\n",
+        "[wit.echo]\nprompt = \"Respond\"\npriority = 0\nfeedback = \"\"\n",
     )
     .await
     .unwrap();
@@ -83,7 +83,7 @@ async fn feedback_forwards_output() {
         .unwrap();
     let config_path = soul_dir.join("identity.toml");
     let config = "\
-[wit.first]\ninput = \"sensation/chat\"\noutput = \"reply1\"\nprompt = \"Respond\"\npriority = 0\nfeedback = \"second\"\n\n[wit.second]\ninput = \"reply1\"\noutput = \"reply2\"\nprompt = \"Respond2\"\npriority = 0\n";
+[wit.first]\nprompt = \"Respond\"\npriority = 0\nfeedback = \"second\"\n\n[wit.second]\nprompt = \"Respond2\"\npriority = 0\n";
     tokio::fs::write(&config_path, config).await.unwrap();
 
     let registry = std::sync::Arc::new(psyche::llm::LlmRegistry {

@@ -12,7 +12,7 @@ async fn run_without_backends() {
         .unwrap();
     tokio::fs::write(
         soul_dir.join("identity.toml"),
-        "[wit.dummy]\ninput = \"foo\"\noutput = \"bar\"\nprompt = \"p\"",
+        "[wit.dummy]\nprompt = \"p\"",
     )
     .await
     .unwrap();

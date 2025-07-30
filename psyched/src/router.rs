@@ -13,8 +13,10 @@ impl Router {
     pub fn from_configs(cfgs: &[DistillerConfig]) -> Self {
         let mut map = HashMap::new();
         for c in cfgs {
-            let sock = PathBuf::from(format!("/run/psyche/{}.sock", c.name));
-            map.insert(c.output.clone(), sock);
+            if let Some(out) = &c.output {
+                let sock = PathBuf::from(format!("/run/psyche/{}.sock", c.name));
+                map.insert(out.clone(), sock);
+            }
         }
         Self { map }
     }
