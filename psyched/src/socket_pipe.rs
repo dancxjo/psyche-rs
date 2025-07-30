@@ -4,7 +4,7 @@ use std::time::Duration;
 use tokio::io::{AsyncBufReadExt, BufReader};
 use tokio::net::UnixStream;
 use tokio::sync::mpsc::UnboundedSender;
-use tracing::{error, trace};
+use tracing::{debug, trace};
 use uuid::Uuid;
 
 /// Continuously read newline-delimited text from `path` and forward each line
@@ -34,14 +34,14 @@ pub async fn watch_socket(path: PathBuf, dest_path: String, tx: UnboundedSender<
                             }
                         }
                         Err(e) => {
-                            error!(?e, socket=%path.display(), "pipe read error");
+                            debug!(?e, socket=%path.display(), "pipe read error");
                             break;
                         }
                     }
                 }
             }
             Err(e) => {
-                error!(?e, socket=%path.display(), "failed to connect pipe");
+                debug!(?e, socket=%path.display(), "failed to connect pipe");
                 tokio::time::sleep(Duration::from_secs(1)).await;
             }
         }
