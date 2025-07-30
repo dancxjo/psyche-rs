@@ -1,5 +1,6 @@
 use clap::Parser;
 use daemon_common::{maybe_daemonize, LogLevel};
+use qdrant_client::prelude::*;
 use rememberd::{run, FileStore};
 use std::path::PathBuf;
 
@@ -13,6 +14,10 @@ struct Cli {
     /// Directory for JSONL memory logs
     #[arg(long, default_value = "memory")]
     memory_dir: PathBuf,
+
+    /// Qdrant service URL
+    #[arg(long)]
+    qdrant_url: Option<String>,
 
     /// Logging verbosity
     #[arg(long, default_value = "info")]
@@ -32,6 +37,11 @@ async fn main() -> anyhow::Result<()> {
 
     maybe_daemonize(cli.daemon)?;
 
-    let store = FileStore::new(cli.memory_dir);
+    let store = if let Some(url) = cli.qdrant_url {
+        let client = QdrantClient::from_url(&url).build()?;
+        FileStore::with_qdrant(cli.memory_dir, client)
+    } else {
+        FileStore::new(cli.memory_dir)
+    };
     run(cli.socket, store).await
 }

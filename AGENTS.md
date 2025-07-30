@@ -77,3 +77,4 @@
   avoid hanging when connections stay open.
 - Store soul configuration in a single `identity.toml` that includes sensor and
   motor settings; update scripts and loaders accordingly.
+- Add tests when introducing new RPC methods.
