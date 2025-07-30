@@ -22,7 +22,7 @@ struct Cli {
     silence_ms: u64,
 
     /// Maximum milliseconds for a single segment
-    #[arg(long, default_value = "20000")]
+    #[arg(long, default_value = "10000")]
     timeout_ms: u64,
 
     /// Run as a background daemon
