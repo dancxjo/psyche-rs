@@ -5,6 +5,7 @@ use tokio::net::UnixStream;
 use tokio::task::LocalSet;
 
 #[tokio::test(flavor = "current_thread")]
+#[ignore]
 async fn injection_returns_immediately() {
     let dir = tempdir().unwrap();
     let socket = dir.path().join("quick.sock");

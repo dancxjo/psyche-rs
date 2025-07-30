@@ -36,12 +36,21 @@ pub struct SensorConfig {
     pub log_level: String,
 }
 
+#[derive(Debug, Clone, Deserialize)]
+pub struct PipeConfig {
+    pub socket: String,
+    #[serde(default)]
+    pub path: String,
+}
+
 #[derive(Debug, Deserialize)]
 pub struct PsycheConfig {
     #[serde(default)]
     pub wit: IndexMap<String, DistillerConfig>,
     #[serde(default)]
     pub sensor: IndexMap<String, SensorConfig>,
+    #[serde(default)]
+    pub pipe: IndexMap<String, PipeConfig>,
 }
 
 impl Default for PsycheConfig {
@@ -49,6 +58,7 @@ impl Default for PsycheConfig {
         Self {
             wit: IndexMap::new(),
             sensor: IndexMap::new(),
+            pipe: IndexMap::new(),
         }
     }
 }

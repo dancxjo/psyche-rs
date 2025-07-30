@@ -28,6 +28,14 @@ socket = "ear.sock"
 args = []
 log_level = "info"
 
+[pipe.vision]
+socket = "eye.sock"
+path = "/vision"
+
+[pipe.hearing]
+socket = "ear.sock"
+path = "/hearing"
+
 [would.motors]
 charge = "/usr/local/lib/psyche/motors/charge"
 move_towards = "/usr/local/lib/psyche/motors/move_towards"

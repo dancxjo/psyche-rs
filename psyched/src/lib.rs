@@ -25,6 +25,7 @@ pub mod llm_config;
 mod memory_client;
 pub mod router;
 pub mod sensor;
+mod socket_pipe;
 mod wit;
 
 /// Identity information loaded from `soul/identity.toml`.
@@ -249,7 +250,15 @@ pub async fn run(
 
     let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel::<Sensation>();
 
-    let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel::<Sensation>();
+    let mut watchers = Vec::new();
+    for cfg in psyche_cfg.pipe.values() {
+        let sock = PathBuf::from(&cfg.socket);
+        let dest = cfg.path.clone();
+        let tx_clone = tx.clone();
+        watchers.push(tokio::task::spawn_local(socket_pipe::watch_socket(
+            sock, dest, tx_clone,
+        )));
+    }
 
     let server = {
         let tx = tx.clone();
@@ -291,9 +300,16 @@ pub async fn run(
                 debug!(id = %s.id, "sensation stored");
             }
         }
+        for d in &mut distillers {
+            let _ = d.monitor().await;
+        }
     }
     server.abort();
     let _ = server.await;
+    for w in watchers {
+        w.abort();
+        let _ = w.await;
+    }
     for mut child in sensor_children {
         let _ = child.kill().await;
     }
