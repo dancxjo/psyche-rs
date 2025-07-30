@@ -166,6 +166,11 @@ pub async fn run(
             config::PsycheConfig::default()
         }
     };
+    if let Some(spk) = psyche_cfg.spoken.clone() {
+        if let Ok(child) = daemon::spawn_spoken(&spk).await {
+            daemon_children.push(child);
+        }
+    }
     let mut sensor_children = Vec::new();
     for (name, cfg) in &psyche_cfg.sensor {
         if !cfg.enabled {

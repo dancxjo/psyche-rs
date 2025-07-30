@@ -1,0 +1,14 @@
+#!/bin/sh
+# Send text to voice.sock and play the synthesized audio.
+# Usage: say [TEXT]
+
+SOCK=${VOICE_SOCK:-/run/psyched/voice.sock}
+DEVICE=${AUDIO_DEV:-default}
+
+if [ $# -gt 0 ]; then
+    TEXT="$*"
+else
+    TEXT=$(cat)
+fi
+
+echo "$TEXT" | nc -U "$SOCK" | aplay -q -D "$DEVICE" -f S16_LE -r 16000
