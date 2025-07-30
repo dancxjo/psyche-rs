@@ -260,9 +260,16 @@ pub async fn run(
         let sock = PathBuf::from(&cfg.socket);
         let dest = cfg.path.clone();
         let tx_clone = tx.clone();
-        watchers.push(tokio::task::spawn_local(socket_pipe::watch_socket(
-            sock, dest, tx_clone,
-        )));
+        let mut deps = Vec::new();
+        for dep in &cfg.depends_on {
+            if let Some(scfg) = psyche_cfg.sensor.get(dep) {
+                let dep_sock = scfg.socket.clone().unwrap_or_else(|| format!("{dep}.sock"));
+                deps.push(PathBuf::from(dep_sock));
+            }
+        }
+        watchers.push(tokio::task::spawn_local(
+            socket_pipe::watch_socket_when_ready(sock, dest, tx_clone, deps),
+        ));
     }
 
     let server = {

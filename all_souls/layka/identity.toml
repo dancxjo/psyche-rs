@@ -32,10 +32,12 @@ log_level = "info"
 [pipe.vision]
 socket = "eye.sock"
 path = "/vision"
+depends_on = ["seen"]
 
 [pipe.hearing]
 socket = "ear.sock"
 path = "/hearing"
+depends_on = ["whisperd"]
 
 [spoken]
 socket = "voice.sock"
