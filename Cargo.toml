@@ -9,5 +9,6 @@ members = [
     "spoken",
     "seen",
     "would",
+    "faced",
 ]
 resolver = "2"

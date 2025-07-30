@@ -27,6 +27,18 @@ struct MemorizeParams {
     data: Value,
 }
 
+#[derive(Deserialize)]
+struct ListParams {
+    kind: String,
+}
+
+#[derive(Deserialize)]
+struct QueryVectorParams {
+    kind: String,
+    vector: Vec<f32>,
+    top_k: usize,
+}
+
 /// Dispatch a single JSON-RPC request.
 pub async fn dispatch(req: RpcRequest, store: &FileStore) -> anyhow::Result<RpcResponse> {
     match req.method.as_str() {
@@ -46,7 +58,29 @@ pub async fn dispatch(req: RpcRequest, store: &FileStore) -> anyhow::Result<RpcR
                 id: req.id,
             })
         }
-        "query_vector" | "query_graph" | "episode" => Ok(RpcResponse {
+        "list" => {
+            let params: ListParams = serde_json::from_value(req.params)?;
+            let entries = store.list(&params.kind).await?;
+            Ok(RpcResponse {
+                jsonrpc: "2.0",
+                result: Some(Value::Array(entries)),
+                error: None,
+                id: req.id,
+            })
+        }
+        "query_vector" => {
+            let params: QueryVectorParams = serde_json::from_value(req.params)?;
+            let hits = store
+                .query_vector(&params.kind, &params.vector, params.top_k)
+                .await?;
+            Ok(RpcResponse {
+                jsonrpc: "2.0",
+                result: Some(Value::Array(hits)),
+                error: None,
+                id: req.id,
+            })
+        }
+        "query_graph" | "episode" => Ok(RpcResponse {
             jsonrpc: "2.0",
             result: Some(Value::Null),
             error: None,
