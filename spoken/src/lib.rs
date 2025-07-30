@@ -119,8 +119,9 @@ async fn handle_connection(
             read = reader.read_until(b'\n', &mut buf) => {
                 let n = read?;
                 if n == 0 { break; }
-                if let Some(pos) = buf.iter().position(|b| *b == 0x03) {
-                    buf.drain(..=pos);
+                let mut slice = buf.as_slice();
+                if let Some(pos) = slice.iter().position(|b| *b == 0x03) {
+                    slice = &slice[..pos];
                     queue.clear().await;
                     {
                         let mut c = cancel.lock().await;
@@ -129,15 +130,25 @@ async fn handle_connection(
                     }
                     let _ = pcm_tx.send(PcmMessage::Stop);
                 }
-                if !buf.is_empty() {
-                    if let Ok(text) = std::str::from_utf8(&buf) {
-                        let text = text.trim();
-                        if !text.is_empty() {
-                            queue.push(text.to_string()).await;
+                let mut eot = false;
+                if let Some(pos) = slice.iter().position(|b| *b == 0x04) {
+                    slice = &slice[..pos];
+                    eot = true;
+                }
+                if !slice.is_empty() {
+                    if let Ok(text) = std::str::from_utf8(slice) {
+                        for line in text.split('\n') {
+                            let line = line.trim();
+                            if !line.is_empty() {
+                                queue.push(line.to_string()).await;
+                            }
                         }
                     }
                 }
                 buf.clear();
+                if eot {
+                    break;
+                }
             }
             msg = rx.recv() => match msg {
                 Ok(PcmMessage::Data(pcm)) => {
@@ -242,7 +253,7 @@ mod tests {
                     .unwrap();
                 let mut buf = [0u8; 8];
                 let n = tokio::time::timeout(
-                    std::time::Duration::from_millis(100),
+                    std::time::Duration::from_millis(200),
                     tokio::io::AsyncReadExt::read(&mut client, &mut buf),
                 )
                 .await
@@ -252,5 +263,40 @@ mod tests {
             })
             .await;
         handle.abort();
+    }
+
+    #[tokio::test]
+    async fn closes_on_eot_and_queues_lines() {
+        let server = MockServer::start_async().await;
+        let wav = wav_bytes();
+        let mock = server.mock(|when, then| {
+            when.method(GET).path("/api/tts");
+            then.status(200).body(wav.clone());
+        });
+        let dir = tempdir().unwrap();
+        let sock = dir.path().join("voice.sock");
+        let url = format!("http://{}", server.address());
+        let local = LocalSet::new();
+        let handle = local.spawn_local(run(sock.clone(), url, "p330".into(), "".into()));
+        local
+            .run_until(async {
+                tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+                let mut client = UnixStream::connect(&sock).await.unwrap();
+                tokio::io::AsyncWriteExt::write_all(&mut client, b"hello\nworld\n\x04")
+                    .await
+                    .unwrap();
+                tokio::io::AsyncWriteExt::shutdown(&mut client)
+                    .await
+                    .unwrap();
+                tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+                let mut buf = [0u8; 1];
+                let n = tokio::io::AsyncReadExt::read(&mut client, &mut buf)
+                    .await
+                    .unwrap();
+                assert_eq!(n, 0);
+            })
+            .await;
+        handle.abort();
+        assert_eq!(mock.hits(), 2);
     }
 }
