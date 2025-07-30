@@ -44,6 +44,8 @@ pub struct PipeConfig {
     pub socket: String,
     #[serde(default)]
     pub path: String,
+    #[serde(default)]
+    pub depends_on: Vec<String>,
 }
 
 fn default_spoken_socket() -> String {

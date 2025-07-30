@@ -47,3 +47,18 @@ pub async fn watch_socket(path: PathBuf, dest_path: String, tx: UnboundedSender<
         }
     }
 }
+
+/// Wait for all `deps` sockets to exist before watching `path` for input.
+pub async fn watch_socket_when_ready(
+    path: PathBuf,
+    dest_path: String,
+    tx: UnboundedSender<Sensation>,
+    deps: Vec<PathBuf>,
+) {
+    for dep in deps {
+        while !dep.exists() {
+            tokio::time::sleep(Duration::from_secs(1)).await;
+        }
+    }
+    watch_socket(path, dest_path, tx).await;
+}
