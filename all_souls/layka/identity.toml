@@ -36,8 +36,15 @@ path = "/vision"
 socket = "ear.sock"
 path = "/hearing"
 
+[spoken]
+socket = "voice.sock"
+tts_url = "http://localhost:5002"
+speaker_id = "p300"
+language_id = ""
+log_level = "debug"
+
 [would.motors]
 charge = "/usr/local/lib/psyche/motors/charge"
 move_towards = "/usr/local/lib/psyche/motors/move_towards"
-say = "/usr/local/lib/psyche/motors/say"
+say = "./scripts/say"
 

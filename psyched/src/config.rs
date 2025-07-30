@@ -43,6 +43,36 @@ pub struct PipeConfig {
     pub path: String,
 }
 
+fn default_spoken_socket() -> String {
+    "voice.sock".into()
+}
+
+fn default_tts_url() -> String {
+    "http://localhost:5002".into()
+}
+
+fn default_speaker_id() -> String {
+    "p330".into()
+}
+
+fn default_language_id() -> String {
+    "".into()
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct SpokenConfig {
+    #[serde(default = "default_spoken_socket")]
+    pub socket: String,
+    #[serde(default = "default_tts_url")]
+    pub tts_url: String,
+    #[serde(default = "default_speaker_id")]
+    pub speaker_id: String,
+    #[serde(default = "default_language_id")]
+    pub language_id: String,
+    #[serde(default = "default_log_level")]
+    pub log_level: String,
+}
+
 #[derive(Debug, Deserialize)]
 pub struct PsycheConfig {
     #[serde(default)]
@@ -51,6 +81,8 @@ pub struct PsycheConfig {
     pub sensor: IndexMap<String, SensorConfig>,
     #[serde(default)]
     pub pipe: IndexMap<String, PipeConfig>,
+    #[serde(default)]
+    pub spoken: Option<SpokenConfig>,
 }
 
 impl Default for PsycheConfig {
@@ -59,6 +91,7 @@ impl Default for PsycheConfig {
             wit: IndexMap::new(),
             sensor: IndexMap::new(),
             pipe: IndexMap::new(),
+            spoken: None,
         }
     }
 }

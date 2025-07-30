@@ -1,9 +1,10 @@
 #!/bin/sh
 
 # Run the spoken text-to-speech daemon
+SPEAKER_ID=${SPEAKER_ID:-p330}
 cargo run -p spoken -- \
   --socket ./voice.sock \
   --tts-url http://localhost:5002 \
-  --speaker-id p330 \
+  --speaker-id "$SPEAKER_ID" \
   --language-id "" \
   --log-level debug

@@ -40,3 +40,30 @@ pub async fn spawn_would(socket: &Path, config: &Path) -> anyhow::Result<Child> 
     info!(daemon = "would", socket = %socket.display(), "launching daemon");
     Ok(cmd.spawn()?)
 }
+
+use crate::config::SpokenConfig;
+
+/// Spawn the `spoken` daemon if configured.
+pub async fn spawn_spoken(cfg: &SpokenConfig) -> anyhow::Result<Child> {
+    let exe = env::var("CARGO_BIN_EXE_spoken").unwrap_or_else(|_| {
+        let mut p = env::current_exe().expect("exe");
+        p.pop();
+        p.pop();
+        p.push("spoken");
+        p.to_string_lossy().into_owned()
+    });
+    let mut cmd = Command::new(exe);
+    cmd.arg("--socket")
+        .arg(&cfg.socket)
+        .arg("--tts-url")
+        .arg(&cfg.tts_url)
+        .arg("--speaker-id")
+        .arg(&cfg.speaker_id)
+        .arg("--language-id")
+        .arg(&cfg.language_id)
+        .arg("--log-level")
+        .arg(&cfg.log_level)
+        .arg("--daemon");
+    info!(daemon = "spoken", socket = %cfg.socket, speaker = %cfg.speaker_id, "launching daemon");
+    Ok(cmd.spawn()?)
+}
