@@ -3475,10 +3475,12 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "base64 0.21.7",
+ "chrono",
  "clap",
  "daemon-common",
  "httpmock 0.7.0",
  "ollama-rs",
+ "stream-prefix",
  "tempfile",
  "tokio",
  "tokio-stream",
@@ -3686,6 +3688,13 @@ name = "static_assertions"
 version = "1.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "a2eb9349b6444b326872e140eb1cf5e7c522154d69e7a0ffb0fb81c06b37543f"
+
+[[package]]
+name = "stream-prefix"
+version = "0.1.0"
+dependencies = [
+ "chrono",
+]
 
 [[package]]
 name = "string_cache"
@@ -4612,6 +4621,7 @@ dependencies = [
  "hound",
  "serde",
  "serde_json",
+ "stream-prefix",
  "tempfile",
  "tokio",
  "tracing",
