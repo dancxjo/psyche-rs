@@ -8,3 +8,5 @@ all_souls/layka/tts/tts/tts_models--en--vctk--vits/model_file.pth
 all_souls/layka/tts/tts/tts_models--en--vctk--vits/speaker_ids.json
 distilld/dmesg.txt
 segs/
+ggml-large-v3-turbo-q8_0.bin
+ggml-large-v3-turbo.bin
