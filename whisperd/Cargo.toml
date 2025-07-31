@@ -17,9 +17,15 @@ anyhow = "1"
 daemon-common = { path = "../daemon-common" }
 hound = "3.5"
 chrono = { version = "0.4", default-features = false, features = ["clock"] }
+reqwest = { version = "0.12", features = ["stream"] }
+indicatif = "0.17"
+inquire = "0.6"
+futures-util = "0.3"
 stream-prefix = { path = "../stream_prefix" }
 
 [dev-dependencies]
 tokio = { version = "1", features = ["macros", "rt"] }
 tempfile = "3"
 tracing-test = { version = "0.2", features = ["no-env-filter"] }
+assert_cmd = "2"
+httpmock = "0.7"
