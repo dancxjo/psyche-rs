@@ -1,7 +1,7 @@
 use std::path::PathBuf;
 
 use async_trait::async_trait;
-use chrono::{DateTime, FixedOffset, Local};
+use chrono::{DateTime, FixedOffset, Local, TimeZone, Utc};
 use serde::Serialize;
 use tokio::io::{AsyncReadExt, AsyncWrite, AsyncWriteExt};
 use tokio::net::{UnixListener, UnixStream};
@@ -24,7 +24,7 @@ pub struct Transcription {
     pub words: Vec<Word>,
     /// When the recorded audio began.
     #[serde(with = "chrono::serde::ts_seconds")]
-    pub when: chrono::DateTime<chrono::FixedOffset>,
+    pub when: chrono::DateTime<chrono::Utc>,
     /// Optional raw whisper result serialized to JSON.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub raw: Option<serde_json::Value>,
@@ -80,7 +80,8 @@ impl Stt for WhisperStt {
         let words_cb = words.clone();
         params.set_segment_callback_safe_lossy(move |seg| {
             trace!(?seg, "segment");
-            words_cb.blocking_lock().push(seg);
+            let mut lock = words_cb.blocking_lock();
+            lock.push(seg);
         });
         tokio::task::spawn_blocking(move || state.full(params, &pcm_f32)).await??;
         let segs = words.lock().await.clone();
@@ -116,6 +117,8 @@ impl Stt for WhisperStt {
             text: text.trim().to_string(),
             words: out_words,
             raw,
+            // TODO: use the actual start time of the audio
+            when: chrono::Utc::now(),
         })
     }
 }
@@ -159,7 +162,7 @@ pub(crate) async fn handle_connection(
     let timeout_samples = (timeout_ms as usize * samples_per_ms).max(audio_segmenter::FRAME_SIZE);
     let mut segmenter = AudioSegmenter::with_timeout(silence_samples, timeout_samples);
     let mut last_discard = 0usize;
-    let mut current_when: DateTime<FixedOffset> = Local::now().into();
+    let mut current_when: DateTime<Utc> = chrono::Utc::now();
     let mut first_chunk = true;
     loop {
         let n = reader.read(&mut buf).await?;
@@ -171,9 +174,9 @@ pub(crate) async fn handle_connection(
             if let Some(end) = buf[..n].iter().position(|&b| b == b'}') {
                 let ts_str = String::from_utf8_lossy(&buf[2..end]);
                 if let Ok(dt) = DateTime::parse_from_rfc3339(&ts_str) {
-                    current_when = dt;
+                    current_when = dt.with_timezone(&chrono::Utc);
                 } else if let Ok(dt) = Local.datetime_from_str(&ts_str, "%Y-%m-%d %H:%M:%S") {
-                    current_when = dt.with_timezone(dt.offset());
+                    current_when = dt.with_timezone(&chrono::Utc);
                 }
                 start = end + 1;
                 trace!(ts=%ts_str, "timestamp received");
@@ -223,7 +226,7 @@ pub(crate) async fn handle_connection(
 
 fn queue_transcription(
     spoken: Vec<i16>,
-    when: DateTime<FixedOffset>,
+    when: DateTime<Utc>,
     writer: &std::sync::Arc<Mutex<tokio::net::unix::OwnedWriteHalf>>,
     stt: &std::sync::Arc<dyn Stt + Send + Sync>,
 ) {
