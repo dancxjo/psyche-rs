@@ -3,12 +3,11 @@ use std::path::PathBuf;
 use std::sync::Arc;
 
 use base64::{engine::general_purpose, Engine};
-use chrono::{DateTime, Local};
+
 use ollama_rs::generation::completion::request::GenerationRequest;
 use ollama_rs::generation::completion::GenerationResponseStream;
 use ollama_rs::generation::images::Image;
 use ollama_rs::Ollama;
-use stream_prefix::parse_timestamp_prefix;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::{UnixListener, UnixStream};
 use tokio::sync::{broadcast, Mutex, Notify};
@@ -115,8 +114,6 @@ async fn handle_connection(
     let mut read_task = tokio::spawn(async move {
         let mut buf = Vec::new();
         let mut chunk = [0u8; 8192];
-        let mut current_when: DateTime<Local> = Local::now();
-        let mut first_chunk = true;
         loop {
             match reader.read(&mut chunk).await {
                 Ok(0) => {
@@ -127,17 +124,6 @@ async fn handle_connection(
                 }
                 Ok(n) => {
                     buf.extend_from_slice(&chunk[..n]);
-                    if first_chunk {
-                        if let Some((ts, idx)) = parse_timestamp_prefix(&buf) {
-                            current_when = ts;
-                            buf.drain(..idx);
-                            if buf.first() == Some(&b'\n') {
-                                buf.remove(0);
-                            }
-                            trace!(when=%current_when, "timestamp received");
-                        }
-                        first_chunk = false;
-                    }
                     while let Some(end) = find_jpeg_eoi(&buf) {
                         let img = buf.drain(..end).collect();
                         q.push(img).await;
