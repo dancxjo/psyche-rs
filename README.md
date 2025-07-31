@@ -68,6 +68,16 @@ You can send input to the core daemon like so:
 echo -e "/vision\nI see a red light blinking in the distance.\n.\n" | socat - UNIX-CONNECT:/run/quick.sock
 ```
 
+### Stream Timestamp Prefix
+
+`whisperd` and `seen` accept an optional prefix on incoming streams:
+
+```text
+@{2025-07-31T14:00:00-07:00}
+```
+
+When present as the first line, this sets the timestamp for the data. Invalid or missing prefixes default to the current local time.
+
 ## Architecture
 
 ```

@@ -5,6 +5,7 @@ members = [
     "whisperd",
     "rememberd",
     "daemon-common",
+    "stream_prefix",
     "distilld",
     "spoken",
     "seen",

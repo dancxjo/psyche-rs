@@ -3,10 +3,12 @@ use std::path::PathBuf;
 use std::sync::Arc;
 
 use base64::{engine::general_purpose, Engine};
+use chrono::{DateTime, Local};
 use ollama_rs::generation::completion::request::GenerationRequest;
 use ollama_rs::generation::completion::GenerationResponseStream;
 use ollama_rs::generation::images::Image;
 use ollama_rs::Ollama;
+use stream_prefix::parse_timestamp_prefix;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::{UnixListener, UnixStream};
 use tokio::sync::{broadcast, Mutex, Notify};
@@ -113,6 +115,8 @@ async fn handle_connection(
     let mut read_task = tokio::spawn(async move {
         let mut buf = Vec::new();
         let mut chunk = [0u8; 8192];
+        let mut current_when: DateTime<Local> = Local::now();
+        let mut first_chunk = true;
         loop {
             match reader.read(&mut chunk).await {
                 Ok(0) => {
@@ -123,6 +127,17 @@ async fn handle_connection(
                 }
                 Ok(n) => {
                     buf.extend_from_slice(&chunk[..n]);
+                    if first_chunk {
+                        if let Some((ts, idx)) = parse_timestamp_prefix(&buf) {
+                            current_when = ts;
+                            buf.drain(..idx);
+                            if buf.first() == Some(&b'\n') {
+                                buf.remove(0);
+                            }
+                            trace!(when=%current_when, "timestamp received");
+                        }
+                        first_chunk = false;
+                    }
                     while let Some(end) = find_jpeg_eoi(&buf) {
                         let img = buf.drain(..end).collect();
                         q.push(img).await;
@@ -294,6 +309,49 @@ mod tests {
                     .unwrap();
                 assert_eq!(caption.trim(), "a cat");
                 drop(sender);
+            })
+            .await;
+        run_fut.abort();
+    }
+
+    #[tokio::test]
+    async fn handles_timestamp_prefix() {
+        let server = MockServer::start_async().await;
+        let body =
+            "{\"model\":\"gemma3n\",\"created_at\":\"now\",\"response\":\"a cat\",\"done\":true}\n";
+        server
+            .mock_async(|when, then| {
+                when.method(POST).path("/api/generate");
+                then.status(200)
+                    .header("content-type", "application/json")
+                    .body(body);
+            })
+            .await;
+        let dir = tempdir().unwrap();
+        let sock = dir.path().join("eye.sock");
+        let url = server.base_url();
+        let local = LocalSet::new();
+        let run_fut = local.spawn_local(run(sock.clone(), url, "gemma3n".into()));
+        local
+            .run_until(async {
+                tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+                let watcher = UnixStream::connect(&sock).await.unwrap();
+                let read = tokio::spawn(async move {
+                    let mut reader = tokio::io::BufReader::new(watcher);
+                    let mut buf = String::new();
+                    reader.read_line(&mut buf).await.unwrap();
+                    buf
+                });
+                let mut sender = UnixStream::connect(&sock).await.unwrap();
+                sender
+                    .write_all(b"@{2025-07-31T14:00:00Z}\nJPEGDATA\xFF\xD9")
+                    .await
+                    .unwrap();
+                let caption = tokio::time::timeout(std::time::Duration::from_millis(200), read)
+                    .await
+                    .unwrap()
+                    .unwrap();
+                assert_eq!(caption.trim(), "a cat");
             })
             .await;
         run_fut.abort();

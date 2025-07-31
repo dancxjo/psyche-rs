@@ -17,6 +17,7 @@ anyhow = "1"
 daemon-common = { path = "../daemon-common" }
 hound = "3.5"
 chrono = { version = "0.4", default-features = false, features = ["clock"] }
+stream-prefix = { path = "../stream_prefix" }
 
 [dev-dependencies]
 tokio = { version = "1", features = ["macros", "rt"] }

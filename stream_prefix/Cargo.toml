@@ -1,0 +1,10 @@
+[package]
+name = "stream-prefix"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+path = "mod.rs"
+
+[dependencies]
+chrono = { version = "0.4", default-features = false, features = ["clock"] }
