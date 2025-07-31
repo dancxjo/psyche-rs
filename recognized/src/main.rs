@@ -1,14 +1,14 @@
 use clap::Parser;
 use daemon_common::{LogLevel, maybe_daemonize};
-use faced::opencv_recognizer::OpenCVRecognizer;
-use faced::{Recognizer, run};
+use recognized::opencv_recognizer::OpenCVRecognizer;
+use recognized::{Recognizer, run};
 use std::path::PathBuf;
 use std::sync::Arc;
 
 #[derive(Parser, Debug)]
-#[command(name = "faced", about = "Face recognition daemon")]
+#[command(name = "recognized", about = "Face recognition daemon")]
 struct Cli {
-    #[arg(long, default_value = "/run/psyche/faced.sock")]
+    #[arg(long, default_value = "/run/psyche/recognized.sock")]
     socket: PathBuf,
 
     #[arg(long, default_value = "/run/psyche/rememberd.sock")]

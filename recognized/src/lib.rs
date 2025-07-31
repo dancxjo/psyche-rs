@@ -50,7 +50,7 @@ pub async fn run(socket: PathBuf, recognizer: Arc<dyn Recognizer>) -> anyhow::Re
         tokio::fs::remove_file(&socket).await.ok();
     }
     let listener = UnixListener::bind(&socket)?;
-    info!(?socket, "faced listening");
+    info!(?socket, "recognized listening");
     loop {
         let (stream, _) = listener.accept().await?;
         let rec = recognizer.clone();
