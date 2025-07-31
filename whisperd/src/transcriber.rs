@@ -13,6 +13,8 @@ pub struct SegmentJob {
     pub id: u64,
     pub pcm: Vec<i16>,
     pub when: DateTime<Local>,
+    /// When the segment was received from the socket.
+    pub received: DateTime<Local>,
     pub writer: Arc<Mutex<tokio::net::unix::OwnedWriteHalf>>,
 }
 

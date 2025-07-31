@@ -6,7 +6,7 @@ use std::path::PathBuf;
 #[command(
     name = "whisperd",
     about = "Audio ingestion and transcription daemon",
-    long_about = "Audio ingestion and transcription daemon.\n\nInput Protocol:\n  The stream may optionally begin with a line of the form:\n    @{2025-07-31T14:00:00-07:00}\n  This sets the timestamp used for the input data. If omitted or invalid, the system defaults to the current local time."
+    long_about = "Audio ingestion and transcription daemon. Timestamps begin when the first segment arrives."
 )]
 struct Cli {
     #[command(flatten)]

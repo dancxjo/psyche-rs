@@ -3,7 +3,6 @@ use std::path::PathBuf;
 use async_trait::async_trait;
 use chrono::{DateTime, FixedOffset, Local, NaiveDateTime, TimeZone, Utc};
 use serde::Serialize;
-use stream_prefix::parse_timestamp_prefix;
 use tokio::io::{AsyncReadExt, AsyncWrite, AsyncWriteExt};
 use tokio::net::{UnixListener, UnixStream};
 use tokio::sync::{Mutex, mpsc};
@@ -213,36 +212,31 @@ pub(crate) async fn handle_connection(
     let mut segmenter = AudioSegmenter::with_timeout(silence_samples, timeout_samples);
     const SAMPLE_RATE_HZ: i64 = 16_000;
     let mut last_discard = 0usize;
-    let mut current_when: DateTime<Local> = chrono::Local::now();
-    let mut first_chunk = true;
+    let mut current_when: Option<DateTime<Local>> = None;
     loop {
         let n = reader.read(&mut buf).await?;
         if n == 0 {
             break;
         }
-        let mut start = 0usize;
-        if first_chunk {
-            if let Some((ts, idx)) = parse_timestamp_prefix(&buf[..n]) {
-                current_when = ts;
-                start = idx;
-                if start < n && buf[start] == b'\n' {
-                    start += 1;
-                }
-                trace!(when=%current_when, "timestamp received");
-            }
-            first_chunk = false;
-        }
-        let mut frames = Vec::with_capacity((n - start) / 2);
-        for chunk in buf[start..n].chunks_exact(2) {
+        let mut frames = Vec::with_capacity(n / 2);
+        for chunk in buf[..n].chunks_exact(2) {
             frames.push(i16::from_le_bytes([chunk[0], chunk[1]]));
         }
         trace!(frames = frames.len(), "received audio frames");
         while let Some(spoken) = segmenter.push_frames(&frames) {
-            let when = current_when;
+            let when = match current_when {
+                Some(ts) => ts,
+                None => {
+                    let now = Local::now();
+                    current_when = Some(now);
+                    now
+                }
+            };
             let len = spoken.len();
             queue_transcription(spoken, when, &writer, &tx, &segment_counter);
-            current_when = current_when
-                + chrono::Duration::microseconds(len as i64 * 1_000_000 / SAMPLE_RATE_HZ);
+            current_when = Some(
+                when + chrono::Duration::microseconds(len as i64 * 1_000_000 / SAMPLE_RATE_HZ),
+            );
         }
         if segmenter.discarded() != last_discard {
             debug!(
@@ -254,7 +248,15 @@ pub(crate) async fn handle_connection(
     }
 
     if let Some(spoken) = segmenter.finish() {
-        queue_transcription(spoken, current_when, &writer, &tx, &segment_counter);
+        let when = match current_when {
+            Some(ts) => ts,
+            None => {
+                let now = Local::now();
+                current_when = Some(now);
+                now
+            }
+        };
+        queue_transcription(spoken, when, &writer, &tx, &segment_counter);
     }
 
     Ok(())
@@ -268,10 +270,12 @@ pub(crate) fn queue_transcription(
     counter: &std::sync::Arc<std::sync::atomic::AtomicU64>,
 ) {
     let id = counter.fetch_add(1, std::sync::atomic::Ordering::Relaxed) + 1;
+    let received = Local::now();
     let job = SegmentJob {
         id,
         pcm: spoken,
         when,
+        received,
         writer: writer.clone(),
     };
     if let Err(_) = tx.try_send(job) {
