@@ -10,3 +10,6 @@ distilld/dmesg.txt
 segs/
 ggml-large-v3-turbo-q8_0.bin
 ggml-large-v3-turbo.bin
+ggml-base.en.bin
+ggml-medium-q5_0.bin
+ggml-*.bin
