@@ -1,8 +1,16 @@
 use std::path::PathBuf;
+use std::sync::{
+    Arc,
+    atomic::{AtomicU64, Ordering},
+};
 
-use crate::{Stt, handle_connection};
+use crate::{
+    Stt, handle_connection,
+    transcriber::{SegmentJob, spawn_transcriber},
+};
 use tokio::io::AsyncReadExt;
 use tokio::net::UnixListener;
+use tokio::sync::mpsc;
 use tracing::error;
 
 /// Helper to run the whisperd loop with a custom STT implementation.
@@ -11,18 +19,26 @@ pub async fn run_with_stt<S: Stt + Send + Sync + 'static>(
     stt: S,
     silence_ms: u64,
     timeout_ms: u64,
+    max_queue: usize,
 ) -> anyhow::Result<()> {
     if socket.exists() {
         tokio::fs::remove_file(&socket).await.ok();
     }
     let listener = UnixListener::bind(&socket)?;
-    let stt = std::sync::Arc::new(stt);
+    let stt = Arc::new(stt);
+    let (tx, rx) = mpsc::channel::<SegmentJob>(max_queue);
+    let latest = Arc::new(AtomicU64::new(0));
+    spawn_transcriber(rx, stt, latest);
+    let counter = Arc::new(AtomicU64::new(0));
     loop {
         let (stream, _) = listener.accept().await?;
-        let stt = stt.clone();
-        if let Err(e) = handle_connection(stream, stt, silence_ms, timeout_ms).await {
-            error!(?e, "connection error");
-        }
+        let tx = tx.clone();
+        let counter = counter.clone();
+        tokio::task::spawn_local(async move {
+            if let Err(e) = handle_connection(stream, tx, counter, silence_ms, timeout_ms).await {
+                error!(?e, "connection error");
+            }
+        });
     }
 }
 
@@ -32,14 +48,21 @@ pub async fn run_with_stt_no_vad<S: Stt + Send + Sync + 'static>(
     stt: S,
     silence_ms: u64,
     timeout_ms: u64,
+    max_queue: usize,
 ) -> anyhow::Result<()> {
     if socket.exists() {
         tokio::fs::remove_file(&socket).await.ok();
     }
     let listener = UnixListener::bind(&socket)?;
-    let stt = std::sync::Arc::new(stt);
+    let stt = Arc::new(stt);
+    let (tx, rx) = mpsc::channel::<SegmentJob>(max_queue);
+    let latest = Arc::new(AtomicU64::new(0));
+    spawn_transcriber(rx, stt.clone(), latest);
+    let counter = Arc::new(AtomicU64::new(0));
     loop {
         let (stream, _) = listener.accept().await?;
+        let tx = tx.clone();
+        let counter = counter.clone();
         let stt = stt.clone();
         let silence_samples = (silence_ms as usize * crate::audio_segmenter::FRAME_SIZE / 30)
             .max(crate::audio_segmenter::FRAME_SIZE);
@@ -47,7 +70,7 @@ pub async fn run_with_stt_no_vad<S: Stt + Send + Sync + 'static>(
             .max(crate::audio_segmenter::FRAME_SIZE);
         tokio::task::spawn_local(async move {
             let (mut reader, writer) = stream.into_split();
-            let writer = std::sync::Arc::new(tokio::sync::Mutex::new(writer));
+            let writer = Arc::new(tokio::sync::Mutex::new(writer));
             let mut buf = [0u8; 4096];
             let mut segmenter = crate::audio_segmenter::AudioSegmenter::without_vad_with_timeout(
                 silence_samples,
@@ -63,21 +86,18 @@ pub async fn run_with_stt_no_vad<S: Stt + Send + Sync + 'static>(
                     frames.push(i16::from_le_bytes([chunk[0], chunk[1]]));
                 }
                 if let Some(spoken) = segmenter.push_frames(&frames) {
-                    let w = writer.clone();
-                    let stt = stt.clone();
-                    tokio::task::spawn_local(async move {
-                        if let Ok(trans) = stt.transcribe(&spoken).await {
-                            let mut w = w.lock().await;
-                            crate::send_transcription(&mut *w, &trans).await.unwrap();
-                        }
-                    });
+                    crate::save_segment(&spoken).await.ok();
+                    crate::queue_transcription(
+                        spoken,
+                        chrono::Local::now(),
+                        &writer,
+                        &tx,
+                        &counter,
+                    );
                 }
             }
             if let Some(spoken) = segmenter.finish() {
-                if let Ok(trans) = stt.transcribe(&spoken).await {
-                    let mut w = writer.lock().await;
-                    crate::send_transcription(&mut *w, &trans).await.unwrap();
-                }
+                crate::queue_transcription(spoken, chrono::Local::now(), &writer, &tx, &counter);
             }
         });
     }

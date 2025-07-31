@@ -38,6 +38,10 @@ struct RunArgs {
     #[arg(long, default_value = "10000")]
     timeout_ms: u64,
 
+    /// Maximum queued segments awaiting transcription
+    #[arg(long, default_value = "16")]
+    max_queue: usize,
+
     /// Run as a background daemon
     #[arg(short = 'd', long)]
     daemon: bool,
@@ -90,7 +94,14 @@ async fn main() -> anyhow::Result<()> {
         .with_max_level(tracing_subscriber::filter::LevelFilter::from(run.log_level))
         .init();
     maybe_daemonize(run.daemon)?;
-    whisperd::run(run.socket, model, run.silence_ms, run.timeout_ms).await
+    whisperd::run(
+        run.socket,
+        model,
+        run.silence_ms,
+        run.timeout_ms,
+        run.max_queue,
+    )
+    .await
 }
 
 #[cfg(test)]
@@ -103,6 +114,7 @@ mod tests {
         assert!(matches!(cli.run.log_level, LogLevel::Info));
         assert_eq!(cli.run.silence_ms, 1000);
         assert_eq!(cli.run.timeout_ms, 10000);
+        assert_eq!(cli.run.max_queue, 16);
         assert!(cli.command.is_none());
     }
 
@@ -118,11 +130,14 @@ mod tests {
             "1500",
             "--timeout-ms",
             "5000",
+            "--max-queue",
+            "8",
         ])
         .unwrap();
         assert!(matches!(cli.run.log_level, LogLevel::Debug));
         assert_eq!(cli.run.silence_ms, 1500);
         assert_eq!(cli.run.timeout_ms, 5000);
+        assert_eq!(cli.run.max_queue, 8);
     }
 
     #[test]
