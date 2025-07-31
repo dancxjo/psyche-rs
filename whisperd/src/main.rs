@@ -26,6 +26,10 @@ struct RunArgs {
     #[arg(long, env = "WHISPER_MODEL")]
     whisper_model: Option<PathBuf>,
 
+    /// Use GPU acceleration when available (pass --no-gpu to disable)
+    #[arg(long = "no-gpu", action = clap::ArgAction::SetFalse, default_value_t = true)]
+    use_gpu: bool,
+
     /// Logging verbosity level
     #[arg(long, default_value = "info")]
     log_level: LogLevel,
@@ -100,6 +104,7 @@ async fn main() -> anyhow::Result<()> {
         run.silence_ms,
         run.timeout_ms,
         run.max_queue,
+        run.use_gpu,
     )
     .await
 }
@@ -115,6 +120,7 @@ mod tests {
         assert_eq!(cli.run.silence_ms, 1000);
         assert_eq!(cli.run.timeout_ms, 10000);
         assert_eq!(cli.run.max_queue, 16);
+        assert!(cli.run.use_gpu);
         assert!(cli.command.is_none());
     }
 
@@ -138,6 +144,7 @@ mod tests {
         assert_eq!(cli.run.silence_ms, 1500);
         assert_eq!(cli.run.timeout_ms, 5000);
         assert_eq!(cli.run.max_queue, 8);
+        assert!(cli.run.use_gpu);
     }
 
     #[test]
@@ -150,5 +157,12 @@ mod tests {
     fn parses_fetch_model_command() {
         let cli = Cli::try_parse_from(["whisperd", "fetch-model"]).unwrap();
         assert!(matches!(cli.command, Some(Command::FetchModel(_))));
+    }
+
+    #[test]
+    fn parses_no_gpu_flag() {
+        let cli =
+            Cli::try_parse_from(["whisperd", "--whisper-model", "model.bin", "--no-gpu"]).unwrap();
+        assert!(!cli.run.use_gpu);
     }
 }

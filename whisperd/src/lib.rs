@@ -89,15 +89,18 @@ pub struct WhisperStt {
 
 impl WhisperStt {
     /// Load a whisper model from the given path.
-    pub fn new(model: impl AsRef<std::path::Path>) -> anyhow::Result<Self> {
+    ///
+    /// # Arguments
+    /// * `model` - Path to the whisper model file.
+    /// * `use_gpu` - Whether to enable GPU acceleration.
+    pub fn new(model: impl AsRef<std::path::Path>, use_gpu: bool) -> anyhow::Result<Self> {
         let path = model
             .as_ref()
             .to_str()
             .ok_or_else(|| anyhow::anyhow!("model path must be valid UTF-8"))?;
-        let ctx = whisper_rs::WhisperContext::new_with_params(
-            path,
-            whisper_rs::WhisperContextParameters::default(),
-        )?;
+        let mut ctx_params = whisper_rs::WhisperContextParameters::default();
+        ctx_params.use_gpu(use_gpu);
+        let ctx = whisper_rs::WhisperContext::new_with_params(path, ctx_params)?;
         let mut params = whisper_rs::FullParams::new(whisper_rs::SamplingStrategy::default());
         params.set_print_special(false);
         params.set_print_progress(false);
@@ -168,6 +171,7 @@ pub async fn run(
     silence_ms: u64,
     timeout_ms: u64,
     max_queue: usize,
+    use_gpu: bool,
 ) -> anyhow::Result<()> {
     info!(?socket, "starting whisperd");
     if socket.exists() {
@@ -176,7 +180,7 @@ pub async fn run(
     let listener = UnixListener::bind(&socket)?;
     info!(?socket, "listening for PCM input");
 
-    let stt = std::sync::Arc::new(WhisperStt::new(model)?);
+    let stt = std::sync::Arc::new(WhisperStt::new(model, use_gpu)?);
     let (tx, rx) = mpsc::channel::<SegmentJob>(max_queue);
     let latest_processed_id = std::sync::Arc::new(std::sync::atomic::AtomicU64::new(0));
     spawn_transcriber(rx, stt.clone(), latest_processed_id.clone());

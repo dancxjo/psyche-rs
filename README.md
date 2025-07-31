@@ -59,6 +59,8 @@ whisperd gen-systemd > /etc/systemd/system/whisperd.service
 sudo systemctl daemon-reexec
 sudo systemctl enable --now whisperd
 ```
+GPU acceleration is enabled by default. Add `--no-gpu` to the `ExecStart` line
+if you want to force CPU-only transcription.
 
 ### Unix Socket Input
 
