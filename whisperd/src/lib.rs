@@ -1,6 +1,7 @@
 use std::path::PathBuf;
 
 use async_trait::async_trait;
+use chrono::{DateTime, FixedOffset, Local};
 use serde::Serialize;
 use tokio::io::{AsyncReadExt, AsyncWrite, AsyncWriteExt};
 use tokio::net::{UnixListener, UnixStream};
@@ -21,6 +22,9 @@ pub struct Transcription {
     pub text: String,
     /// Word-level timing information.
     pub words: Vec<Word>,
+    /// When the recorded audio began.
+    #[serde(with = "chrono::serde::ts_seconds")]
+    pub when: chrono::DateTime<chrono::FixedOffset>,
     /// Optional raw whisper result serialized to JSON.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub raw: Option<serde_json::Value>,
@@ -155,18 +159,36 @@ pub(crate) async fn handle_connection(
     let timeout_samples = (timeout_ms as usize * samples_per_ms).max(audio_segmenter::FRAME_SIZE);
     let mut segmenter = AudioSegmenter::with_timeout(silence_samples, timeout_samples);
     let mut last_discard = 0usize;
+    let mut current_when: DateTime<FixedOffset> = Local::now().into();
+    let mut first_chunk = true;
     loop {
         let n = reader.read(&mut buf).await?;
         if n == 0 {
             break;
         }
-        let mut frames = Vec::with_capacity(n / 2);
-        for chunk in buf[..n].chunks_exact(2) {
+        let mut start = 0usize;
+        if first_chunk && n >= 3 && buf[0] == b'@' && buf[1] == b'{' {
+            if let Some(end) = buf[..n].iter().position(|&b| b == b'}') {
+                let ts_str = String::from_utf8_lossy(&buf[2..end]);
+                if let Ok(dt) = DateTime::parse_from_rfc3339(&ts_str) {
+                    current_when = dt;
+                } else if let Ok(dt) = Local.datetime_from_str(&ts_str, "%Y-%m-%d %H:%M:%S") {
+                    current_when = dt.with_timezone(dt.offset());
+                }
+                start = end + 1;
+                trace!(ts=%ts_str, "timestamp received");
+            }
+            first_chunk = false;
+        }
+        let mut frames = Vec::with_capacity((n - start) / 2);
+        for chunk in buf[start..n].chunks_exact(2) {
             frames.push(i16::from_le_bytes([chunk[0], chunk[1]]));
         }
         trace!(frames = frames.len(), "received audio frames");
         while let Some(spoken) = segmenter.push_frames(&frames) {
-            queue_transcription(spoken, &writer, &stt);
+            let when = current_when;
+            queue_transcription(spoken, when, &writer, &stt);
+            current_when = Local::now().into();
         }
         if segmenter.discarded() != last_discard {
             debug!(
@@ -181,9 +203,11 @@ pub(crate) async fn handle_connection(
         debug!(samples = spoken.len(), "transcribing audio");
         let stt = stt.clone();
         let w = writer.clone();
+        let when = current_when;
         tokio::spawn(async move {
-            if let Ok(trans) = stt.transcribe(&spoken).await {
+            if let Ok(mut trans) = stt.transcribe(&spoken).await {
                 debug!(text = %trans.text, "transcription done");
+                trans.when = when;
                 let mut w = w.lock().await;
                 if let Err(e) = send_transcription(&mut *w, &trans).await {
                     error!(?e, "failed to send transcription");
@@ -199,6 +223,7 @@ pub(crate) async fn handle_connection(
 
 fn queue_transcription(
     spoken: Vec<i16>,
+    when: DateTime<FixedOffset>,
     writer: &std::sync::Arc<Mutex<tokio::net::unix::OwnedWriteHalf>>,
     stt: &std::sync::Arc<dyn Stt + Send + Sync>,
 ) {
@@ -209,8 +234,9 @@ fn queue_transcription(
         if let Err(e) = save_segment(&spoken).await {
             error!(?e, "failed to save segment");
         }
-        if let Ok(trans) = stt.transcribe(&spoken).await {
+        if let Ok(mut trans) = stt.transcribe(&spoken).await {
             debug!(text = %trans.text, "transcription done");
+            trans.when = when;
             let mut w = w.lock().await;
             if let Err(e) = send_transcription(&mut *w, &trans).await {
                 error!(?e, "failed to send transcription");
@@ -227,9 +253,9 @@ where
     W: AsyncWrite + Unpin,
 {
     stream
-        .write_all(format!("{}\n", result.text).as_bytes())
+        .write_all(format!("@{{{}}} {}\n", result.when.to_rfc3339(), result.text).as_bytes())
         .await?;
-    debug!(text = %result.text, "sent transcription");
+    debug!(text = %result.text, when = %result.when, "sent transcription");
     Ok(())
 }
 
@@ -283,6 +309,7 @@ mod tests {
                     start: 0.0,
                     end: 0.5,
                 }],
+                when: Local::now().into(),
                 raw: None,
             })
         }
@@ -313,6 +340,7 @@ mod tests {
                 tokio::io::AsyncWriteExt::shutdown(&mut s).await.unwrap();
                 let mut buf = String::new();
                 s.read_to_string(&mut buf).await.unwrap();
+                assert!(buf.starts_with("@{"));
                 assert!(buf.contains("hello"));
             })
             .await;
@@ -352,6 +380,7 @@ mod tests {
         let result = Transcription {
             text: "test".into(),
             words: vec![],
+            when: Local::now().into(),
             raw: None,
         };
         let recv = tokio::spawn(async move {
@@ -362,6 +391,7 @@ mod tests {
         send_transcription(&mut a, &result).await.unwrap();
         tokio::io::AsyncWriteExt::shutdown(&mut a).await.unwrap();
         let received = recv.await.unwrap();
+        assert!(received.starts_with("@{"));
         assert!(received.contains("test"));
     }
 }
