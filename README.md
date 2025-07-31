@@ -54,6 +54,10 @@ Optionally start services:
 ```bash
 # Start memory services (adjust for Docker/Podman)
 podman-compose up -d neo4j qdrant ollama
+# Start audio transcription daemon
+whisperd gen-systemd > /etc/systemd/system/whisperd.service
+sudo systemctl daemon-reexec
+sudo systemctl enable --now whisperd
 ```
 
 ### Unix Socket Input

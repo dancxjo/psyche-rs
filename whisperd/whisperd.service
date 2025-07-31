@@ -1,0 +1,15 @@
+[Unit]
+Description=Whisper Audio Transcription Daemon
+After=network.target
+
+[Service]
+Type=simple
+User=whisper
+ExecStart=/usr/local/bin/whisperd \
+  --whisper-model /opt/whisper/model.bin \
+  --socket /run/psyched/ear.sock \
+  --daemon
+Restart=on-failure
+
+[Install]
+WantedBy=multi-user.target

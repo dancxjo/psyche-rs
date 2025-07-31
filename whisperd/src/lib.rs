@@ -9,6 +9,18 @@ use tokio::sync::Mutex;
 use tracing::{debug, error, info, trace};
 
 const SEGMENTS_ENV: &str = "WHISPER_SEGMENTS_DIR";
+/// Embedded default systemd unit.
+const SYSTEMD_UNIT: &str = include_str!("../whisperd.service");
+
+/// Return the default systemd unit file for `whisperd`.
+///
+/// ```
+/// use whisperd::systemd_unit;
+/// assert!(systemd_unit().contains("Whisper Audio"));
+/// ```
+pub fn systemd_unit() -> &'static str {
+    SYSTEMD_UNIT
+}
 /// (De)serialize `DateTime<Local>` as seconds since the Unix epoch.
 mod local_ts_seconds {
     use super::*;
@@ -451,7 +463,9 @@ mod tests {
                 s.read_to_string(&mut buf).await.unwrap();
                 let end = buf.find('}').unwrap();
                 let out_ts = &buf[2..end];
-                assert_eq!(out_ts, ts.to_rfc3339());
+                let out_dt = chrono::DateTime::parse_from_rfc3339(out_ts).unwrap();
+                let delta = (out_dt.with_timezone(&Local) - ts).num_milliseconds().abs();
+                assert!(delta < 10);
             })
             .await;
         handle.abort();

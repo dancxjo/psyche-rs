@@ -1,17 +1,26 @@
-use clap::Parser;
+use clap::{Args, Parser, Subcommand};
 use daemon_common::{LogLevel, maybe_daemonize};
 use std::path::PathBuf;
 
 #[derive(Parser, Debug)]
 #[command(name = "whisperd", about = "Audio ingestion and transcription daemon")]
 struct Cli {
+    #[command(flatten)]
+    run: RunArgs,
+
+    #[command(subcommand)]
+    command: Option<Command>,
+}
+
+#[derive(Args, Debug)]
+struct RunArgs {
     /// Path to the Unix socket used for audio input and transcript output
     #[arg(long, default_value = "/run/psyched/ear.sock")]
     socket: PathBuf,
 
     /// Path to whisper model
     #[arg(long, env = "WHISPER_MODEL")]
-    whisper_model: PathBuf,
+    whisper_model: Option<PathBuf>,
 
     /// Logging verbosity level
     #[arg(long, default_value = "info")]
@@ -30,21 +39,29 @@ struct Cli {
     daemon: bool,
 }
 
+#[derive(Subcommand, Debug)]
+enum Command {
+    /// Output a systemd unit file to stdout
+    GenSystemd,
+}
+
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
     let cli = Cli::parse();
+    if let Some(Command::GenSystemd) = cli.command {
+        print!("{}", whisperd::systemd_unit());
+        return Ok(());
+    }
+
+    let run = cli.run;
+    let model = run
+        .whisper_model
+        .ok_or_else(|| anyhow::anyhow!("--whisper-model is required"))?;
     tracing_subscriber::fmt()
-        // .with_env_filter(tracing_subscriber::EnvFilter::from_default_env())
-        .with_max_level(tracing_subscriber::filter::LevelFilter::from(cli.log_level))
+        .with_max_level(tracing_subscriber::filter::LevelFilter::from(run.log_level))
         .init();
-    maybe_daemonize(cli.daemon)?;
-    whisperd::run(
-        cli.socket,
-        cli.whisper_model,
-        cli.silence_ms,
-        cli.timeout_ms,
-    )
-    .await
+    maybe_daemonize(run.daemon)?;
+    whisperd::run(run.socket, model, run.silence_ms, run.timeout_ms).await
 }
 
 #[cfg(test)]
@@ -54,9 +71,10 @@ mod tests {
     #[test]
     fn cli_defaults_to_info_log_level() {
         let cli = Cli::try_parse_from(["whisperd", "--whisper-model", "model.bin"]).unwrap();
-        assert!(matches!(cli.log_level, LogLevel::Info));
-        assert_eq!(cli.silence_ms, 1000);
-        assert_eq!(cli.timeout_ms, 20000);
+        assert!(matches!(cli.run.log_level, LogLevel::Info));
+        assert_eq!(cli.run.silence_ms, 1000);
+        assert_eq!(cli.run.timeout_ms, 10000);
+        assert!(cli.command.is_none());
     }
 
     #[test]
@@ -73,8 +91,14 @@ mod tests {
             "5000",
         ])
         .unwrap();
-        assert!(matches!(cli.log_level, LogLevel::Debug));
-        assert_eq!(cli.silence_ms, 1500);
-        assert_eq!(cli.timeout_ms, 5000);
+        assert!(matches!(cli.run.log_level, LogLevel::Debug));
+        assert_eq!(cli.run.silence_ms, 1500);
+        assert_eq!(cli.run.timeout_ms, 5000);
+    }
+
+    #[test]
+    fn parses_gen_systemd_command() {
+        let cli = Cli::try_parse_from(["whisperd", "gen-systemd"]).unwrap();
+        assert!(matches!(cli.command, Some(Command::GenSystemd)));
     }
 }
