@@ -45,6 +45,7 @@ mod local_ts_seconds {
 }
 mod audio_segmenter;
 use audio_segmenter::AudioSegmenter;
+pub mod model;
 
 #[cfg(test)]
 pub mod test_helpers;
