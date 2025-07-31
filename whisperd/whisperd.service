@@ -9,6 +9,7 @@ ExecStart=/usr/local/bin/whisperd \
   --whisper-model /opt/whisper/model.bin \
   --socket /run/psyched/ear.sock \
   --daemon
+# GPU acceleration is enabled by default; use --no-gpu to disable
 Restart=on-failure
 
 [Install]
