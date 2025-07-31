@@ -3,6 +3,7 @@ use std::path::PathBuf;
 use async_trait::async_trait;
 use chrono::{DateTime, FixedOffset, Local, NaiveDateTime, TimeZone, Utc};
 use serde::Serialize;
+use stream_prefix::parse_timestamp_prefix;
 use tokio::io::{AsyncReadExt, AsyncWrite, AsyncWriteExt};
 use tokio::net::{UnixListener, UnixStream};
 use tokio::sync::Mutex;
@@ -206,16 +207,14 @@ pub(crate) async fn handle_connection(
             break;
         }
         let mut start = 0usize;
-        if first_chunk && n >= 3 && buf[0] == b'@' && buf[1] == b'{' {
-            if let Some(end) = buf[..n].iter().position(|&b| b == b'}') {
-                let ts_str = String::from_utf8_lossy(&buf[2..end]);
-                if let Ok(dt) = DateTime::parse_from_rfc3339(&ts_str) {
-                    current_when = dt.with_timezone(&chrono::Local);
-                } else if let Ok(dt) = Local.datetime_from_str(&ts_str, "%Y-%m-%d %H:%M:%S") {
-                    current_when = dt;
+        if first_chunk {
+            if let Some((ts, idx)) = parse_timestamp_prefix(&buf[..n]) {
+                current_when = ts;
+                start = idx;
+                if start < n && buf[start] == b'\n' {
+                    start += 1;
                 }
-                start = end + 1;
-                trace!(ts=%ts_str, "timestamp received");
+                trace!(when=%current_when, "timestamp received");
             }
             first_chunk = false;
         }

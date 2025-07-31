@@ -3,7 +3,11 @@ use daemon_common::{maybe_daemonize, LogLevel};
 use std::path::PathBuf;
 
 #[derive(Parser, Debug)]
-#[command(name = "seen", about = "Image captioning daemon")]
+#[command(
+    name = "seen",
+    about = "Image captioning daemon",
+    long_about = "Image captioning daemon.\n\nInput Protocol:\n  The stream may optionally begin with a line of the form:\n    @{2025-07-31T14:00:00-07:00}\n  This sets the timestamp used for the input data. If omitted or invalid, the system defaults to the current local time."
+)]
 struct Cli {
     /// Path to the Unix socket
     #[arg(long, default_value = "/run/psyched/eye.sock")]
