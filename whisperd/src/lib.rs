@@ -1,7 +1,7 @@
 use std::path::PathBuf;
 
 use async_trait::async_trait;
-use chrono::{DateTime, FixedOffset, Local, TimeZone, Utc};
+use chrono::{DateTime, FixedOffset, Local, NaiveDateTime, TimeZone, Utc};
 use serde::Serialize;
 use tokio::io::{AsyncReadExt, AsyncWrite, AsyncWriteExt};
 use tokio::net::{UnixListener, UnixStream};
@@ -9,6 +9,28 @@ use tokio::sync::Mutex;
 use tracing::{debug, error, info, trace};
 
 const SEGMENTS_ENV: &str = "WHISPER_SEGMENTS_DIR";
+/// (De)serialize `DateTime<Local>` as seconds since the Unix epoch.
+mod local_ts_seconds {
+    use super::*;
+    use serde::{self, Deserialize, Deserializer, Serializer};
+
+    pub fn serialize<S>(dt: &DateTime<Local>, ser: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        ser.serialize_i64(dt.timestamp())
+    }
+
+    pub fn deserialize<'de, D>(de: D) -> Result<DateTime<Local>, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let ts = i64::deserialize(de)?;
+        let ndt = NaiveDateTime::from_timestamp_opt(ts, 0)
+            .ok_or_else(|| serde::de::Error::custom("invalid timestamp"))?;
+        Ok(DateTime::<Utc>::from_utc(ndt, Utc).with_timezone(&Local))
+    }
+}
 mod audio_segmenter;
 use audio_segmenter::AudioSegmenter;
 
@@ -23,8 +45,8 @@ pub struct Transcription {
     /// Word-level timing information.
     pub words: Vec<Word>,
     /// When the recorded audio began.
-    #[serde(with = "chrono::serde::ts_seconds")]
-    pub when: chrono::DateTime<chrono::Utc>,
+    #[serde(with = "local_ts_seconds")]
+    pub when: chrono::DateTime<chrono::Local>,
     /// Optional raw whisper result serialized to JSON.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub raw: Option<serde_json::Value>,
@@ -118,7 +140,7 @@ impl Stt for WhisperStt {
             words: out_words,
             raw,
             // TODO: use the actual start time of the audio
-            when: chrono::Utc::now(),
+            when: chrono::Local::now(),
         })
     }
 }
@@ -161,8 +183,9 @@ pub(crate) async fn handle_connection(
     let silence_samples = (silence_ms as usize * samples_per_ms).max(audio_segmenter::FRAME_SIZE);
     let timeout_samples = (timeout_ms as usize * samples_per_ms).max(audio_segmenter::FRAME_SIZE);
     let mut segmenter = AudioSegmenter::with_timeout(silence_samples, timeout_samples);
+    const SAMPLE_RATE_HZ: i64 = 16_000;
     let mut last_discard = 0usize;
-    let mut current_when: DateTime<Utc> = chrono::Utc::now();
+    let mut current_when: DateTime<Local> = chrono::Local::now();
     let mut first_chunk = true;
     loop {
         let n = reader.read(&mut buf).await?;
@@ -174,9 +197,9 @@ pub(crate) async fn handle_connection(
             if let Some(end) = buf[..n].iter().position(|&b| b == b'}') {
                 let ts_str = String::from_utf8_lossy(&buf[2..end]);
                 if let Ok(dt) = DateTime::parse_from_rfc3339(&ts_str) {
-                    current_when = dt.with_timezone(&chrono::Utc);
+                    current_when = dt.with_timezone(&chrono::Local);
                 } else if let Ok(dt) = Local.datetime_from_str(&ts_str, "%Y-%m-%d %H:%M:%S") {
-                    current_when = dt.with_timezone(&chrono::Utc);
+                    current_when = dt;
                 }
                 start = end + 1;
                 trace!(ts=%ts_str, "timestamp received");
@@ -190,8 +213,10 @@ pub(crate) async fn handle_connection(
         trace!(frames = frames.len(), "received audio frames");
         while let Some(spoken) = segmenter.push_frames(&frames) {
             let when = current_when;
+            let len = spoken.len();
             queue_transcription(spoken, when, &writer, &stt);
-            current_when = Local::now().into();
+            current_when = current_when
+                + chrono::Duration::microseconds(len as i64 * 1_000_000 / SAMPLE_RATE_HZ);
         }
         if segmenter.discarded() != last_discard {
             debug!(
@@ -226,7 +251,7 @@ pub(crate) async fn handle_connection(
 
 fn queue_transcription(
     spoken: Vec<i16>,
-    when: DateTime<Utc>,
+    when: DateTime<Local>,
     writer: &std::sync::Arc<Mutex<tokio::net::unix::OwnedWriteHalf>>,
     stt: &std::sync::Arc<dyn Stt + Send + Sync>,
 ) {
@@ -396,5 +421,39 @@ mod tests {
         let received = recv.await.unwrap();
         assert!(received.starts_with("@{"));
         assert!(received.contains("test"));
+    }
+
+    #[tokio::test(flavor = "current_thread")]
+    async fn emits_timestamp_from_pcm_prefix() {
+        let dir = tempdir().unwrap();
+        let sock = dir.path().join("ear.sock");
+
+        let stt = MockStt;
+        let local = tokio::task::LocalSet::new();
+        let sock_clone = sock.clone();
+        let handle = local.spawn_local(async move {
+            run_with_stt_no_vad(sock_clone, stt, 1000, 20000)
+                .await
+                .unwrap();
+        });
+
+        local
+            .run_until(async {
+                tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+                let mut s = UnixStream::connect(&sock).await.unwrap();
+                let ts = Local::now();
+                let mut bytes = format!("@{{{}}}", ts.to_rfc3339()).into_bytes();
+                let samples: Vec<i16> = vec![1000; 16000];
+                bytes.extend(samples.iter().flat_map(|s| s.to_le_bytes()));
+                s.write_all(&bytes).await.unwrap();
+                tokio::io::AsyncWriteExt::shutdown(&mut s).await.unwrap();
+                let mut buf = String::new();
+                s.read_to_string(&mut buf).await.unwrap();
+                let end = buf.find('}').unwrap();
+                let out_ts = &buf[2..end];
+                assert_eq!(out_ts, ts.to_rfc3339());
+            })
+            .await;
+        handle.abort();
     }
 }
