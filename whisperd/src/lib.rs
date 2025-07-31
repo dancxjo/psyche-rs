@@ -6,7 +6,7 @@ use serde::Serialize;
 use stream_prefix::parse_timestamp_prefix;
 use tokio::io::{AsyncReadExt, AsyncWrite, AsyncWriteExt};
 use tokio::net::{UnixListener, UnixStream};
-use tokio::sync::Mutex;
+use tokio::sync::{Mutex, mpsc};
 use tracing::{debug, error, info, trace};
 
 const SEGMENTS_ENV: &str = "WHISPER_SEGMENTS_DIR";
@@ -46,6 +46,8 @@ mod local_ts_seconds {
 }
 mod audio_segmenter;
 use audio_segmenter::AudioSegmenter;
+mod transcriber;
+use transcriber::{SegmentJob, spawn_transcriber};
 pub mod model;
 
 #[cfg(test)]
@@ -165,6 +167,7 @@ pub async fn run(
     model: PathBuf,
     silence_ms: u64,
     timeout_ms: u64,
+    max_queue: usize,
 ) -> anyhow::Result<()> {
     info!(?socket, "starting whisperd");
     if socket.exists() {
@@ -174,11 +177,17 @@ pub async fn run(
     info!(?socket, "listening for PCM input");
 
     let stt = std::sync::Arc::new(WhisperStt::new(model)?);
+    let (tx, rx) = mpsc::channel::<SegmentJob>(max_queue);
+    let latest_processed_id = std::sync::Arc::new(std::sync::atomic::AtomicU64::new(0));
+    spawn_transcriber(rx, stt.clone(), latest_processed_id.clone());
+
+    let segment_counter = std::sync::Arc::new(std::sync::atomic::AtomicU64::new(0));
 
     loop {
         let (stream, _) = listener.accept().await?;
-        let stt = stt.clone();
-        if let Err(e) = handle_connection(stream, stt, silence_ms, timeout_ms).await {
+        let tx = tx.clone();
+        let counter = segment_counter.clone();
+        if let Err(e) = handle_connection(stream, tx, counter, silence_ms, timeout_ms).await {
             error!(?e, "connection error");
         }
     }
@@ -186,7 +195,8 @@ pub async fn run(
 
 pub(crate) async fn handle_connection(
     stream: UnixStream,
-    stt: std::sync::Arc<dyn Stt + Send + Sync>,
+    tx: mpsc::Sender<SegmentJob>,
+    segment_counter: std::sync::Arc<std::sync::atomic::AtomicU64>,
     silence_ms: u64,
     timeout_ms: u64,
 ) -> anyhow::Result<()> {
@@ -226,7 +236,7 @@ pub(crate) async fn handle_connection(
         while let Some(spoken) = segmenter.push_frames(&frames) {
             let when = current_when;
             let len = spoken.len();
-            queue_transcription(spoken, when, &writer, &stt);
+            queue_transcription(spoken, when, &writer, &tx, &segment_counter);
             current_when = current_when
                 + chrono::Duration::microseconds(len as i64 * 1_000_000 / SAMPLE_RATE_HZ);
         }
@@ -240,49 +250,29 @@ pub(crate) async fn handle_connection(
     }
 
     if let Some(spoken) = segmenter.finish() {
-        debug!(samples = spoken.len(), "transcribing audio");
-        let stt = stt.clone();
-        let w = writer.clone();
-        let when = current_when;
-        tokio::spawn(async move {
-            if let Ok(mut trans) = stt.transcribe(&spoken).await {
-                debug!(text = %trans.text, "transcription done");
-                trans.when = when;
-                let mut w = w.lock().await;
-                if let Err(e) = send_transcription(&mut *w, &trans).await {
-                    error!(?e, "failed to send transcription");
-                }
-            }
-        })
-        .await
-        .map_err(|e| anyhow::anyhow!(e))?;
+        queue_transcription(spoken, current_when, &writer, &tx, &segment_counter);
     }
 
     Ok(())
 }
 
-fn queue_transcription(
+pub(crate) fn queue_transcription(
     spoken: Vec<i16>,
     when: DateTime<Local>,
     writer: &std::sync::Arc<Mutex<tokio::net::unix::OwnedWriteHalf>>,
-    stt: &std::sync::Arc<dyn Stt + Send + Sync>,
+    tx: &mpsc::Sender<SegmentJob>,
+    counter: &std::sync::Arc<std::sync::atomic::AtomicU64>,
 ) {
-    let w = writer.clone();
-    let stt = stt.clone();
-    tokio::spawn(async move {
-        debug!(samples = spoken.len(), "transcribing audio");
-        if let Err(e) = save_segment(&spoken).await {
-            error!(?e, "failed to save segment");
-        }
-        if let Ok(mut trans) = stt.transcribe(&spoken).await {
-            debug!(text = %trans.text, "transcription done");
-            trans.when = when;
-            let mut w = w.lock().await;
-            if let Err(e) = send_transcription(&mut *w, &trans).await {
-                error!(?e, "failed to send transcription");
-            }
-        }
-    });
+    let id = counter.fetch_add(1, std::sync::atomic::Ordering::Relaxed) + 1;
+    let job = SegmentJob {
+        id,
+        pcm: spoken,
+        when,
+        writer: writer.clone(),
+    };
+    if let Err(_) = tx.try_send(job) {
+        debug!("Transcription dropped due to full queue");
+    }
 }
 
 pub(crate) async fn send_transcription<W>(
@@ -364,7 +354,7 @@ mod tests {
         let local = tokio::task::LocalSet::new();
         let sock_clone = sock.clone();
         let handle = local.spawn_local(async move {
-            run_with_stt_no_vad(sock_clone, stt, 1000, 20000)
+            run_with_stt_no_vad(sock_clone, stt, 1000, 20000, 16)
                 .await
                 .unwrap();
         });
@@ -444,7 +434,7 @@ mod tests {
         let local = tokio::task::LocalSet::new();
         let sock_clone = sock.clone();
         let handle = local.spawn_local(async move {
-            run_with_stt_no_vad(sock_clone, stt, 1000, 20000)
+            run_with_stt_no_vad(sock_clone, stt, 1000, 20000, 16)
                 .await
                 .unwrap();
         });
@@ -469,5 +459,60 @@ mod tests {
             })
             .await;
         handle.abort();
+    }
+
+    #[tokio::test(flavor = "current_thread")]
+    async fn drops_segments_when_queue_full() {
+        use std::sync::atomic::{AtomicUsize, Ordering};
+        struct SlowStt {
+            calls: std::sync::Arc<AtomicUsize>,
+        };
+
+        #[async_trait]
+        impl Stt for SlowStt {
+            async fn transcribe(&self, _pcm: &[i16]) -> anyhow::Result<Transcription> {
+                self.calls.fetch_add(1, Ordering::SeqCst);
+                tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+                Ok(Transcription {
+                    text: "ok".into(),
+                    words: vec![],
+                    when: Local::now(),
+                    raw: None,
+                })
+            }
+        }
+
+        let dir = tempdir().unwrap();
+        let sock = dir.path().join("ear.sock");
+        let calls = std::sync::Arc::new(AtomicUsize::new(0));
+        let stt = SlowStt {
+            calls: calls.clone(),
+        };
+        let local = tokio::task::LocalSet::new();
+        let sock_clone = sock.clone();
+        let handle = local.spawn_local(async move {
+            run_with_stt_no_vad(sock_clone, stt, 1000, 20000, 1)
+                .await
+                .unwrap();
+        });
+
+        local
+            .run_until(async {
+                tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+                let mut s = UnixStream::connect(&sock).await.unwrap();
+                let mut samples: Vec<i16> = Vec::new();
+                for _ in 0..3 {
+                    samples.extend(vec![1000i16; 16000]);
+                    samples.extend(vec![0i16; 17000]);
+                }
+                let bytes: Vec<u8> = samples.iter().flat_map(|s| s.to_le_bytes()).collect();
+                s.write_all(&bytes).await.unwrap();
+                tokio::io::AsyncWriteExt::shutdown(&mut s).await.unwrap();
+                let mut buf = String::new();
+                s.read_to_string(&mut buf).await.unwrap();
+            })
+            .await;
+        handle.abort();
+        assert!(calls.load(Ordering::SeqCst) < 3);
     }
 }

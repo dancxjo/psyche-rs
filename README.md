@@ -78,6 +78,8 @@ echo -e "/vision\nI see a red light blinking in the distance.\n.\n" | socat - UN
 
 When present as the first line, this sets the timestamp for the data. Invalid or missing prefixes default to the current local time.
 
+`whisperd` limits queued segments to avoid runaway memory use. If transcriptions fall behind the newest segments are favored.
+
 ## Architecture
 
 ```

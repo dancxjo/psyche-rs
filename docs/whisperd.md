@@ -1,6 +1,8 @@
 # whisperd
 
 `whisperd` streams PCM audio from a Unix socket and outputs transcriptions.
+Incoming audio segments are buffered using a small queue. When the queue
+fills, older segments are dropped so that recent speech is prioritized.
 
 ## Systemd
 
