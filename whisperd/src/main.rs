@@ -43,14 +43,39 @@ struct RunArgs {
 enum Command {
     /// Output a systemd unit file to stdout
     GenSystemd,
+    /// Download a whisper model
+    FetchModel(FetchArgs),
+}
+
+#[derive(Args, Debug)]
+struct FetchArgs {
+    /// Directory to save the model
+    #[arg(long, default_value = "/opt/whisper")]
+    dir: PathBuf,
+
+    /// Whisper model name
+    #[arg(long)]
+    model: Option<String>,
 }
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
     let cli = Cli::parse();
-    if let Some(Command::GenSystemd) = cli.command {
-        print!("{}", whisperd::systemd_unit());
-        return Ok(());
+    match cli.command {
+        Some(Command::GenSystemd) => {
+            print!("{}", whisperd::systemd_unit());
+            return Ok(());
+        }
+        Some(Command::FetchModel(args)) => {
+            let model = match args.model {
+                Some(m) => m,
+                None => whisperd::model::prompt_model()?,
+            };
+            let path = whisperd::model::download(&model, &args.dir).await?;
+            println!("{}", path.display());
+            return Ok(());
+        }
+        None => {}
     }
 
     let run = cli.run;
@@ -100,5 +125,11 @@ mod tests {
     fn parses_gen_systemd_command() {
         let cli = Cli::try_parse_from(["whisperd", "gen-systemd"]).unwrap();
         assert!(matches!(cli.command, Some(Command::GenSystemd)));
+    }
+
+    #[test]
+    fn parses_fetch_model_command() {
+        let cli = Cli::try_parse_from(["whisperd", "fetch-model"]).unwrap();
+        assert!(matches!(cli.command, Some(Command::FetchModel(_))));
     }
 }
