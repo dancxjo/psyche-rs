@@ -2,6 +2,8 @@
 
 **psycheOS** is a narrative-driven, modular cognitive operating system designed for autonomous agents. Inspired by slow, introspective cognition—like that of an isolated space probe—it processes time-sequenced sensations into structured memory and behavior through layered distillation.
 
+psycheOS intersects with [Project PETE](https://dancxjo.github.io/project-pete.html): the Pseudoconscious Experiment in Thought and Emotions. PETE explores embodied pseudoconscious agents, while psycheOS generalizes the slower narrative-cognition substrate that several PETE experiments depend on.
+
 ## Overview
 
 psycheOS is not a conventional OS. It’s a cognitive architecture built on top of a minimal Linux environment that uses:
@@ -110,6 +112,7 @@ can immediately act on that text.
 
 ## Related Projects
 
+* [Project PETE](https://dancxjo.github.io/project-pete.html): Pseudoconscious Experiment in Thought and Emotions.
 * [`psyche`](./psyche): Core abstractions for sensations, memory, and cognition.
 * [`layka`](./soul): The default soul for a long-term autonomous persona.
 
